@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Build output
+dist/
+client/.next/
+
+# Environment files — never commit secrets
+.env
+client/.env.local
+
+# Prisma generated
+node_modules/.prisma/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.claude/
