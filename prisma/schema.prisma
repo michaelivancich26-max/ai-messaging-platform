@@ -37,6 +37,30 @@ model Room {
   participant1Id String?
   participant2Id String?
   messages       Message[]
+  sections       Section[]
+  channels       Channel[]
+}
+
+model Section {
+  id        String    @id @default(cuid())
+  name      String
+  order     Int       @default(0)
+  roomId    String
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  channels  Channel[]
+  createdAt DateTime  @default(now())
+}
+
+model Channel {
+  id        String    @id @default(cuid())
+  name      String
+  order     Int       @default(0)
+  roomId    String
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sectionId String?
+  section   Section?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  messages  Message[]
+  createdAt DateTime  @default(now())
 }
 
 model Message {
@@ -46,6 +70,8 @@ model Message {
   createdAt  DateTime   @default(now())
   userId     String?
   roomId     String
+  channelId  String?
   user       User?      @relation(fields: [userId], references: [id])
   room       Room       @relation(fields: [roomId], references: [id])
+  channel    Channel?   @relation(fields: [channelId], references: [id], onDelete: SetNull)
 }

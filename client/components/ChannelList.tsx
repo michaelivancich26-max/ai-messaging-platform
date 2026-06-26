@@ -1,0 +1,269 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+export interface Channel {
+  id: string;
+  name: string;
+  sectionId: string | null;
+  order: number;
+}
+
+export interface Section {
+  id: string;
+  name: string;
+  order: number;
+}
+
+interface Props {
+  roomName: string;
+  activeChannelId: string | null;
+  canEdit: boolean;
+  userId: string;
+  onSelectChannel: (channel: Channel) => void;
+  refreshTrigger?: number;
+}
+
+const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+
+export default function ChannelList({ roomName, activeChannelId, canEdit, userId, onSelectChannel, refreshTrigger }: Props) {
+  const [sections, setSections] = useState<Section[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Inline edit state
+  const [addingChannelToSection, setAddingChannelToSection] = useState<string | "root" | null>(null);
+  const [newChannelName, setNewChannelName] = useState("");
+  const [addingSection, setAddingSection] = useState(false);
+  const [newSectionName, setNewSectionName] = useState("");
+  const [renaming, setRenaming] = useState<{ type: "section" | "channel"; id: string; name: string } | null>(null);
+
+  async function load() {
+    const res = await fetch(`${SERVER}/api/rooms/${roomName}/channels`);
+    if (res.ok) {
+      const data = await res.json();
+      setSections(data.sections ?? []);
+      setChannels(data.channels ?? []);
+    }
+  }
+
+  useEffect(() => { load(); }, [roomName, refreshTrigger]);
+
+  async function addChannel(sectionId: string | null) {
+    const name = newChannelName.trim();
+    if (!name) return;
+    await fetch(`${SERVER}/api/rooms/${roomName}/channels`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, name, sectionId }),
+    });
+    setNewChannelName(""); setAddingChannelToSection(null);
+    load();
+  }
+
+  async function addSection() {
+    const name = newSectionName.trim();
+    if (!name) return;
+    await fetch(`${SERVER}/api/rooms/${roomName}/sections`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, name }),
+    });
+    setNewSectionName(""); setAddingSection(false);
+    load();
+  }
+
+  async function renameItem() {
+    if (!renaming) return;
+    const url = renaming.type === "section"
+      ? `${SERVER}/api/rooms/${roomName}/sections/${renaming.id}`
+      : `${SERVER}/api/rooms/${roomName}/channels/${renaming.id}`;
+    await fetch(url, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, name: renaming.name }),
+    });
+    setRenaming(null); load();
+  }
+
+  async function deleteSection(id: string) {
+    await fetch(`${SERVER}/api/rooms/${roomName}/sections/${id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    load();
+  }
+
+  async function deleteChannel(id: string) {
+    await fetch(`${SERVER}/api/rooms/${roomName}/channels/${id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    load();
+  }
+
+  function toggleSection(id: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  const unsectionedChannels = channels.filter(c => !c.sectionId);
+
+  function renderChannel(ch: Channel) {
+    const isActive = ch.id === activeChannelId;
+    const isRenaming = renaming?.type === "channel" && renaming.id === ch.id;
+
+    return (
+      <div key={ch.id} className="group flex items-center">
+        {isRenaming ? (
+          <input autoFocus value={renaming.name}
+            onChange={e => setRenaming({ ...renaming, name: e.target.value })}
+            onKeyDown={e => { if (e.key === "Enter") renameItem(); if (e.key === "Escape") setRenaming(null); }}
+            onBlur={renameItem}
+            className="mx-2 flex-1 rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-100 outline-none ring-1 ring-indigo-500" />
+        ) : (
+          <button onClick={() => onSelectChannel(ch)}
+            className={`flex flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors
+              ${isActive ? "bg-gray-700 text-gray-100 font-medium" : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"}`}>
+            <span className="text-gray-500">#</span>
+            <span className="truncate">{ch.name}</span>
+          </button>
+        )}
+        {canEdit && !isRenaming && (
+          <div className="hidden gap-0.5 pr-1 group-hover:flex">
+            <button onClick={() => setRenaming({ type: "channel", id: ch.id, name: ch.name })}
+              className="rounded p-0.5 text-gray-600 hover:text-gray-300">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474Z" />
+                <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9a.75.75 0 0 1 1.5 0v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
+              </svg>
+            </button>
+            <button onClick={() => deleteChannel(ch.id)}
+              className="rounded p-0.5 text-gray-600 hover:text-red-400">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto bg-gray-900 py-2" style={{ minWidth: 0 }}>
+
+      {/* Unsectioned channels */}
+      <div className="mb-1">
+        <div className="flex items-center px-2 py-0.5">
+          <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">Channels</span>
+          {canEdit && (
+            <button onClick={() => setAddingChannelToSection("root")}
+              className="rounded p-0.5 text-gray-600 hover:text-indigo-400" title="Add channel">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="space-y-0.5 px-1">
+          {unsectionedChannels.map(renderChannel)}
+          {addingChannelToSection === "root" && (
+            <input autoFocus value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") addChannel(null); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
+              onBlur={() => { if (!newChannelName.trim()) { setAddingChannelToSection(null); } }}
+              placeholder="channel-name"
+              className="mx-1 w-[calc(100%-8px)] rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+          )}
+        </div>
+      </div>
+
+      {/* Sections */}
+      {sections.map(sec => {
+        const secChannels = channels.filter(c => c.sectionId === sec.id);
+        const isOpen = !collapsed.has(sec.id);
+        const isRenamingSection = renaming?.type === "section" && renaming.id === sec.id;
+
+        return (
+          <div key={sec.id} className="mb-1">
+            <div className="group flex items-center px-2 py-0.5">
+              <button onClick={() => toggleSection(sec.id)} className="mr-1 text-gray-500 hover:text-gray-300">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
+                  className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}>
+                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+              </button>
+
+              {isRenamingSection ? (
+                <input autoFocus value={renaming.name}
+                  onChange={e => setRenaming({ ...renaming, name: e.target.value })}
+                  onKeyDown={e => { if (e.key === "Enter") renameItem(); if (e.key === "Escape") setRenaming(null); }}
+                  onBlur={renameItem}
+                  className="flex-1 rounded bg-gray-700 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider outline-none ring-1 ring-indigo-500" />
+              ) : (
+                <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-gray-500">{sec.name}</span>
+              )}
+
+              {canEdit && !isRenamingSection && (
+                <div className="hidden gap-0.5 group-hover:flex">
+                  <button onClick={() => setAddingChannelToSection(sec.id)}
+                    className="rounded p-0.5 text-gray-600 hover:text-indigo-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                      <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+                    </svg>
+                  </button>
+                  <button onClick={() => setRenaming({ type: "section", id: sec.id, name: sec.name })}
+                    className="rounded p-0.5 text-gray-600 hover:text-gray-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                      <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474Z" />
+                    </svg>
+                  </button>
+                  <button onClick={() => deleteSection(sec.id)}
+                    className="rounded p-0.5 text-gray-600 hover:text-red-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                      <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isOpen && (
+              <div className="space-y-0.5 px-1">
+                {secChannels.map(renderChannel)}
+                {addingChannelToSection === sec.id && (
+                  <input autoFocus value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") addChannel(sec.id); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
+                    onBlur={() => { if (!newChannelName.trim()) { setAddingChannelToSection(null); } }}
+                    placeholder="channel-name"
+                    className="mx-1 w-[calc(100%-8px)] rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Add section */}
+      {canEdit && (
+        <div className="mt-2 px-2">
+          {addingSection ? (
+            <input autoFocus value={newSectionName} onChange={e => setNewSectionName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setAddingSection(false); setNewSectionName(""); } }}
+              onBlur={() => { if (!newSectionName.trim()) setAddingSection(false); }}
+              placeholder="Section name"
+              className="w-full rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+          ) : (
+            <button onClick={() => setAddingSection(true)}
+              className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+              </svg>
+              Add section
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

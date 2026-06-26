@@ -52,6 +52,24 @@ redis.connect().catch(console.error);
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
 const WINDOW_SIZE = 6;
 
+function mapMessages(messages: any[]) {
+  return messages.map((m) => {
+    let type: string = "human";
+    let content = m.content;
+    if (m.senderType === "AI") {
+      if (m.content.startsWith('{"type":"summary"')) type = "summary";
+      else type = "ai_interjection";
+    } else if (m.content.startsWith('{"type":"image"')) {
+      type = "image";
+      try {
+        const p = JSON.parse(m.content);
+        content = JSON.stringify({ type: "image", src: null, filename: p.filename, messageId: m.id });
+      } catch {}
+    }
+    return { ...m, content, type };
+  });
+}
+
 // Presence: roomId → Map<socketId, { userId, username }>
 const presence = new Map<string, Map<string, { userId: string; username: string }>>();
 
@@ -98,31 +116,6 @@ io.on("connection", (socket) => {
       socket.data.roomDbId = room.id;
       socket.data.roomId = roomId;
 
-      const history = await prisma.message.findMany({
-        where: { roomId: room.id },
-        orderBy: { createdAt: "asc" },
-        take: 20,
-        include: { user: true },
-      });
-
-      const mapped = history.map((m) => {
-        let type: string = "human";
-        let content = m.content;
-        if (m.senderType === "AI") {
-          if (m.content.startsWith('{"type":"summary"')) type = "summary";
-          else type = "ai_interjection";
-        } else if (m.content.startsWith('{"type":"image"')) {
-          type = "image";
-          // Strip heavy base64 src from history — client loads it lazily by message id
-          try {
-            const p = JSON.parse(m.content);
-            content = JSON.stringify({ type: "image", src: null, filename: p.filename, messageId: m.id });
-          } catch {}
-        }
-        return { ...m, content, type };
-      });
-
-      socket.emit("history", mapped);
       socket.join(roomId);
 
       // Presence
@@ -133,8 +126,45 @@ io.on("connection", (socket) => {
       // Send room meta (without password hash)
       const { password: _pw, ...roomMeta } = room as any;
       socket.emit("roomMeta", roomMeta);
+
+      // For DMs: emit history directly (no channels)
+      if (room.isDM) {
+        const history = await prisma.message.findMany({
+          where: { roomId: room.id },
+          orderBy: { createdAt: "asc" },
+          take: 20,
+          include: { user: true },
+        });
+        socket.emit("history", mapMessages(history));
+      }
     } catch (err) {
       console.error("joinRoom error:", err);
+    }
+  });
+
+  // Join a specific channel within a room — emits its history
+  socket.on("joinChannel", async (payload: { channelId: string }) => {
+    const { channelId } = payload;
+    try {
+      // Leave any previously joined channel socket rooms
+      for (const room of socket.rooms) {
+        if (room.startsWith("channel:")) socket.leave(room);
+      }
+
+      const channel = await prisma.channel.findUnique({ where: { id: channelId }, include: { room: true } });
+      if (!channel) { socket.emit("error", { message: "Channel not found." }); return; }
+
+      socket.join(`channel:${channelId}`);
+
+      const history = await prisma.message.findMany({
+        where: { channelId },
+        orderBy: { createdAt: "asc" },
+        take: 20,
+        include: { user: true },
+      });
+      socket.emit("history", mapMessages(history));
+    } catch (err) {
+      console.error("joinChannel error:", err);
     }
   });
 
@@ -169,15 +199,12 @@ io.on("connection", (socket) => {
 
   socket.on(
     "sendMessage",
-    async (payload: { roomId: string; userId: string; username: string; content: string; settings?: { factualCorrection: boolean; ambiguityResolution: boolean } }) => {
-      const { roomId, userId, username, settings } = payload;
+    async (payload: { roomId: string; userId: string; username: string; content: string; channelId?: string; settings?: { factualCorrection: boolean; ambiguityResolution: boolean } }) => {
+      const { roomId, userId, username, settings, channelId } = payload;
       const rawContent = payload.content?.trim().replace(/\0/g, "") ?? "";
       if (!rawContent) return;
 
-      // Detect image messages — skip slur check, Redis window, and AI entirely
       const isImage = rawContent.startsWith('{"type":"image"');
-
-      // Enforce 6 MB ceiling on image payloads (base64 overhead ~33%)
       if (isImage && rawContent.length > 8_000_000) {
         socket.emit("error", { message: "Image is too large to send." });
         return;
@@ -202,17 +229,18 @@ io.on("connection", (socket) => {
         if (!room) { socket.emit("roomDeleted"); return; }
 
         const message = await prisma.message.create({
-          data: { content, senderType: SenderType.HUMAN, roomId: room.id, userId: user.id },
+          data: { content, senderType: SenderType.HUMAN, roomId: room.id, userId: user.id, channelId: channelId ?? null },
           include: { user: true },
         });
 
-        io.to(roomId).emit("message", { ...message, type: "human" });
+        const emitTarget = channelId ? `channel:${channelId}` : roomId;
+        io.to(emitTarget).emit("message", { ...message, type: "human" });
 
         if (!isImage) {
-          const windowKey = WINDOW_KEY(roomId);
+          const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
-          scheduleAI(roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true } });
+          scheduleAI(channelId ?? roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget });
         }
       } catch (err) {
         console.error("sendMessage error:", err);
@@ -352,9 +380,141 @@ app.post("/api/rooms", async (req, res) => {
     const room = await prisma.room.create({
       data: { name, description, creatorId: creatorId ?? null, isPrivate, password, maxMembers },
     });
+    // Auto-create default "general" channel for every new room
+    await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
     res.json({ ...room, password: undefined });
   } catch {
     res.status(500).json({ error: "Failed to create room" });
+  }
+});
+
+// GET /api/rooms/:name/channels — sections + channels tree
+app.get("/api/rooms/:name/channels", async (req, res) => {
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const [sections, channels] = await Promise.all([
+      prisma.section.findMany({ where: { roomId: room.id }, orderBy: { order: "asc" } }),
+      prisma.channel.findMany({ where: { roomId: room.id }, orderBy: { order: "asc" } }),
+    ]);
+    res.json({ sections, channels });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/rooms/:name/sections
+app.post("/api/rooms/:name/sections", async (req, res) => {
+  const { userId, name: sectionName } = req.body as { userId: string; name: string };
+  if (!userId || !sectionName?.trim()) return res.status(400).json({ error: "userId and name required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (room.creatorId !== userId && !requestingUser?.isAdmin) return res.status(403).json({ error: "Unauthorized" });
+    const count = await prisma.section.count({ where: { roomId: room.id } });
+    const section = await prisma.section.create({ data: { name: sectionName.trim().slice(0, 50), roomId: room.id, order: count } });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json(section);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// PATCH /api/rooms/:name/sections/:id
+app.patch("/api/rooms/:name/sections/:id", async (req, res) => {
+  const { userId, name: newName } = req.body as { userId: string; name: string };
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (room.creatorId !== userId && !requestingUser?.isAdmin) return res.status(403).json({ error: "Unauthorized" });
+    const section = await prisma.section.update({ where: { id: req.params.id }, data: { name: newName.trim().slice(0, 50) } });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json(section);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// DELETE /api/rooms/:name/sections/:id
+app.delete("/api/rooms/:name/sections/:id", async (req, res) => {
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (room.creatorId !== userId && !requestingUser?.isAdmin) return res.status(403).json({ error: "Unauthorized" });
+    // Move section's channels to unsectioned
+    await prisma.channel.updateMany({ where: { sectionId: req.params.id }, data: { sectionId: null } });
+    await prisma.section.delete({ where: { id: req.params.id } });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/rooms/:name/channels
+app.post("/api/rooms/:name/channels", async (req, res) => {
+  const { userId, name: channelName, sectionId } = req.body as { userId: string; name: string; sectionId?: string };
+  if (!userId || !channelName?.trim()) return res.status(400).json({ error: "userId and name required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (room.creatorId !== userId && !requestingUser?.isAdmin) return res.status(403).json({ error: "Unauthorized" });
+    const count = await prisma.channel.count({ where: { roomId: room.id } });
+    const channel = await prisma.channel.create({
+      data: { name: channelName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40), roomId: room.id, sectionId: sectionId ?? null, order: count },
+    });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json(channel);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// PATCH /api/rooms/:name/channels/:id
+app.patch("/api/rooms/:name/channels/:id", async (req, res) => {
+  const { userId, name: newName, sectionId } = req.body as { userId: string; name?: string; sectionId?: string | null };
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (room.creatorId !== userId && !requestingUser?.isAdmin) return res.status(403).json({ error: "Unauthorized" });
+    const data: any = {};
+    if (newName) data.name = newName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
+    if (sectionId !== undefined) data.sectionId = sectionId;
+    const channel = await prisma.channel.update({ where: { id: req.params.id }, data });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json(channel);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// DELETE /api/rooms/:name/channels/:id
+app.delete("/api/rooms/:name/channels/:id", async (req, res) => {
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (room.creatorId !== userId && !requestingUser?.isAdmin) return res.status(403).json({ error: "Unauthorized" });
+    // Don't allow deleting the last channel
+    const count = await prisma.channel.count({ where: { roomId: room.id } });
+    if (count <= 1) return res.status(400).json({ error: "Cannot delete the last channel." });
+    await prisma.message.updateMany({ where: { channelId: req.params.id }, data: { channelId: null } });
+    await prisma.channel.delete({ where: { id: req.params.id } });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
   }
 });
 

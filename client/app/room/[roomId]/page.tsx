@@ -12,6 +12,7 @@ import SummarizeModal from "@/components/SummarizeModal";
 import VibeSearch from "@/components/VibeSearch";
 import RoomDetails from "@/components/RoomDetails";
 import Sidebar from "@/components/Sidebar";
+import ChannelList, { type Channel } from "@/components/ChannelList";
 import { AIStreamingCard } from "@/components/AIInterjectionCard";
 import type { ChatMessage } from "@/lib/types";
 import type { Settings } from "@/components/SettingsPanel";
@@ -50,6 +51,8 @@ export default function RoomPage() {
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean }>>(new Map());
+  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
+  const [channelRefresh, setChannelRefresh] = useState(0);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +94,7 @@ export default function RoomPage() {
     socket.on("error", ({ message }: { message: string }) => alert(message));
     socket.on("roomDeleted", () => router.push("/lobby"));
     socket.on("kicked", () => { alert("You were kicked from this room."); router.push("/lobby"); });
+    socket.on("channelsUpdated", () => setChannelRefresh(v => v + 1));
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     socket.on("aiStreamStart", ({ tempId, sarcasm }: { tempId: string; sarcasm: boolean }) => {
@@ -184,6 +188,7 @@ export default function RoomPage() {
       socket.off("aiStreamEnd");
       socket.off("userTyping");
       socket.off("userStopTyping");
+      socket.off("channelsUpdated");
     };
   }, [status, roomId, userId, username]);
 
@@ -191,12 +196,35 @@ export default function RoomPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Auto-join first channel once authenticated (non-DM rooms)
+  useEffect(() => {
+    if (status !== "authenticated" || !userId || roomId.startsWith("dm-")) return;
+    const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+    fetch(`${SERVER}/api/rooms/${roomId}/channels`)
+      .then(r => r.json())
+      .then(data => {
+        const channels: Channel[] = data.channels ?? [];
+        if (channels.length > 0 && !activeChannel) {
+          selectChannel(channels[0]);
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, userId, roomId]);
+
   function emitTyping() {
     getSocket({ id: userId, username }).emit("typing", { roomId });
   }
 
   function emitStopTyping() {
     getSocket({ id: userId, username }).emit("stopTyping", { roomId });
+  }
+
+  function selectChannel(channel: Channel) {
+    setActiveChannel(channel);
+    setMessages([]);
+    const s = getSocket({ id: userId, username });
+    s.emit("joinChannel", { channelId: channel.id });
   }
 
   function kickUser(targetUserId: string) {
@@ -228,7 +256,7 @@ export default function RoomPage() {
     setMessages((prev) => [...prev, optimistic]);
 
     const s = getSocket({ id: userId, username });
-    s.emit("sendMessage", { roomId, userId, username, content, settings });
+    s.emit("sendMessage", { roomId, userId, username, content, settings, channelId: activeChannel?.id });
   }
 
   async function vibeSearch(query: string) {
@@ -273,9 +301,31 @@ export default function RoomPage() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar activeRoomName={roomId} />
+
+      {/* Channel list — only for non-DM rooms */}
+      {!roomId.startsWith("dm-") && (
+        <div className="w-44 shrink-0 border-r border-gray-800 flex flex-col">
+          <div className="flex h-14 items-center border-b border-gray-800 px-3">
+            <span className="text-xs font-semibold text-gray-300 truncate">#{roomId}</span>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <ChannelList
+              roomName={roomId}
+              activeChannelId={activeChannel?.id ?? null}
+              canEdit={isOwner || isAdmin}
+              userId={userId}
+              onSelectChannel={selectChannel}
+              refreshTrigger={channelRefresh}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col min-w-0">
       <header className="flex items-center gap-3 border-b border-gray-800 px-6 py-4">
-        <span className="text-lg font-semibold">{dmPartner ? `@ ${dmPartner}` : `#${roomId}`}</span>
+        <span className="text-lg font-semibold">
+          {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
+        </span>
         <span className="ml-auto text-sm text-gray-500">{username}</span>
         <button onClick={() => setDetailsOpen((v) => !v)}
           className="ml-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 relative" title="Room details">
@@ -305,8 +355,12 @@ export default function RoomPage() {
         />
       )}
 
+      {!roomId.startsWith("dm-") && !activeChannel ? (
+        <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
+      ) : (
       <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} />
       <div ref={bottomRef} />
+      )}
 
       {/* Streaming AI cards — same amber card, text types in live */}
       {streamingMsgs.size > 0 && (
@@ -339,7 +393,9 @@ export default function RoomPage() {
         );
       })()}
 
-      <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} />
+      {(roomId.startsWith("dm-") || activeChannel) && (
+        <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} />
+      )}
 
       {summarizeModalOpen && (
         <SummarizeModal onConfirm={summarize} onClose={() => setSummarizeModalOpen(false)} />

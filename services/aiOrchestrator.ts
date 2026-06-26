@@ -16,6 +16,7 @@ type Deps = {
   io: Server;
   prisma: PrismaClient;
   settings: { factualCorrection: boolean; ambiguityResolution: boolean };
+  emitRoom?: string; // socket room to emit AI messages to (defaults to roomId)
 };
 
 type Issue =
@@ -47,42 +48,36 @@ function sleep(ms: number) {
 
 // Stream the human-readable text portion of an issue, then save and emit the real message.
 // Ambiguity issues have no text to stream — they go through normal emit.
-async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClient, io: Server) {
+async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClient, io: Server, emitRoom: string) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
   if (!room) return;
 
-  // Ambiguity cards are structured — no meaningful text to stream, emit instantly
   if (payload.type === "ambiguity") {
     const msg = await prisma.message.create({
       data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
     });
-    io.to(roomId).emit("message", { ...msg, type: "ai_interjection" });
+    io.to(emitRoom).emit("message", { ...msg, type: "ai_interjection" });
     return;
   }
 
-  // Factual correction — stream the text then resolve into a real message
   const tempId = `ai-stream-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const text = payload.text;
 
-  // Signal stream start (type + sarcasm flag so frontend can style the bubble)
-  io.to(roomId).emit("aiStreamStart", { tempId, sarcasm: payload.sarcasm });
+  io.to(emitRoom).emit("aiStreamStart", { tempId, sarcasm: payload.sarcasm });
 
-  // Drip characters
   for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
-    io.to(roomId).emit("aiStreamChunk", { tempId, chunk: text.slice(i, i + STREAM_CHUNK_SIZE) });
+    io.to(emitRoom).emit("aiStreamChunk", { tempId, chunk: text.slice(i, i + STREAM_CHUNK_SIZE) });
     await sleep(STREAM_DELAY_MS);
   }
 
-  // Save complete message to DB
   const msg = await prisma.message.create({
     data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
   });
 
-  // Replace streaming bubble with the real persisted message
-  io.to(roomId).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
+  io.to(emitRoom).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
 
-async function runScan(roomId: string, { redis, io, prisma, settings }: Deps) {
+async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom }: Deps) {
   pendingTimers.delete(roomId);
 
   const wantFactual = settings.factualCorrection;
@@ -142,7 +137,7 @@ async function runScan(roomId: string, { redis, io, prisma, settings }: Deps) {
     } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
       payload = { type: "ambiguity", ...issue.ambiguity };
     }
-    if (payload) await streamAndSave(payload, roomId, prisma, io);
+    if (payload) await streamAndSave(payload, roomId, prisma, io, emitRoom ?? roomId);
   }
 }
 
