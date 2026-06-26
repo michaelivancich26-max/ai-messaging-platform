@@ -65,7 +65,8 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<GNode | null>(null);
   const [selected, setSelected] = useState<GNode | null>(null);
-  const [filterRoom, setFilterRoom] = useState<string | null>(null);
+  const [selectedRoomIds, setSelectedRoomIds] = useState<Set<string>>(new Set());
+  const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const [filterType, setFilterType] = useState<string | null>(null);
   const [corrections, setCorrections] = useState<RawMessage[]>([]);
   const [correctionsLoading, setCorrectionsLoading] = useState(false);
@@ -170,7 +171,7 @@ export default function GraphPage() {
   const roomNameMap = new Map(rooms.map(r => [r.id, r.name]));
 
   const visibleNodes = nodesRef.current.filter(n =>
-    (!filterRoom || n.roomId === filterRoom) &&
+    (selectedRoomIds.size === 0 || selectedRoomIds.has(n.roomId)) &&
     (!filterType || n.type === filterType)
   );
   const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
@@ -218,12 +219,78 @@ export default function GraphPage() {
           <span className="text-xs text-gray-600">{visibleNodes.length} nodes · {visibleEdges.length} edges</span>
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Room filter */}
-            <select value={filterRoom ?? ""} onChange={e => setFilterRoom(e.target.value || null)}
-              className="rounded-lg bg-gray-800 px-2 py-1 text-xs text-gray-300 outline-none ring-1 ring-gray-700">
-              <option value="">All rooms</option>
-              {rooms.map(r => <option key={r.id} value={r.id}>#{r.name}</option>)}
-            </select>
+            {/* Room multi-select */}
+            <div className="relative">
+              <button
+                onClick={() => setRoomPickerOpen(v => !v)}
+                className="flex items-center gap-1.5 rounded-lg bg-gray-800 px-2.5 py-1 text-xs text-gray-300 outline-none ring-1 ring-gray-700 hover:ring-gray-500 transition-colors">
+                <span>
+                  {selectedRoomIds.size === 0
+                    ? "All rooms"
+                    : selectedRoomIds.size === 1
+                      ? `#${rooms.find(r => selectedRoomIds.has(r.id))?.name}`
+                      : `${selectedRoomIds.size} rooms`}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
+                  className={`h-3 w-3 text-gray-500 transition-transform ${roomPickerOpen ? "rotate-180" : ""}`}>
+                  <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+              </button>
+
+              {roomPickerOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-xl border border-gray-700 bg-gray-900 shadow-xl py-1"
+                  onMouseLeave={() => setRoomPickerOpen(false)}>
+                  {/* Select all / none */}
+                  <div className="flex items-center justify-between border-b border-gray-800 px-3 py-1.5 mb-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Rooms</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => setSelectedRoomIds(new Set())}
+                        className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">All</button>
+                      <button onClick={() => setSelectedRoomIds(new Set(rooms.map(r => r.id)))}
+                        className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors">None</button>
+                    </div>
+                  </div>
+                  <ul className="max-h-60 overflow-y-auto px-1">
+                    {rooms.map(r => {
+                      const checked = selectedRoomIds.size === 0 || selectedRoomIds.has(r.id);
+                      const color = roomColorMap.get(r.id);
+                      return (
+                        <li key={r.id}>
+                          <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-gray-800 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setSelectedRoomIds(prev => {
+                                  // "all" state (empty set) → clicking a room deselects everything except it
+                                  if (prev.size === 0) {
+                                    return new Set(rooms.filter(x => x.id !== r.id).map(x => x.id));
+                                  }
+                                  const next = new Set(prev);
+                                  if (next.has(r.id)) {
+                                    next.delete(r.id);
+                                    // if none left, revert to "all"
+                                    if (next.size === 0) return new Set();
+                                  } else {
+                                    next.add(r.id);
+                                    // if all selected, revert to "all" state
+                                    if (next.size === rooms.length) return new Set();
+                                  }
+                                  return next;
+                                });
+                              }}
+                              className="h-3.5 w-3.5 shrink-0 accent-indigo-500 cursor-pointer"
+                            />
+                            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
+                            <span className="truncate text-xs text-gray-200">#{r.name}</span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
 
             {/* Type filter */}
             <select value={filterType ?? ""} onChange={e => setFilterType(e.target.value || null)}
