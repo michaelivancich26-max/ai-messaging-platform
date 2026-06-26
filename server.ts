@@ -738,6 +738,42 @@ async function start() {
     console.error("[DB] Connection failed:", e);
   }
 
+  // Ensure GraphNodeMessage table exists — Railway migration history can get out of sync
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "GraphNodeMessage" (
+        "id" TEXT NOT NULL,
+        "nodeId" TEXT NOT NULL,
+        "messageId" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "GraphNodeMessage_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "GraphNodeMessage_nodeId_messageId_key"
+        ON "GraphNodeMessage"("nodeId", "messageId");
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'GraphNodeMessage_nodeId_fkey'
+        ) THEN
+          ALTER TABLE "GraphNodeMessage"
+            ADD CONSTRAINT "GraphNodeMessage_nodeId_fkey"
+            FOREIGN KEY ("nodeId") REFERENCES "GraphNode"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'GraphNodeMessage_messageId_fkey'
+        ) THEN
+          ALTER TABLE "GraphNodeMessage"
+            ADD CONSTRAINT "GraphNodeMessage_messageId_fkey"
+            FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    console.log("[DB] GraphNodeMessage table ready");
+  } catch (e) {
+    console.error("[DB] GraphNodeMessage setup failed:", e);
+  }
+
   httpServer.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
   });
