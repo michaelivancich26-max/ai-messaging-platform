@@ -17,6 +17,7 @@ const ALLOWED_ORIGINS = [
 ];
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
