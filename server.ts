@@ -110,6 +110,8 @@ io.on("connection", (socket) => {
         if (m.senderType === "AI") {
           if (m.content.startsWith('{"type":"summary"')) type = "summary";
           else type = "ai_interjection";
+        } else if (m.content.startsWith('{"type":"image"')) {
+          type = "image";
         }
         return { ...m, type };
       });
@@ -163,9 +165,21 @@ io.on("connection", (socket) => {
     "sendMessage",
     async (payload: { roomId: string; userId: string; username: string; content: string; settings?: { factualCorrection: boolean; ambiguityResolution: boolean } }) => {
       const { roomId, userId, username, settings } = payload;
-      const content = payload.content?.trim().replace(/\0/g, "").slice(0, 2000);
-      if (!content) return;
-      if (containsSlur(content)) {
+      const rawContent = payload.content?.trim().replace(/\0/g, "") ?? "";
+      if (!rawContent) return;
+
+      // Detect image messages — skip slur check, Redis window, and AI entirely
+      const isImage = rawContent.startsWith('{"type":"image"');
+
+      // Enforce 6 MB ceiling on image payloads (base64 overhead ~33%)
+      if (isImage && rawContent.length > 8_000_000) {
+        socket.emit("error", { message: "Image is too large to send." });
+        return;
+      }
+
+      const content = isImage ? rawContent : rawContent.slice(0, 2000);
+
+      if (!isImage && containsSlur(content)) {
         socket.emit("error", { message: "Message contains prohibited language and was not sent." });
         return;
       }
@@ -186,12 +200,14 @@ io.on("connection", (socket) => {
           include: { user: true },
         });
 
-        const windowKey = WINDOW_KEY(roomId);
-        await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
-        await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
-
         io.to(roomId).emit("message", { ...message, type: "human" });
-        scheduleAI(roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true } });
+
+        if (!isImage) {
+          const windowKey = WINDOW_KEY(roomId);
+          await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
+          await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
+          scheduleAI(roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true } });
+        }
       } catch (err) {
         console.error("sendMessage error:", err);
       }

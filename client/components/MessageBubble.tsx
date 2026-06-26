@@ -11,6 +11,21 @@ interface Props {
   highlighted?: boolean;
 }
 
+interface ImagePayload {
+  type: "image";
+  src: string;
+  filename: string;
+}
+
+function parseImageContent(content: string): ImagePayload | null {
+  if (!content.startsWith('{"type":"image"')) return null;
+  try {
+    const p = JSON.parse(content);
+    if (p.type === "image" && typeof p.src === "string") return p as ImagePayload;
+  } catch {}
+  return null;
+}
+
 function HighlightedContent({ content, annotation }: { content: string; annotation: Annotation }) {
   const [hovered, setHovered] = useState(false);
   const idx = content.toLowerCase().indexOf(annotation.pronoun.toLowerCase());
@@ -43,29 +58,92 @@ function HighlightedContent({ content, annotation }: { content: string; annotati
   );
 }
 
+function ImageMessage({ payload, isSelf }: { payload: ImagePayload; isSelf: boolean }) {
+  const [lightbox, setLightbox] = useState(false);
+
+  return (
+    <>
+      <div
+        className={`overflow-hidden rounded-2xl cursor-zoom-in ${isSelf ? "rounded-tr-sm" : "rounded-tl-sm"}`}
+        onClick={() => setLightbox(true)}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={payload.src}
+          alt={payload.filename}
+          className="max-h-64 max-w-xs object-cover transition-opacity hover:opacity-90"
+        />
+      </div>
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setLightbox(false)}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={payload.src}
+              alt={payload.filename}
+              className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+            />
+            <a
+              href={payload.src}
+              download={payload.filename}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M8.75 2.75a.75.75 0 0 0-1.5 0v5.69L5.03 6.22a.75.75 0 0 0-1.06 1.06l3.5 3.5a.75.75 0 0 0 1.06 0l3.5-3.5a.75.75 0 0 0-1.06-1.06L8.75 8.44V2.75Z" />
+                <path d="M3.5 9.75a.75.75 0 0 0-1.5 0v1.5A2.75 2.75 0 0 0 4.75 14h6.5A2.75 2.75 0 0 0 14 11.25v-1.5a.75.75 0 0 0-1.5 0v1.5c0 .69-.56 1.25-1.25 1.25h-6.5c-.69 0-1.25-.56-1.25-1.25v-1.5Z" />
+              </svg>
+              Download
+            </a>
+            <button
+              className="absolute right-3 top-3 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80"
+              onClick={() => setLightbox(false)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function MessageBubble({ message, isSelf, annotation, highlighted }: Props) {
   const username = message.user?.username ?? "unknown";
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const imagePayload = parseImageContent(message.content);
 
   return (
     <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"} ${highlighted ? "animate-pulse" : ""}`}>
       <span className="mb-1 text-xs text-gray-500">
         {isSelf ? "You" : username} · {time}
       </span>
-      <div
-        className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
-          highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
-        } ${
-          isSelf
-            ? "rounded-tr-sm bg-indigo-600 text-white"
-            : "rounded-tl-sm bg-gray-800 text-gray-100"
-        }`}
-      >
-        {annotation
-          ? <HighlightedContent content={message.content} annotation={annotation} />
-          : message.content
-        }
-      </div>
+
+      {imagePayload ? (
+        <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
+          <ImageMessage payload={imagePayload} isSelf={isSelf} />
+        </div>
+      ) : (
+        <div
+          className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
+            highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
+          } ${
+            isSelf
+              ? "rounded-tr-sm bg-indigo-600 text-white"
+              : "rounded-tl-sm bg-gray-800 text-gray-100"
+          }`}
+        >
+          {annotation
+            ? <HighlightedContent content={message.content} annotation={annotation} />
+            : message.content
+          }
+        </div>
+      )}
     </div>
   );
 }
