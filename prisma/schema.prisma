@@ -24,12 +24,15 @@ model User {
 }
 
 model Room {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  createdAt DateTime  @default(now())
-  creatorId String?
-  creator   User?     @relation(fields: [creatorId], references: [id])
-  messages  Message[]
+  id             String    @id @default(cuid())
+  name           String    @unique
+  createdAt      DateTime  @default(now())
+  creatorId      String?
+  creator        User?     @relation(fields: [creatorId], references: [id])
+  isDM           Boolean   @default(false)
+  participant1Id String?
+  participant2Id String?
+  messages       Message[]
 }
 
 model Message {

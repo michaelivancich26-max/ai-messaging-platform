@@ -38,6 +38,28 @@ export default function RoomPage() {
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
+  const [dmPartner, setDmPartner] = useState<string | null>(null);
+
+  const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+
+  useEffect(() => {
+    if (status !== "authenticated" || !userId || !roomId) return;
+    if (!roomId.startsWith("dm-")) return;
+    fetch(`${SERVER}/api/dm?userId=${userId}`)
+      .then((r) => r.json())
+      .then((dms: Array<{ name: string; participant1Id: string; participant2Id: string }>) => {
+        const dm = dms.find((d) => d.name === roomId);
+        if (!dm) return;
+        const otherId = dm.participant1Id === userId ? dm.participant2Id : dm.participant1Id;
+        return fetch(`${SERVER}/api/users?excludeId=${userId}`)
+          .then((r) => r.json())
+          .then((users: Array<{ id: string; username: string }>) => {
+            const other = users.find((u) => u.id === otherId);
+            if (other) setDmPartner(other.username);
+          });
+      })
+      .catch(() => {});
+  }, [status, userId, roomId]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -158,7 +180,7 @@ export default function RoomPage() {
             <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
           </svg>
         </button>
-        <span className="text-lg font-semibold">#{roomId}</span>
+        <span className="text-lg font-semibold">{dmPartner ? `@ ${dmPartner}` : `#${roomId}`}</span>
         <span className="ml-auto text-sm text-gray-500">{username}</span>
         <button onClick={() => setSettingsOpen(true)}
           className="ml-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300" title="Settings">

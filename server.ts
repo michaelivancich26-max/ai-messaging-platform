@@ -60,6 +60,11 @@ io.on("connection", (socket) => {
         socket.emit("roomDeleted");
         return;
       }
+      const socketUser = (socket as any).user as { id: string; username: string };
+      if (room.isDM && room.participant1Id !== socketUser.id && room.participant2Id !== socketUser.id) {
+        socket.emit("roomDeleted");
+        return;
+      }
       socket.data.roomDbId = room.id;
 
       const history = await prisma.message.findMany({
@@ -146,11 +151,53 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/api/rooms", async (_req, res) => {
   const rooms = await prisma.room.findMany({
+    where: { isDM: false },
     orderBy: { createdAt: "desc" },
     take: 50,
     include: { _count: { select: { messages: true } } },
   });
   res.json(rooms);
+});
+
+app.get("/api/users", async (req, res) => {
+  const excludeId = req.query.excludeId as string | undefined;
+  const users = await prisma.user.findMany({
+    where: excludeId ? { id: { not: excludeId } } : {},
+    select: { id: true, username: true },
+    orderBy: { username: "asc" },
+  });
+  res.json(users);
+});
+
+app.get("/api/dm", async (req, res) => {
+  const userId = req.query.userId as string;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  const dms = await prisma.room.findMany({
+    where: {
+      isDM: true,
+      OR: [{ participant1Id: userId }, { participant2Id: userId }],
+    },
+    orderBy: { createdAt: "desc" },
+    include: { _count: { select: { messages: true } } },
+  });
+  res.json(dms);
+});
+
+app.post("/api/dm", async (req, res) => {
+  const { userId1, userId2 } = req.body as { userId1: string; userId2: string };
+  if (!userId1 || !userId2) return res.status(400).json({ error: "Both user IDs required" });
+  const [a, b] = [userId1, userId2].sort();
+  const name = `dm-${a}-${b}`;
+  try {
+    const room = await prisma.room.upsert({
+      where: { name },
+      create: { name, isDM: true, participant1Id: a, participant2Id: b },
+      update: {},
+    });
+    res.json(room);
+  } catch {
+    res.status(500).json({ error: "Failed to create DM" });
+  }
 });
 
 app.post("/api/rooms", async (req, res) => {
