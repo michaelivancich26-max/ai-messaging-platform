@@ -272,6 +272,18 @@ app.delete("/api/rooms/:name", async (req, res) => {
 });
 
 const PORT = process.env.PORT ?? 3001;
-httpServer.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+
+async function start() {
+  try {
+    await prisma.$executeRawUnsafe("SELECT 1");
+    console.log("[DB] Connected");
+  } catch (e) {
+    console.error("[DB] Connection failed:", e);
+  }
+
+  httpServer.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+}
+
+start();
