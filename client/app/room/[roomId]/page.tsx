@@ -62,6 +62,8 @@ export default function RoomPage() {
   );
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Ref so reconnect handler can always see the latest active channel without stale closure
+  const activeChannelRef = useRef<Channel | null>(null);
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
@@ -96,7 +98,14 @@ export default function RoomPage() {
     console.log("[Room] status=authenticated userId=", userId, "username=", username);
     const socket = getSocket({ id: userId, username });
     console.log("[Room] socket id=", socket.id, "connected=", socket.connected);
-    socket.on("connect", () => console.log("[Socket] connected"));
+    const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
+    function rejoin() {
+      socket.emit("joinRoom", { roomId, roomName: roomId, password: roomPassword });
+      if (activeChannelRef.current) {
+        socket.emit("joinChannel", { channelId: activeChannelRef.current.id });
+      }
+    }
+    socket.on("connect", rejoin);
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
     socket.on("error", ({ message }: { message: string }) => alert(message));
     socket.on("roomDeleted", () => router.push("/lobby"));
@@ -125,8 +134,8 @@ export default function RoomPage() {
     socket.on("userStopTyping", ({ userId: uid }: { userId: string }) => {
       setTypingUsers((prev) => { const next = new Map(prev); next.delete(uid); return next; });
     });
-    const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
-    socket.emit("joinRoom", { roomId, roomName: roomId, password: roomPassword });
+    // Initial join (rejoin() handles reconnects)
+    rejoin();
 
     // Backfill membership for users who entered this room before RoomMember existed
     if (userId && !roomId.startsWith("dm-")) {
@@ -189,9 +198,9 @@ export default function RoomPage() {
     });
 
     return () => {
+      socket.off("connect", rejoin);
       socket.off("history");
       socket.off("message");
-      socket.off("connect");
       socket.off("connect_error");
       socket.off("error");
       socket.off("roomDeleted");
@@ -236,6 +245,7 @@ export default function RoomPage() {
   }
 
   function selectChannel(channel: Channel) {
+    activeChannelRef.current = channel;
     setActiveChannel(channel);
     setMessages([]);
     const s = getSocket({ id: userId, username });

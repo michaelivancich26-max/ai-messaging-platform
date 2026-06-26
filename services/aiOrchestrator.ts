@@ -19,6 +19,7 @@ type Deps = {
   emitRoom?: string;
   aiPersona?: string;
   roomName: string; // actual room slug for DB lookups (roomId key may be a channelId cuid)
+  channelId?: string | null; // channel to attach saved AI messages to (so they appear in channel history)
 };
 
 type Issue =
@@ -79,14 +80,21 @@ async function streamAndSave(
   io: Server,
   emitRoom: string,
   relatedEntities: string[] = [],
+  channelId?: string | null,
 ) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
   if (!room) return;
 
+  const msgData = {
+    content: JSON.stringify(payload),
+    senderType: SenderType.AI,
+    roomId: room.id,
+    userId: null,
+    channelId: channelId ?? null,
+  };
+
   if (payload.type === "ambiguity") {
-    const msg = await prisma.message.create({
-      data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
-    });
+    const msg = await prisma.message.create({ data: msgData });
     await linkMessageToEntities(msg.id, room.id, relatedEntities, prisma);
     io.to(emitRoom).emit("message", { ...msg, type: "ai_interjection" });
     return;
@@ -102,15 +110,13 @@ async function streamAndSave(
     await sleep(STREAM_DELAY_MS);
   }
 
-  const msg = await prisma.message.create({
-    data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
-  });
+  const msg = await prisma.message.create({ data: msgData });
   await linkMessageToEntities(msg.id, room.id, relatedEntities, prisma);
 
   io.to(emitRoom).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
 
-async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, aiPersona, roomName }: Deps) {
+async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, aiPersona, roomName, channelId }: Deps) {
   pendingTimers.delete(roomId);
 
   const wantFactual = settings.factualCorrection;
@@ -186,7 +192,7 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
       payload = { type: "ambiguity", ...issue.ambiguity };
     }
-    if (payload) await streamAndSave(payload, roomName, prisma, io, emitRoom ?? roomId, issue.relatedEntities ?? []);
+    if (payload) await streamAndSave(payload, roomName, prisma, io, emitRoom ?? roomId, issue.relatedEntities ?? [], channelId);
   }
 }
 
