@@ -62,18 +62,12 @@ async function linkMessageToEntities(
       where: { label_roomId: { label: label.trim().slice(0, 100), roomId } },
     });
     if (!node) continue;
-    // Use nested write through relation to avoid needing prisma.graphNodeMessage accessor
-    await prisma.graphNode.update({
-      where: { id: node.id },
-      data: {
-        corrections: {
-          connectOrCreate: {
-            where: { nodeId_messageId: { nodeId: node.id, messageId } },
-            create: { messageId },
-          },
-        },
-      },
-    });
+    // Raw upsert — bypasses generated-client relation types which may be stale on Railway
+    await prisma.$executeRaw`
+      INSERT INTO "GraphNodeMessage" (id, "nodeId", "messageId", "createdAt")
+      VALUES (gen_random_uuid()::text, ${node.id}, ${messageId}, NOW())
+      ON CONFLICT ("nodeId", "messageId") DO NOTHING
+    `;
   }
 }
 

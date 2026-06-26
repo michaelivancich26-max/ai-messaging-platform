@@ -609,15 +609,15 @@ app.delete("/api/rooms/:name", async (req, res) => {
 // GET /api/graph — full cross-room knowledge graph
 app.get("/api/graph", async (_req, res) => {
   try {
-    const [rawNodes, edges, rooms] = await Promise.all([
-      prisma.graphNode.findMany({
-        orderBy: { createdAt: "asc" },
-        include: { corrections: { select: { id: true } } },
-      }),
+    type CountRow = { nodeId: string; count: bigint };
+    const [rawNodes, edges, rooms, counts] = await Promise.all([
+      prisma.graphNode.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.graphEdge.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.room.findMany({ where: { isDM: false }, select: { id: true, name: true } }),
+      prisma.$queryRaw<CountRow[]>`SELECT "nodeId", COUNT(*) AS count FROM "GraphNodeMessage" GROUP BY "nodeId"`,
     ]);
-    const nodes = rawNodes.map(({ corrections, ...n }) => ({ ...n, correctionCount: corrections.length }));
+    const countMap = new Map(counts.map((r) => [r.nodeId, Number(r.count)]));
+    const nodes = rawNodes.map((n) => ({ ...n, correctionCount: countMap.get(n.id) ?? 0 }));
     res.json({ nodes, edges, rooms });
   } catch {
     res.status(500).json({ error: "Server error" });
@@ -627,16 +627,14 @@ app.get("/api/graph", async (_req, res) => {
 // GET /api/graph/nodes/:id/messages — AI correction cards linked to a graph node
 app.get("/api/graph/nodes/:id/messages", async (req, res) => {
   try {
-    const node = await prisma.graphNode.findUnique({
-      where: { id: req.params.id },
-      include: {
-        corrections: {
-          include: { message: true },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
-    res.json(node?.corrections.map((c) => c.message) ?? []);
+    const nodeId = req.params.id;
+    const messages = await prisma.$queryRaw<Record<string, unknown>[]>`
+      SELECT m.* FROM "Message" m
+      JOIN "GraphNodeMessage" gnm ON gnm."messageId" = m.id
+      WHERE gnm."nodeId" = ${nodeId}
+      ORDER BY gnm."createdAt" DESC
+    `;
+    res.json(messages);
   } catch {
     res.status(500).json({ error: "Server error" });
   }
