@@ -97,18 +97,20 @@ export default function RoomPage() {
 
     console.log("[Room] status=authenticated userId=", userId, "username=", username);
     const socket = getSocket({ id: userId, username });
-    console.log("[Room] socket id=", socket.id, "connected=", socket.connected);
     const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
+
+    // Track whether this is a reconnect (vs. the initial connect).
+    // On initial connect the auto-join effect handles joinChannel.
+    // On reconnects we must re-send it ourselves since the server loses room membership.
+    let initialConnectDone = socket.connected; // already connected = first connect already fired
     function rejoin() {
       socket.emit("joinRoom", { roomId, roomName: roomId, password: roomPassword });
-      if (activeChannelRef.current) {
+      if (initialConnectDone && activeChannelRef.current) {
+        // Reconnect: restore channel room (server lost it on disconnect)
         socket.emit("joinChannel", { channelId: activeChannelRef.current.id });
       }
+      initialConnectDone = true;
     }
-    // 'connect' fires on every (re)connect — including the initial one if not yet connected.
-    // Only call rejoin() immediately when the socket is already connected so we don't
-    // double-send if the socket is still connecting (the buffered emit + the connect-handler
-    // would both fire, sending joinChannel twice and producing duplicate history/AI cards).
     socket.on("connect", rejoin);
     if (socket.connected) rejoin();
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
@@ -232,6 +234,7 @@ export default function RoomPage() {
         const channels: Channel[] = data.channels ?? [];
         if (channels.length > 0 && !activeChannel) {
           selectChannel(channels[0]);
+          setMobileView("chat"); // on mobile, go straight to the chat after auto-join
         }
       })
       .catch(() => {});
