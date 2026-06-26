@@ -178,6 +178,7 @@ app.delete("/api/rooms/:name", async (req, res) => {
     const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
     const isAdmin = requestingUser?.isAdmin ?? false;
     if (room.creatorId !== userId && !isAdmin) return res.status(403).json({ error: "Only the creator can delete this room" });
+    io.to(name).emit("roomDeleted");
     await prisma.message.deleteMany({ where: { roomId: room.id } });
     await prisma.room.delete({ where: { name } });
     res.json({ ok: true });

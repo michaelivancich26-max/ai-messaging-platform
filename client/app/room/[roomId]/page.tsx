@@ -48,6 +48,7 @@ export default function RoomPage() {
     socket.on("connect", () => console.log("[Socket] connected"));
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
     socket.on("error", ({ message }: { message: string }) => alert(message));
+    socket.on("roomDeleted", () => router.push("/lobby"));
     socket.emit("joinRoom", { roomId, roomName: roomId });
 
     socket.on("history", (history: ChatMessage[]) => {
@@ -97,6 +98,7 @@ export default function RoomPage() {
       socket.off("connect");
       socket.off("connect_error");
       socket.off("error");
+      socket.off("roomDeleted");
     };
   }, [status, roomId, userId, username]);
 
