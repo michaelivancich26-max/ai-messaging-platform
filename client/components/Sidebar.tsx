@@ -36,9 +36,11 @@ function LockIcon() {
 interface Props {
   activeRoomName?: string;
   onBrowseClick?: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export default function Sidebar({ activeRoomName, onBrowseClick }: Props) {
+export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onMobileClose }: Props) {
   const { data: session, status } = useSession();
   const router = useRouter();
 
@@ -91,7 +93,18 @@ export default function Sidebar({ activeRoomName, onBrowseClick }: Props) {
   }
 
   return (
-    <aside className={`flex flex-col border-r border-gray-800 bg-gray-900 transition-all duration-300 ${collapsed ? "w-14" : "w-64"} shrink-0 h-screen`}>
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onMobileClose} />
+      )}
+    <aside className={`
+      flex flex-col border-r border-gray-800 bg-gray-900 shrink-0 h-screen
+      fixed inset-y-0 left-0 z-40 transition-transform duration-300
+      ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
+      md:relative md:translate-x-0 md:z-auto
+      ${collapsed ? "w-14" : "w-64"}
+    `}>
 
       {/* Header */}
       <div className="flex h-14 items-center gap-3 border-b border-gray-800 px-3">
@@ -258,5 +271,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick }: Props) {
         </button>
       </div>
     </aside>
+    </>
   );
 }

@@ -94,7 +94,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div
-        className="relative flex h-full w-80 flex-col border-l border-gray-800 bg-gray-950 shadow-2xl overflow-y-auto"
+        className="relative flex h-full w-full md:w-80 flex-col border-l border-gray-800 bg-gray-950 shadow-2xl overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

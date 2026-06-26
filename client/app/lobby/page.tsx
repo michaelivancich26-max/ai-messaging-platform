@@ -153,7 +153,7 @@ interface BrowseRoom {
   _count: { messages: number; members: number };
 }
 
-function BrowseRooms({ userId, onJoined, onCreateClick }: { userId: string; onJoined: () => void; onCreateClick: () => void }) {
+function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId: string; onJoined: () => void; onCreateClick: () => void; onMenuClick?: () => void }) {
   const router = useRouter();
   const [rooms, setRooms] = useState<BrowseRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,11 +208,16 @@ function BrowseRooms({ userId, onJoined, onCreateClick }: { userId: string; onJo
   return (
     <div className="flex flex-1 flex-col min-w-0">
       {/* Header */}
-      <div className="flex h-14 items-center gap-4 border-b border-gray-800 px-6">
+      <div className="flex h-14 items-center gap-2 border-b border-gray-800 px-3 md:px-6">
+        <button className="md:hidden rounded p-1.5 text-gray-400 hover:bg-gray-800" onClick={onMenuClick}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
+          </svg>
+        </button>
         <h1 className="text-sm font-semibold text-gray-100">Browse Rooms</h1>
         <div className="ml-auto flex items-center gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rooms…"
-            className="w-52 rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+            className="w-32 sm:w-52 rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
           <button onClick={onCreateClick}
             className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors">
             + Create room
@@ -279,6 +284,7 @@ export default function LobbyPage() {
   const [view, setView] = useState<"home" | "browse">("home");
   const [showCreate, setShowCreate] = useState(false);
   const [sidebarKey, setSidebarKey] = useState(0);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const username = (session?.user as any)?.username ?? session?.user?.name ?? "user";
   const userId: string = (session?.user as any)?.id ?? "";
@@ -289,16 +295,24 @@ export default function LobbyPage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-950 text-gray-100">
-      <Sidebar key={sidebarKey} onBrowseClick={() => setView("browse")} />
+      <Sidebar key={sidebarKey} onBrowseClick={() => setView("browse")} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
       {view === "browse" ? (
         <BrowseRooms
           userId={userId}
           onJoined={() => setSidebarKey(k => k + 1)}
           onCreateClick={() => { setView("home"); setShowCreate(true); }}
+          onMenuClick={() => setMobileSidebarOpen(true)}
         />
       ) : (
-        <main className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+        <main className="flex flex-1 flex-col items-center justify-center p-8 text-center relative">
+          {/* Mobile hamburger */}
+          <button className="absolute top-4 left-4 md:hidden rounded p-1.5 text-gray-400 hover:bg-gray-800"
+            onClick={() => setMobileSidebarOpen(true)}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
+            </svg>
+          </button>
           <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-indigo-600/20 mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-10 w-10 text-indigo-400">
               <path d="M4.913 2.658c2.075-.27 4.19-.408 6.337-.408 2.147 0 4.262.139 6.337.408 1.922.25 3.291 1.861 3.405 3.727a4.403 4.403 0 0 0-1.032-.211 50.89 50.89 0 0 0-8.42 0c-2.358.196-4.04 2.19-4.04 4.434v4.286a4.47 4.47 0 0 0 2.433 3.984L7.28 21.53A.75.75 0 0 1 6 21v-4.03a48.527 48.527 0 0 1-1.087-.128C2.905 16.58 1.5 14.833 1.5 12.862V6.638c0-1.97 1.405-3.718 3.413-3.979Z" />

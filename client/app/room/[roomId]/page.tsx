@@ -55,6 +55,11 @@ export default function RoomPage() {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [channelRefresh, setChannelRefresh] = useState(0);
   const [roomGraphOpen, setRoomGraphOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // Mobile: "channels" shows channel list, "chat" shows the chat area
+  const [mobileView, setMobileView] = useState<"channels" | "chat">(
+    roomId.startsWith("dm-") ? "chat" : "channels"
+  );
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -310,12 +315,23 @@ export default function RoomPage() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar activeRoomName={roomId} />
+      <Sidebar activeRoomName={roomId} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
       {/* Channel list — only for non-DM rooms */}
       {!roomId.startsWith("dm-") && (
-        <div className="w-44 shrink-0 border-r border-gray-800 flex flex-col">
-          <div className="flex h-14 items-center border-b border-gray-800 px-3">
+        <div className={`
+          border-r border-gray-800 flex flex-col bg-gray-900
+          ${mobileView === "channels" ? "flex" : "hidden"}
+          w-full md:w-44 md:flex md:shrink-0
+        `}>
+          <div className="flex h-14 items-center border-b border-gray-800 px-3 gap-2">
+            {/* Mobile: hamburger to open sidebar */}
+            <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+              onClick={() => setMobileSidebarOpen(true)}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
+              </svg>
+            </button>
             <span className="text-xs font-semibold text-gray-300 truncate">#{roomId}</span>
           </div>
           <div className="flex-1 overflow-hidden">
@@ -324,10 +340,10 @@ export default function RoomPage() {
               activeChannelId={activeChannel?.id ?? null}
               canEdit={isOwner || isAdmin}
               userId={userId}
-              onSelectChannel={(ch) => { setRoomGraphOpen(false); selectChannel(ch); }}
+              onSelectChannel={(ch) => { setRoomGraphOpen(false); selectChannel(ch); setMobileView("chat"); }}
               refreshTrigger={channelRefresh}
               graphActive={roomGraphOpen}
-              onGraphClick={() => setRoomGraphOpen(v => !v)}
+              onGraphClick={() => { setRoomGraphOpen(v => !v); setMobileView("chat"); }}
             />
           </div>
         </div>
@@ -342,12 +358,32 @@ export default function RoomPage() {
         />
       )}
 
-      <div className="flex flex-1 flex-col min-w-0">
-      <header className="flex items-center gap-3 border-b border-gray-800 px-6 py-4">
-        <span className="text-lg font-semibold">
+      <div className={`
+        flex-col min-w-0
+        ${mobileView === "chat" || roomId.startsWith("dm-") ? "flex" : "hidden"}
+        flex-1 md:flex
+      `}>
+      <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 py-4">
+        {/* Mobile: back to channels (non-DM) or hamburger (DM) */}
+        {!roomId.startsWith("dm-") ? (
+          <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+            onClick={() => setMobileView("channels")} title="Back to channels">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        ) : (
+          <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+            onClick={() => setMobileSidebarOpen(true)} title="Open menu">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
+        <span className="text-base md:text-lg font-semibold truncate">
           {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
         </span>
-        <span className="ml-auto text-sm text-gray-500">{username}</span>
+        <span className="ml-auto text-sm text-gray-500 hidden sm:block">{username}</span>
         <button onClick={() => setDetailsOpen((v) => !v)}
           className="ml-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 relative" title="Room details">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">

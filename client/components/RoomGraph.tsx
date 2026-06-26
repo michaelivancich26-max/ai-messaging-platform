@@ -189,7 +189,7 @@ export default function RoomGraph({ roomName, roomDbId, onClose }: Props) {
   const selectedNeighbourIds = new Set(selectedEdges.flatMap(e => [e.fromNodeId, e.toNodeId]));
 
   return (
-    <div className="flex h-full flex-col border-l border-gray-800 bg-gray-950 w-[480px] shrink-0">
+    <div className="flex h-full flex-col border-l border-gray-800 bg-gray-950 w-full md:w-[480px] md:shrink-0">
       {/* Header */}
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-800 px-4">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-400 shrink-0">
