@@ -253,8 +253,32 @@ export default function RoomPage() {
     activeChannelRef.current = channel;
     setActiveChannel(channel);
     setMessages([]);
+    // Join the socket room for real-time messages
     const s = getSocket({ id: userId, username });
     s.emit("joinChannel", { channelId: channel.id });
+    // Fetch history via HTTP — reliable regardless of socket timing
+    fetch(`${SERVER}/api/channels/${channel.id}/messages`)
+      .then(r => r.json())
+      .then((msgs: ChatMessage[]) => {
+        const restoredAnnotations: Record<string, { pronoun: string; referent: string }> = {};
+        const visible: ChatMessage[] = [];
+        for (const msg of msgs) {
+          if (msg.type === "ai_interjection") {
+            const payload = parseAIContent(msg.content);
+            if (payload.type === "ambiguity") {
+              const target = [...visible].reverse().find(
+                m => m.type === "human" && m.content.toLowerCase().includes(payload.pronoun.toLowerCase())
+              );
+              if (target) restoredAnnotations[target.id] = { pronoun: payload.pronoun, referent: payload.referent };
+              continue;
+            }
+          }
+          visible.push(msg);
+        }
+        setMessages(visible);
+        setAnnotations(restoredAnnotations);
+      })
+      .catch(() => {});
   }
 
   function kickUser(targetUserId: string) {

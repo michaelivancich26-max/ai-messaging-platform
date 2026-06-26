@@ -448,6 +448,21 @@ app.post("/api/rooms", async (req, res) => {
 });
 
 // GET /api/rooms/:name/channels — sections + channels tree
+// GET /api/channels/:id/messages — channel history for initial load
+app.get("/api/channels/:id/messages", async (req, res) => {
+  try {
+    const messages = await prisma.message.findMany({
+      where: { channelId: req.params.id },
+      orderBy: { createdAt: "asc" },
+      take: 20,
+      include: { user: true },
+    });
+    res.json(mapMessages(messages));
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 app.get("/api/rooms/:name/channels", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
