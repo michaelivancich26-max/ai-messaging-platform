@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ConfirmModal from "./ConfirmModal";
 
 interface Member {
   userId: string;
@@ -40,6 +41,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [confirmKick, setConfirmKick] = useState<Member | null>(null);
 
   // Sync local state when meta changes from socket
   const [lastMetaId, setLastMetaId] = useState<string | null>(null);
@@ -138,7 +140,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                   </div>
                   {canEdit && m.userId !== currentUserId && (
                     <button
-                      onClick={() => { if (confirm(`Kick ${m.username} from this room?`)) onKick(m.userId); }}
+                      onClick={() => setConfirmKick(m)}
                       className="rounded px-2 py-0.5 text-xs text-gray-600 hover:bg-red-500/10 hover:text-red-400 transition-colors"
                     >
                       kick
@@ -245,6 +247,16 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
           </div>
         )}
       </div>
+
+      {confirmKick && (
+        <ConfirmModal
+          title={`Kick ${confirmKick.username}?`}
+          message={`${confirmKick.username} will be removed from the room immediately.`}
+          confirmLabel="Kick"
+          onConfirm={() => { onKick(confirmKick.userId); setConfirmKick(null); }}
+          onCancel={() => setConfirmKick(null)}
+        />
+      )}
     </div>
   );
 }

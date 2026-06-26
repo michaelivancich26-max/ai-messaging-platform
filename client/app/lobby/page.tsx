@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import ConfirmModal from "@/components/ConfirmModal";
 
 interface Room {
   id: string;
@@ -257,6 +258,7 @@ export default function LobbyPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [authRoom, setAuthRoom] = useState<Room | null>(null);
   const [authError, setAuthError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<Room | null>(null);
   const [error, setError] = useState("");
 
   const username = (session?.user as any)?.username ?? session?.user?.name ?? "user";
@@ -325,7 +327,7 @@ export default function LobbyPage() {
   }
 
   async function deleteRoom(room: Room) {
-    if (!confirm(`Delete "${room.name}" and all its messages? This cannot be undone.`)) return;
+    setConfirmDelete(null);
     setDeletingId(room.id);
     try {
       const res = await fetch(`${SERVER}/api/rooms/${room.name}`, {
@@ -410,7 +412,7 @@ export default function LobbyPage() {
                     <span className="ml-auto shrink-0 text-xs text-gray-500">{room._count.messages}</span>
                   </button>
                   {(room.creatorId === userId || isAdmin) && (
-                    <button onClick={() => deleteRoom(room)} disabled={deletingId === room.id}
+                    <button onClick={() => setConfirmDelete(room)} disabled={deletingId === room.id}
                       className="mr-3 rounded-lg p-1.5 text-gray-600 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40 transition-colors" title="Delete room">
                       {deletingId === room.id ? <SpinnerIcon /> : <TrashIcon />}
                     </button>
@@ -487,6 +489,16 @@ export default function LobbyPage() {
         <CreateRoomModal
           onClose={() => setShowCreate(false)}
           onCreate={(room) => { setRooms((prev) => [{ ...room, _count: { messages: 0 } }, ...prev]); router.push(`/room/${room.name}`); }}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title={`Delete "${confirmDelete.name}"?`}
+          message="All messages will be permanently deleted and everyone in the room will be removed. This cannot be undone."
+          confirmLabel="Delete room"
+          onConfirm={() => deleteRoom(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
         />
       )}
 
