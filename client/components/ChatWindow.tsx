@@ -1,7 +1,7 @@
 import type { ChatMessage } from "@/lib/types";
 import type { Annotation } from "@/app/room/[roomId]/page";
 import MessageBubble from "./MessageBubble";
-import AIInterjectionCard from "./AIInterjectionCard";
+import AIInterjectionCard, { AIStreamingCard } from "./AIInterjectionCard";
 import SummaryCard from "./SummaryCard";
 
 interface Props {
@@ -10,9 +10,10 @@ interface Props {
   annotations: Record<string, Annotation>;
   highlightedId?: string | null;
   messageRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  streamingMsgs?: Map<string, { text: string; sarcasm: boolean }>;
 }
 
-export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs }: Props) {
+export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs }: Props) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
       {messages.map((msg) => {
@@ -41,6 +42,9 @@ export default function ChatWindow({ messages, currentUsername, annotations, hig
           </div>
         );
       })}
+      {streamingMsgs && Array.from(streamingMsgs.entries()).map(([tempId, { text, sarcasm }]) => (
+        <AIStreamingCard key={tempId} text={text} sarcasm={sarcasm} />
+      ))}
     </div>
   );
 }

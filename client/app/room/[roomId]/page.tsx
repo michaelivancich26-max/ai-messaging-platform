@@ -14,7 +14,6 @@ import RoomDetails from "@/components/RoomDetails";
 import Sidebar from "@/components/Sidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
-import { AIStreamingCard } from "@/components/AIInterjectionCard";
 import type { ChatMessage } from "@/lib/types";
 import type { Settings } from "@/components/SettingsPanel";
 import { parseAIContent } from "@/lib/types";
@@ -205,7 +204,7 @@ export default function RoomPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamingMsgs]);
 
   // Auto-join first channel once authenticated (non-DM rooms)
   useEffect(() => {
@@ -381,18 +380,9 @@ export default function RoomPage() {
         <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
       ) : (
         <>
-          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} />
+          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} />
           <div ref={bottomRef} />
         </>
-      )}
-
-      {/* Streaming AI cards — same amber card, text types in live */}
-      {streamingMsgs.size > 0 && (
-        <div className="space-y-2 px-4 py-2">
-          {Array.from(streamingMsgs.entries()).map(([tempId, { text, sarcasm }]) => (
-            <AIStreamingCard key={tempId} text={text} sarcasm={sarcasm} />
-          ))}
-        </div>
       )}
 
       <FunctionsBar onSummarize={() => setSummarizeModalOpen(true)} summarizing={summarizing} onVibeSearch={() => setVibeSearchOpen(true)} />
