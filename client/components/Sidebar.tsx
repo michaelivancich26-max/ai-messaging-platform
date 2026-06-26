@@ -55,7 +55,9 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
   const [showNewDM, setShowNewDM] = useState(false);
 
   const userId: string = (session?.user as any)?.id ?? "";
+  const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const isAdmin: boolean = (session?.user as any)?.isAdmin ?? false;
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
@@ -66,6 +68,10 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
         if (Array.isArray(data.dms)) setDMs(data.dms);
         if (Array.isArray(data.users)) setUsers(data.users);
       })
+      .catch(() => {});
+    fetch(`${SERVER}/api/users/${userId}/profile`)
+      .then(r => r.json())
+      .then(data => setMyAvatarUrl(data.avatarUrl ?? null))
       .catch(() => {});
   }, [status, userId]);
 
@@ -264,11 +270,16 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       {/* Profile + Sign out */}
       <div className="border-t border-gray-800 p-2 space-y-0.5">
         <button onClick={() => router.push("/profile")}
-          className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors ${collapsed ? "justify-center" : ""}`}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
-            <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
-          </svg>
-          {!collapsed && <span className="text-sm">Profile</span>}
+          className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors ${collapsed ? "justify-center" : ""}`}>
+          {myAvatarUrl
+            ? <img src={myAvatarUrl} alt={username} className="h-7 w-7 rounded-full object-cover shrink-0 ring-1 ring-gray-700" />
+            : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300 ring-1 ring-gray-600">
+                {username[0]?.toUpperCase()}
+              </span>
+          }
+          {!collapsed && (
+            <span className="truncate text-sm font-medium">{username}</span>
+          )}
         </button>
         <button onClick={() => signOut({ callbackUrl: "/" })}
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors ${collapsed ? "justify-center" : ""}`}>

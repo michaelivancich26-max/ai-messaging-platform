@@ -412,7 +412,6 @@ export default function RoomPage() {
         <span className="text-base md:text-lg font-semibold truncate">
           {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
         </span>
-        <span className="ml-auto text-xs text-gray-600 hidden sm:block">{username}</span>
         {/* Single panel button — opens unified Room/Settings/AI panel */}
         <button
           onClick={() => { setPanelTab("room"); setPanelOpen(v => !v); }}
