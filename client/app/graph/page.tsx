@@ -74,6 +74,11 @@ export default function GraphPage() {
   const [correctionsExpanded, setCorrectionsExpanded] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  const [forces, setForces] = useState({ repel: 3500, attract: 0.04, gravity: 0.015, damping: 0.8 });
+  const [forcesOpen, setForcesOpen] = useState(false);
+  const forcesRef = useRef(forces);
+  useEffect(() => { forcesRef.current = forces; }, [forces]);
+
   const svgRef = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<GNode[]>([]);
   const animRef = useRef<number>(0);
@@ -126,10 +131,7 @@ export default function GraphPage() {
       const ns = nodesRef.current;
       if (ns.length === 0) { animRef.current = requestAnimationFrame(tick); return; }
 
-      const REPEL = 3500;
-      const ATTRACT = 0.04;
-      const GRAVITY = 0.015;
-      const DAMPING = 0.8;
+      const { repel: REPEL, attract: ATTRACT, gravity: GRAVITY, damping: DAMPING } = forcesRef.current;
       const MIN_DIST = 40;
 
       // Repulsion
@@ -324,6 +326,46 @@ export default function GraphPage() {
               <option value="topic">Topics</option>
               <option value="concept">Concepts</option>
             </select>
+
+            {/* Force controls */}
+            <div className="relative">
+              <button
+                onClick={() => setForcesOpen(v => !v)}
+                title="Adjust forces"
+                className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs outline-none ring-1 transition-colors ${forcesOpen ? "bg-indigo-700 ring-indigo-500 text-white" : "bg-gray-800 ring-gray-700 text-gray-300 hover:ring-gray-500"}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                  <path d="M6.5 2.25a.75.75 0 0 0-1.5 0v1.34a2.751 2.751 0 0 0 0 5.32v4.84a.75.75 0 0 0 1.5 0V8.91a2.751 2.751 0 0 0 0-5.32V2.25Zm4 4.5a.75.75 0 0 0-1.5 0v.09a2.751 2.751 0 0 0 0 5.32v1.59a.75.75 0 0 0 1.5 0v-1.59a2.751 2.751 0 0 0 0-5.32v-.09Z" />
+                </svg>
+                <span className="hidden sm:block">Forces</span>
+              </button>
+
+              {forcesOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-gray-700 bg-gray-900 shadow-xl p-3 space-y-3"
+                  onMouseLeave={() => setForcesOpen(false)}>
+                  <div className="flex items-center justify-between pb-1 border-b border-gray-800">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Force controls</span>
+                    <button onClick={() => setForces({ repel: 3500, attract: 0.04, gravity: 0.015, damping: 0.8 })}
+                      className="text-[10px] text-indigo-400 hover:text-indigo-300">Reset</button>
+                  </div>
+                  {([
+                    { key: "repel",   label: "Repulsion",  min: 500,   max: 12000, step: 100,   fmt: (v: number) => v.toFixed(0) },
+                    { key: "attract", label: "Attraction", min: 0.005, max: 0.15,  step: 0.005, fmt: (v: number) => v.toFixed(3) },
+                    { key: "gravity", label: "Gravity",    min: 0,     max: 0.06,  step: 0.001, fmt: (v: number) => v.toFixed(3) },
+                    { key: "damping", label: "Damping",    min: 0.5,   max: 0.98,  step: 0.01,  fmt: (v: number) => v.toFixed(2) },
+                  ] as const).map(({ key, label, min, max, step, fmt }) => (
+                    <div key={key}>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-xs text-gray-400">{label}</span>
+                        <span className="text-xs text-gray-500 tabular-nums">{fmt(forces[key])}</span>
+                      </div>
+                      <input type="range" min={min} max={max} step={step} value={forces[key]}
+                        onChange={e => setForces(f => ({ ...f, [key]: parseFloat(e.target.value) }))}
+                        className="w-full h-1.5 appearance-none rounded-full bg-gray-700 accent-indigo-500 cursor-pointer" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {selected && (
               <button onClick={() => { setSelected(null); setCorrections([]); setCorrectionsExpanded(false); }}
