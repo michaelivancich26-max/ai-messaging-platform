@@ -28,6 +28,7 @@ export default function LobbyPage() {
 
   const username = (session?.user as any)?.username ?? session?.user?.name ?? "user";
   const userId: string = (session?.user as any)?.id ?? "";
+  const isAdmin: boolean = (session?.user as any)?.isAdmin ?? false;
 
   async function fetchRooms() {
     try {
@@ -164,11 +165,14 @@ export default function LobbyPage() {
                       {room.creatorId === userId && (
                         <span className="ml-2 text-xs text-indigo-400">owner</span>
                       )}
+                      {isAdmin && room.creatorId !== userId && (
+                        <span className="ml-2 text-xs text-amber-400">admin</span>
+                      )}
                     </div>
                     <span className="ml-auto text-xs text-gray-500">{room._count.messages} messages</span>
                   </button>
 
-                  {room.creatorId === userId && (
+                  {(room.creatorId === userId || isAdmin) && (
                     <button
                       onClick={() => deleteRoom(room)}
                       disabled={deletingId === room.id}

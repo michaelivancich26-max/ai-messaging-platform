@@ -29,7 +29,7 @@ const handler = NextAuth({
         const valid = await bcrypt.compare(credentials.password, user.password);
         if (!valid) return null;
 
-        return { id: user.id, name: user.username, email: user.email };
+        return { id: user.id, name: user.username, email: user.email, isAdmin: user.isAdmin };
       },
     }),
   ],
@@ -38,6 +38,7 @@ const handler = NextAuth({
       if (user) {
         token.id = user.id;
         token.username = user.name;
+        token.isAdmin = (user as any).isAdmin;
       }
       return token;
     },
@@ -45,6 +46,7 @@ const handler = NextAuth({
       if (session.user) {
         (session.user as any).id = token.id;
         (session.user as any).username = token.username;
+        (session.user as any).isAdmin = token.isAdmin;
       }
       // Expose raw JWT so the client can pass it to the socket server
       (session as any).token = token;
