@@ -55,11 +55,11 @@ io.on("connection", (socket) => {
   socket.on("joinRoom", async (payload: { roomId: string; roomName: string }) => {
     const { roomId, roomName } = payload;
     try {
-      const existing = await prisma.room.findUnique({ where: { name: roomName } });
-      if (!existing) {
-        await prisma.room.create({ data: { name: roomName } }).catch(() => {});
+      const room = await prisma.room.findUnique({ where: { name: roomName } });
+      if (!room) {
+        socket.emit("roomDeleted");
+        return;
       }
-      const room = await prisma.room.findUniqueOrThrow({ where: { name: roomName } });
       socket.data.roomDbId = room.id;
 
       const history = await prisma.message.findMany({
@@ -105,11 +105,11 @@ io.on("connection", (socket) => {
           }).catch(() => prisma.user.findUniqueOrThrow({ where: { username } }));
         }
 
-        // Ensure room exists
-        let room = await prisma.room.findUnique({ where: { name: roomId } });
+        // Room must already exist — never auto-create on message send
+        const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) {
-          room = await prisma.room.create({ data: { name: roomId } })
-            .catch(() => prisma.room.findUniqueOrThrow({ where: { name: roomId } }));
+          socket.emit("roomDeleted");
+          return;
         }
 
         const message = await prisma.message.create({
