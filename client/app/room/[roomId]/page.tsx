@@ -47,6 +47,7 @@ export default function RoomPage() {
   const [onlineMembers, setOnlineMembers] = useState<{ userId: string; username: string }[]>([]);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
+  const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean }>>(new Map());
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -90,6 +91,21 @@ export default function RoomPage() {
     socket.on("kicked", () => { alert("You were kicked from this room."); router.push("/lobby"); });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
+    socket.on("aiStreamStart", ({ tempId, sarcasm }: { tempId: string; sarcasm: boolean }) => {
+      setStreamingMsgs((prev) => new Map(prev).set(tempId, { text: "", sarcasm }));
+    });
+    socket.on("aiStreamChunk", ({ tempId, chunk }: { tempId: string; chunk: string }) => {
+      setStreamingMsgs((prev) => {
+        const entry = prev.get(tempId);
+        if (!entry) return prev;
+        return new Map(prev).set(tempId, { ...entry, text: entry.text + chunk });
+      });
+    });
+    socket.on("aiStreamEnd", ({ tempId, message }: { tempId: string; message: ChatMessage }) => {
+      setStreamingMsgs((prev) => { const next = new Map(prev); next.delete(tempId); return next; });
+      setMessages((prev) => [...prev, message]);
+    });
+
     socket.on("userTyping", ({ userId: uid, username: uname }: { userId: string; username: string }) => {
       setTypingUsers((prev) => new Map(prev).set(uid, uname));
     });
@@ -161,6 +177,9 @@ export default function RoomPage() {
       socket.off("kicked");
       socket.off("roomMembers");
       socket.off("roomMeta");
+      socket.off("aiStreamStart");
+      socket.off("aiStreamChunk");
+      socket.off("aiStreamEnd");
       socket.off("userTyping");
       socket.off("userStopTyping");
     };
@@ -281,6 +300,21 @@ export default function RoomPage() {
 
       <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} />
       <div ref={bottomRef} />
+
+      {/* Streaming AI bubbles */}
+      {streamingMsgs.size > 0 && (
+        <div className="space-y-3 px-4 py-2">
+          {Array.from(streamingMsgs.entries()).map(([tempId, { text, sarcasm }]) => (
+            <div key={tempId} className="flex flex-col items-start">
+              <span className="mb-1 text-xs text-indigo-400/70">AI {sarcasm ? "· sarcasm detected" : ""}</span>
+              <div className="max-w-prose rounded-2xl rounded-tl-sm bg-indigo-950/60 px-4 py-2 text-sm leading-relaxed text-indigo-100 ring-1 ring-indigo-500/20">
+                {text}
+                <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-indigo-400 align-middle" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <FunctionsBar onSummarize={() => setSummarizeModalOpen(true)} summarizing={summarizing} onVibeSearch={() => setVibeSearchOpen(true)} />
 

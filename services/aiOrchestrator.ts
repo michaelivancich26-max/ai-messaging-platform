@@ -8,6 +8,8 @@ const client = new Anthropic();
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
 const SCAN_INTERVAL_MS = 30_000;
+const STREAM_CHUNK_SIZE = 3;   // characters per emit
+const STREAM_DELAY_MS = 18;    // ms between chunks (~55 chars/sec — readable typing speed)
 
 type Deps = {
   redis: RedisClientType | ReturnType<typeof import("redis").createClient>;
@@ -29,10 +31,6 @@ type AIResponse = {
   }>;
 };
 
-// In-memory timers: roomId → NodeJS.Timeout
-// When the first message arrives in a quiet room, we start a 30s timer.
-// Subsequent messages in that window just add to the Redis context — no new timer.
-// After 30s, AI scans everything that came in and emits corrections.
 const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 async function getChatContext(roomId: string, redis: Deps["redis"]): Promise<string> {
@@ -43,13 +41,45 @@ async function getChatContext(roomId: string, redis: Deps["redis"]): Promise<str
   return messages.map((m) => `[${m.username ?? m.role}]: ${m.content}`).join("\n");
 }
 
-async function emitAIMessage(content: string, roomId: string, prisma: PrismaClient, io: Server) {
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+// Stream the human-readable text portion of an issue, then save and emit the real message.
+// Ambiguity issues have no text to stream — they go through normal emit.
+async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClient, io: Server) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
   if (!room) return;
-  const aiMessage = await prisma.message.create({
-    data: { content, senderType: SenderType.AI, roomId: room.id, userId: null },
+
+  // Ambiguity cards are structured — no meaningful text to stream, emit instantly
+  if (payload.type === "ambiguity") {
+    const msg = await prisma.message.create({
+      data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
+    });
+    io.to(roomId).emit("message", { ...msg, type: "ai_interjection" });
+    return;
+  }
+
+  // Factual correction — stream the text then resolve into a real message
+  const tempId = `ai-stream-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const text = payload.text;
+
+  // Signal stream start (type + sarcasm flag so frontend can style the bubble)
+  io.to(roomId).emit("aiStreamStart", { tempId, sarcasm: payload.sarcasm });
+
+  // Drip characters
+  for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
+    io.to(roomId).emit("aiStreamChunk", { tempId, chunk: text.slice(i, i + STREAM_CHUNK_SIZE) });
+    await sleep(STREAM_DELAY_MS);
+  }
+
+  // Save complete message to DB
+  const msg = await prisma.message.create({
+    data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
   });
-  io.to(roomId).emit("message", { ...aiMessage, type: "ai_interjection" });
+
+  // Replace streaming bubble with the real persisted message
+  io.to(roomId).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
 
 async function runScan(roomId: string, { redis, io, prisma, settings }: Deps) {
@@ -65,19 +95,17 @@ async function runScan(roomId: string, { redis, io, prisma, settings }: Deps) {
   const systemPrompt = [
     "You are a real-time chat assistant monitoring a group conversation.",
     "Scan ALL messages below and return ONLY valid JSON with this shape:",
-    '{',
-    '  "issues": []',
-    '}',
-    '',
-    'Each element of "issues" is one of:',
-    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<polite 1-2 sentence correction>" }' : '',
-    wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" } }' : '',
-    '',
-    'Rules:',
-    'FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim (wrong date, location, attribution). Set sarcasm:true if the claim is intentionally ironic/joking.',
-    'RESOLVE_AMBIGUITY: a message uses a pronoun (it, he, she, they, there, that, this) whose referent is genuinely unclear but resolvable from context.',
-    'Report every issue you find — there may be 0, 1, or several across different messages.',
-    'Ignore opinions, greetings, and statements that are correct or simply informal.',
+    '{ "issues": [] }',
+    "",
+    "Each element of \"issues\" is one of:",
+    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<polite 1-2 sentence correction>" }' : "",
+    wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" } }' : "",
+    "",
+    "Rules:",
+    "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim (wrong date, location, attribution). Set sarcasm:true if the claim is intentionally ironic/joking.",
+    "RESOLVE_AMBIGUITY: a message uses a pronoun (it, he, she, they, there, that, this) whose referent is genuinely unclear but resolvable from context.",
+    "Report every issue you find — there may be 0, 1, or several across different messages.",
+    "Ignore opinions, greetings, and statements that are correct or simply informal.",
     'Return { "issues": [] } if nothing stands out.',
   ].filter(Boolean).join("\n");
 
@@ -103,24 +131,20 @@ async function runScan(roomId: string, { redis, io, prisma, settings }: Deps) {
 
   console.log(`[AI] Found ${parsed.issues.length} issue(s) in room ${roomId}`);
 
-  // Emit one message per issue, in parallel
-  await Promise.all(
-    parsed.issues.map((issue) => {
-      let payload: Issue | null = null;
-      if (issue.type === "FACTUAL_UNCERTAINTY" && wantFactual && issue.factual_correction) {
-        payload = { type: "factual", text: issue.factual_correction, sarcasm: issue.sarcasm ?? false };
-      } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
-        payload = { type: "ambiguity", ...issue.ambiguity };
-      }
-      return payload ? emitAIMessage(JSON.stringify(payload), roomId, prisma, io) : Promise.resolve();
-    })
-  );
+  // Stream issues sequentially so bubbles don't all start at once
+  for (const issue of parsed.issues) {
+    let payload: Issue | null = null;
+    if (issue.type === "FACTUAL_UNCERTAINTY" && wantFactual && issue.factual_correction) {
+      payload = { type: "factual", text: issue.factual_correction, sarcasm: issue.sarcasm ?? false };
+    } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
+      payload = { type: "ambiguity", ...issue.ambiguity };
+    }
+    if (payload) await streamAndSave(payload, roomId, prisma, io);
+  }
 }
 
-// Called from server.ts on every incoming human message.
-// Starts a 30s timer the first time; subsequent messages in the window just extend the context.
 export function scheduleAI(roomId: string, deps: Deps) {
-  if (pendingTimers.has(roomId)) return; // timer already running, context will accumulate
+  if (pendingTimers.has(roomId)) return;
   const timer = setTimeout(() => runScan(roomId, deps), SCAN_INTERVAL_MS);
   pendingTimers.set(roomId, timer);
 }
