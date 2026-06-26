@@ -142,37 +142,57 @@ function ImageMessage({ payload, isSelf }: { payload: ImagePayload; isSelf: bool
   );
 }
 
+function Avatar({ username, avatarUrl, size = 7 }: { username: string; avatarUrl?: string | null; size?: number }) {
+  const sz = `h-${size} w-${size}`;
+  if (avatarUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={avatarUrl} alt={username} className={`${sz} rounded-full object-cover shrink-0`} />;
+  }
+  return (
+    <span className={`${sz} flex items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300 shrink-0`}>
+      {username[0]?.toUpperCase()}
+    </span>
+  );
+}
+
+export { Avatar };
+
 export default function MessageBubble({ message, isSelf, annotation, highlighted }: Props) {
   const username = message.user?.username ?? "unknown";
+  const avatarUrl = (message.user as any)?.avatarUrl ?? null;
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const imagePayload = parseImageContent(message.content);
 
   return (
-    <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"} ${highlighted ? "animate-pulse" : ""}`}>
-      <span className="mb-1 text-xs text-gray-500">
-        {isSelf ? "You" : username} · {time}
-      </span>
+    <div className={`flex items-end gap-2 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
+      {!isSelf && <Avatar username={username} avatarUrl={avatarUrl} size={7} />}
 
-      {imagePayload ? (
-        <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
-          <ImageMessage payload={imagePayload} isSelf={isSelf} />
-        </div>
-      ) : (
-        <div
-          className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
-            highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
-          } ${
-            isSelf
-              ? "rounded-tr-sm bg-indigo-600 text-white"
-              : "rounded-tl-sm bg-gray-800 text-gray-100"
-          }`}
-        >
-          {annotation
-            ? <HighlightedContent content={message.content} annotation={annotation} />
-            : message.content
-          }
-        </div>
-      )}
+      <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
+        <span className="mb-1 text-xs text-gray-500">
+          {isSelf ? "You" : username} · {time}
+        </span>
+
+        {imagePayload ? (
+          <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
+            <ImageMessage payload={imagePayload} isSelf={isSelf} />
+          </div>
+        ) : (
+          <div
+            className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
+              highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
+            } ${
+              isSelf
+                ? "rounded-tr-sm bg-indigo-600 text-white"
+                : "rounded-tl-sm bg-gray-800 text-gray-100"
+            }`}
+          >
+            {annotation
+              ? <HighlightedContent content={message.content} annotation={annotation} />
+              : message.content
+            }
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -21,6 +21,7 @@ interface DMRoom {
 interface User {
   id: string;
   username: string;
+  avatarUrl?: string | null;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -228,9 +229,10 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                         <li key={u.id}>
                           <button onClick={() => openDM(u)}
                             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-800 transition-colors text-left">
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300">
-                              {u.username[0].toUpperCase()}
-                            </span>
+                            {u.avatarUrl
+                              ? <img src={u.avatarUrl} alt={u.username} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                              : <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300 shrink-0">{u.username[0].toUpperCase()}</span>
+                            }
                             <span className="text-xs text-gray-200">{u.username}</span>
                           </button>
                         </li>
@@ -259,8 +261,15 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
         </div>
       </nav>
 
-      {/* Sign out */}
-      <div className="border-t border-gray-800 p-2">
+      {/* Profile + Sign out */}
+      <div className="border-t border-gray-800 p-2 space-y-0.5">
+        <button onClick={() => router.push("/profile")}
+          className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors ${collapsed ? "justify-center" : ""}`}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
+            <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
+          </svg>
+          {!collapsed && <span className="text-sm">Profile</span>}
+        </button>
         <button onClick={() => signOut({ callbackUrl: "/" })}
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors ${collapsed ? "justify-center" : ""}`}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">

@@ -287,7 +287,7 @@ app.get("/api/lobby", async (req, res) => {
       }),
       prisma.user.findMany({
         where: { id: { not: userId } },
-        select: { id: true, username: true },
+        select: { id: true, username: true, avatarUrl: true },
         orderBy: { username: "asc" },
       }),
     ]);
@@ -368,6 +368,38 @@ app.get("/api/messages/:id/image", async (req, res) => {
     if (!msg || !msg.content.startsWith('{"type":"image"')) return res.status(404).json({ error: "Not found" });
     const parsed = JSON.parse(msg.content);
     res.json({ src: parsed.src, filename: parsed.filename });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/users/:id/profile
+app.get("/api/users/:id/profile", async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, username: true, bio: true, avatarUrl: true, createdAt: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// PATCH /api/users/:id/profile
+app.patch("/api/users/:id/profile", async (req, res) => {
+  const { bio, avatarUrl } = req.body as { bio?: string; avatarUrl?: string };
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        ...(bio !== undefined && { bio: bio.trim().slice(0, 500) }),
+        ...(avatarUrl !== undefined && { avatarUrl }),
+      },
+      select: { id: true, username: true, bio: true, avatarUrl: true },
+    });
+    res.json(user);
   } catch {
     res.status(500).json({ error: "Server error" });
   }
@@ -835,6 +867,17 @@ async function start() {
     console.log("[DB] GraphNodeMessage table ready");
   } catch (e) {
     console.error("[DB] GraphNodeMessage setup failed:", e);
+  }
+
+  // Ensure User profile columns exist (Railway migration history can get out of sync)
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bio" TEXT;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT;
+    `);
+    console.log("[DB] User profile columns ready");
+  } catch (e) {
+    console.error("[DB] User profile columns setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
