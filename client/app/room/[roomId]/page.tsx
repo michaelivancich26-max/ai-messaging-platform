@@ -11,6 +11,7 @@ import FunctionsBar from "@/components/FunctionsBar";
 import SummarizeModal from "@/components/SummarizeModal";
 import VibeSearch from "@/components/VibeSearch";
 import RoomDetails from "@/components/RoomDetails";
+import Sidebar from "@/components/Sidebar";
 import { AIStreamingCard } from "@/components/AIInterjectionCard";
 import type { ChatMessage } from "@/lib/types";
 import type { Settings } from "@/components/SettingsPanel";
@@ -262,13 +263,10 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar activeRoomName={roomId} />
+      <div className="flex flex-1 flex-col min-w-0">
       <header className="flex items-center gap-3 border-b border-gray-800 px-6 py-4">
-        <button onClick={() => router.push("/lobby")} className="text-gray-500 hover:text-gray-300">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-            <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
-          </svg>
-        </button>
         <span className="text-lg font-semibold">{dmPartner ? `@ ${dmPartner}` : `#${roomId}`}</span>
         <span className="ml-auto text-sm text-gray-500">{username}</span>
         <button onClick={() => setDetailsOpen((v) => !v)}
@@ -354,6 +352,7 @@ export default function RoomPage() {
           onMetaUpdate={(meta) => setRoomMeta(meta)}
         />
       )}
+      </div>
     </div>
   );
 }
