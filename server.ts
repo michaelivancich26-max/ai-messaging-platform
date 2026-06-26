@@ -696,6 +696,47 @@ app.get("/api/graph", async (req, res) => {
       prisma.graphEdge.findMany({ where: edgeWhere, orderBy: { createdAt: "asc" } }),
       prisma.room.findMany({ where: roomWhere, select: { id: true, name: true } }),
     ]);
+
+    // Person nodes are global — pull in any person node referenced by these edges
+    // that may live in a different room (cross-room deduplication side-effect)
+    let crossRoomPersonNodes: typeof rawNodes = [];
+    if (roomIdFilter) {
+      const edgeNodeIds = new Set(edges.flatMap(e => [e.fromNodeId, e.toNodeId]));
+      if (edgeNodeIds.size > 0) {
+        crossRoomPersonNodes = await prisma.graphNode.findMany({
+          where: {
+            id: { in: [...edgeNodeIds] },
+            type: "person",
+            NOT: { roomId: { in: roomIdFilter } },
+          },
+          orderBy: { createdAt: "asc" },
+        });
+      }
+    }
+
+    // Merge all nodes then deduplicate person nodes by label (they're global — same person = same node)
+    const allNodes = [...rawNodes, ...crossRoomPersonNodes];
+    const personCanonical = new Map<string, string>(); // label.toLowerCase() → canonical id
+    const idRemap = new Map<string, string>();          // duplicate id → canonical id
+    for (const n of allNodes) {
+      if (n.type !== "person") continue;
+      const key = n.label.toLowerCase().trim();
+      if (personCanonical.has(key)) {
+        idRemap.set(n.id, personCanonical.get(key)!);
+      } else {
+        personCanonical.set(key, n.id);
+      }
+    }
+
+    // Remap edge endpoints to canonical person ids, drop self-loops
+    const dedupedEdges = edges
+      .map(e => ({
+        ...e,
+        fromNodeId: idRemap.get(e.fromNodeId) ?? e.fromNodeId,
+        toNodeId: idRemap.get(e.toNodeId) ?? e.toNodeId,
+      }))
+      .filter(e => e.fromNodeId !== e.toNodeId);
+
     // GraphNodeMessage may not exist yet on some deployments — degrade gracefully
     let counts: CountRow[] = [];
     try {
@@ -704,8 +745,15 @@ app.get("/api/graph", async (req, res) => {
       console.error("[Graph] GraphNodeMessage count query failed:", err);
     }
     const countMap = new Map(counts.map((r) => [r.nodeId, Number(r.count)]));
-    const nodes = rawNodes.map((n) => ({ ...n, correctionCount: countMap.get(n.id) ?? 0 }));
-    res.json({ nodes, edges, rooms });
+    // Sum correction counts for any remapped duplicates into their canonical node
+    for (const [dupId, canonId] of idRemap) {
+      const dupCount = countMap.get(dupId) ?? 0;
+      if (dupCount > 0) countMap.set(canonId, (countMap.get(canonId) ?? 0) + dupCount);
+    }
+    const nodes = allNodes
+      .filter(n => !idRemap.has(n.id))
+      .map(n => ({ ...n, correctionCount: countMap.get(n.id) ?? 0 }));
+    res.json({ nodes, edges: dedupedEdges, rooms });
   } catch (err) {
     console.error("[Graph] Error:", err);
     res.status(500).json({ error: "Server error" });

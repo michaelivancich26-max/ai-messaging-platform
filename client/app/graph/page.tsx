@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { parseAIContent } from "@/lib/types";
+import { getSocket } from "@/lib/socket";
 
 interface GNode {
   id: string;
@@ -82,20 +83,20 @@ export default function GraphPage() {
   const W = typeof window !== "undefined" ? window.innerWidth - 256 - 2 : 1000;
   const H = typeof window !== "undefined" ? window.innerHeight : 700;
 
-  useEffect(() => {
-    if (status !== "authenticated" || !userId) return;
-
+  const fetchGraph = useCallback(() => {
+    if (!userId) return;
     fetch(`${SERVER}/api/graph?userId=${encodeURIComponent(userId)}`)
       .then(r => r.json())
       .then(data => {
         const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = data.nodes ?? [];
-        const initialized = rawNodes.map(n => ({
-          ...n,
-          correctionCount: n.correctionCount ?? 0,
-          x: W / 2 + (Math.random() - 0.5) * 300,
-          y: H / 2 + (Math.random() - 0.5) * 300,
-          vx: 0, vy: 0,
-        }));
+        // Preserve existing positions for nodes already in the simulation
+        const existingById = new Map(nodesRef.current.map(n => [n.id, n]));
+        const initialized = rawNodes.map(n => {
+          const existing = existingById.get(n.id);
+          return existing
+            ? { ...existing, correctionCount: n.correctionCount ?? 0 }
+            : { ...n, correctionCount: n.correctionCount ?? 0, x: W / 2 + (Math.random() - 0.5) * 300, y: H / 2 + (Math.random() - 0.5) * 300, vx: 0, vy: 0 };
+        });
         nodesRef.current = initialized;
         setNodes(initialized);
         setEdges(data.edges ?? []);
@@ -103,7 +104,19 @@ export default function GraphPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [status, userId]);
+  }, [userId, W, H]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !userId) return;
+    fetchGraph();
+  }, [status, userId, fetchGraph]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !userId) return;
+    const socket = getSocket();
+    socket.on("graphUpdate", fetchGraph);
+    return () => { socket.off("graphUpdate", fetchGraph); };
+  }, [status, userId, fetchGraph]);
 
   // Force simulation
   useEffect(() => {
@@ -133,12 +146,12 @@ export default function GraphPage() {
         }
       }
 
-      // Attraction along edges
+      // Attraction along edges (use edges state directly; idRemap captured via closure)
       const idToIdx = new Map(ns.map((n, i) => [n.id, i]));
       for (const e of edges) {
         const i = idToIdx.get(e.fromNodeId);
         const j = idToIdx.get(e.toNodeId);
-        if (i == null || j == null) continue;
+        if (i == null || j == null || i === j) continue;
         const dx = ns[j].x - ns[i].x;
         const dy = ns[j].y - ns[i].y;
         ns[i].vx += dx * ATTRACT; ns[i].vy += dy * ATTRACT;
@@ -172,11 +185,14 @@ export default function GraphPage() {
   const roomNameMap = new Map(rooms.map(r => [r.id, r.name]));
 
   const visibleNodes = nodesRef.current.filter(n =>
-    (selectedRoomIds.size === 0 || selectedRoomIds.has(n.roomId)) &&
+    // Person nodes are global — show them regardless of which room they were originally created in
+    (selectedRoomIds.size === 0 || selectedRoomIds.has(n.roomId) || n.type === "person") &&
     (!filterType || n.type === filterType)
   );
   const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-  const visibleEdges = edges.filter(e => visibleNodeIds.has(e.fromNodeId) && visibleNodeIds.has(e.toNodeId));
+  const visibleEdges = edges.filter(e =>
+    visibleNodeIds.has(e.fromNodeId) && visibleNodeIds.has(e.toNodeId)
+  );
 
   const selectedEdges = selected
     ? edges.filter(e => e.fromNodeId === selected.id || e.toNodeId === selected.id)

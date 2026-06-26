@@ -60,9 +60,14 @@ async function linkMessageToEntities(
 ) {
   if (!relatedEntities?.length) return;
   for (const label of relatedEntities) {
-    const node = await prisma.graphNode.findUnique({
-      where: { label_roomId: { label: label.trim().slice(0, 100), roomId } },
+    const trimmed = label.trim().slice(0, 100);
+    // Try room-scoped node first; fall back to any person node with this label (cross-room)
+    let node = await prisma.graphNode.findUnique({
+      where: { label_roomId: { label: trimmed, roomId } },
     });
+    if (!node) {
+      node = await prisma.graphNode.findFirst({ where: { label: trimmed, type: "person" } });
+    }
     if (!node) continue;
     // Raw upsert — bypasses generated-client relation types which may be stale on Railway
     await prisma.$executeRaw`
@@ -127,8 +132,8 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
   if (!context.trim()) return;
 
   const personaLine = aiPersona
-    ? `You are playing the role of: ${aiPersona}. Stay in character in your corrections and tone, but remain helpful and concise.`
-    : "You are a real-time chat assistant monitoring a group conversation.";
+    ? `You are playing the role of: ${aiPersona}. Stay in character in your corrections and tone, but be blunt and concise — one sentence max.`
+    : "You are a fact-checking system. No personality. No hedging. No preamble.";
 
   const systemPrompt = [
     personaLine,
@@ -136,10 +141,10 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     '{ "issues": [], "entities": [], "relations": [] }',
     "",
     "\"issues\" — each element is one of:",
-    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<polite 1-2 sentence correction>", "relatedEntities": ["<entity name>", ...] }' : "",
+    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<one blunt sentence stating the correct fact, no softening, no \'actually\', no apology>", "relatedEntities": ["<entity name>", ...] }' : "",
     wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" }, "relatedEntities": ["<entity name>", ...] }' : "",
     "",
-    "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim. Set sarcasm:true if intentionally ironic.",
+    "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim. Only flag clear, verifiable errors — not opinions or estimates. Set sarcasm:true if the original claim was intentionally ironic. Write the correction as a raw fact: e.g. \"Mount Everest is 8,849 m tall.\" not \"Actually, I think you'll find...\"",
     "RESOLVE_AMBIGUITY: a pronoun whose referent is unclear but resolvable from context.",
     "relatedEntities: names from the \"entities\" array that this specific issue is about. Use exact same names.",
     "",
@@ -181,7 +186,7 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
 
   // Persist graph entities first so nodes exist when we link corrections to them
   if (parsed.entities?.length || parsed.relations?.length) {
-    await persistGraph(roomName, parsed.entities ?? [], parsed.relations ?? [], prisma);
+    await persistGraph(roomName, parsed.entities ?? [], parsed.relations ?? [], prisma, io);
   }
 
   // Stream issues sequentially so bubbles don't all start at once
@@ -201,21 +206,37 @@ async function persistGraph(
   entities: NonNullable<AIResponse["entities"]>,
   relations: NonNullable<AIResponse["relations"]>,
   prisma: PrismaClient,
+  io: Server,
 ) {
   try {
     const room = await prisma.room.findUnique({ where: { name: roomName } });
     if (!room) return;
 
-    // Upsert nodes (deduped by label+roomId)
+    // Upsert nodes (deduped by label+roomId, except persons which are global)
     const nodeMap = new Map<string, string>(); // label → id
     for (const e of entities) {
       if (!e.name?.trim()) continue;
       const label = e.name.trim().slice(0, 100);
-      const node = await prisma.graphNode.upsert({
-        where: { label_roomId: { label, roomId: room.id } },
-        update: {},
-        create: { label, type: e.type ?? "concept", roomId: room.id },
-      });
+      let node;
+      if (e.type === "person") {
+        // People are global — reuse any existing node with this label across all rooms
+        const existing = await prisma.graphNode.findFirst({
+          where: { label, type: "person" },
+        });
+        if (existing) {
+          node = existing;
+        } else {
+          node = await prisma.graphNode.create({
+            data: { label, type: "person", roomId: room.id },
+          });
+        }
+      } else {
+        node = await prisma.graphNode.upsert({
+          where: { label_roomId: { label, roomId: room.id } },
+          update: {},
+          create: { label, type: e.type ?? "concept", roomId: room.id },
+        });
+      }
       nodeMap.set(label.toLowerCase(), node.id);
     }
 
@@ -236,6 +257,7 @@ async function persistGraph(
     }
 
     console.log(`[Graph] Persisted ${nodeMap.size} nodes, ${relations.length} relation(s) for room ${roomName}`);
+    if (nodeMap.size > 0) io.emit("graphUpdate");
   } catch (err) {
     console.error("[Graph] Persist error:", err);
   }

@@ -187,11 +187,15 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
         <div className="space-y-0.5 px-1">
           {unsectionedChannels.map(renderChannel)}
           {addingChannelToSection === "root" && (
-            <input autoFocus value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") addChannel(null); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
-              onBlur={() => { if (!newChannelName.trim()) { setAddingChannelToSection(null); } }}
-              placeholder="channel-name"
-              className="mx-1 w-[calc(100%-8px)] rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+            <div className="mx-1 flex gap-1">
+              <input autoFocus value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") addChannel(null); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
+                onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
+                placeholder="channel-name"
+                className="min-w-0 flex-1 rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+              <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(null)}
+                className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500">✓</button>
+            </div>
           )}
         </div>
       </div>
@@ -223,7 +227,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
               )}
 
               {canEdit && !isRenamingSection && (
-                <div className="hidden gap-0.5 group-hover:flex">
+                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 md:opacity-0 max-md:opacity-100">
                   <button onClick={() => setAddingChannelToSection(sec.id)}
                     className="rounded p-0.5 text-gray-600 hover:text-indigo-400">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -250,11 +254,15 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
               <div className="space-y-0.5 px-1">
                 {secChannels.map(renderChannel)}
                 {addingChannelToSection === sec.id && (
-                  <input autoFocus value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") addChannel(sec.id); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
-                    onBlur={() => { if (!newChannelName.trim()) { setAddingChannelToSection(null); } }}
-                    placeholder="channel-name"
-                    className="mx-1 w-[calc(100%-8px)] rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+                  <div className="mx-1 flex gap-1">
+                    <input autoFocus value={newChannelName} onChange={e => setNewChannelName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") addChannel(sec.id); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
+                      onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
+                      placeholder="channel-name"
+                      className="min-w-0 flex-1 rounded bg-gray-700 px-2 py-1 text-xs text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-600" />
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(sec.id)}
+                      className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500">✓</button>
+                  </div>
                 )}
               </div>
             )}
