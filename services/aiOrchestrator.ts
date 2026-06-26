@@ -129,6 +129,9 @@ async function runScan(roomId: string, { redis, io, prisma, settings }: Deps) {
     return;
   }
 
+  // Clear the window so the next scan only sees new messages
+  await (redis as any).del(WINDOW_KEY(roomId));
+
   console.log(`[AI] Found ${parsed.issues.length} issue(s) in room ${roomId}`);
 
   // Stream issues sequentially so bubbles don't all start at once
