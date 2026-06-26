@@ -39,6 +39,7 @@ export default function LobbyPage() {
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showNewDM, setShowNewDM] = useState(false);
+  const [dmSearch, setDmSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -218,7 +219,7 @@ export default function LobbyPage() {
         <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
             <span className="text-sm font-medium text-gray-300">Direct Messages</span>
-            <button onClick={() => setShowNewDM((v) => !v)}
+            <button onClick={() => { setShowNewDM((v) => !v); setDmSearch(""); }}
               className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-indigo-400 hover:bg-indigo-500/10 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
                 <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
@@ -228,25 +229,41 @@ export default function LobbyPage() {
           </div>
 
           {showNewDM && (
-            <div className="border-b border-gray-800 bg-gray-950/50 max-h-48 overflow-y-auto">
-              {users.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-gray-500">No other users yet.</p>
-              ) : users.map((u) => (
-                <button key={u.id} onClick={() => openDM(u)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 hover:bg-gray-800 transition-colors text-left border-b border-gray-800/40 last:border-0">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300">
-                    {u.username[0].toUpperCase()}
-                  </span>
-                  <span className="text-sm text-gray-200">{u.username}</span>
-                </button>
-              ))}
+            <div className="border-b border-gray-800 bg-gray-950/50">
+              <div className="px-3 py-2">
+                <input
+                  autoFocus
+                  value={dmSearch}
+                  onChange={(e) => setDmSearch(e.target.value)}
+                  placeholder="Search users…"
+                  className="w-full rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                {(() => {
+                  const filtered = users.filter((u) =>
+                    u.username.toLowerCase().includes(dmSearch.toLowerCase())
+                  );
+                  if (users.length === 0) return <p className="px-4 py-3 text-sm text-gray-500">No other users yet.</p>;
+                  if (filtered.length === 0) return <p className="px-4 py-3 text-sm text-gray-500">No users match "{dmSearch}".</p>;
+                  return filtered.map((u) => (
+                    <button key={u.id} onClick={() => openDM(u)}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 hover:bg-gray-800 transition-colors text-left border-b border-gray-800/40 last:border-0">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300">
+                        {u.username[0].toUpperCase()}
+                      </span>
+                      <span className="text-sm text-gray-200">{u.username}</span>
+                    </button>
+                  ));
+                })()}
+              </div>
             </div>
           )}
 
           {loading ? (
             <div className="py-10 text-center text-sm text-gray-500">Loading…</div>
-          ) : dms.length === 0 && !showNewDM ? (
-            <div className="py-10 text-center text-sm text-gray-500">No messages yet — start one above.</div>
+          ) : dms.length === 0 ? (
+            <div className="py-6 text-center text-sm text-gray-500">No DMs yet — start one above.</div>
           ) : (
             <ul>
               {dms.map((dm, i) => (
