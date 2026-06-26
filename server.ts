@@ -220,6 +220,14 @@ io.on("connection", (socket) => {
     }
   );
 
+  socket.on("typing", ({ roomId }: { roomId: string }) => {
+    socket.to(roomId).emit("userTyping", { userId: socketUser.id, username: socketUser.username });
+  });
+
+  socket.on("stopTyping", ({ roomId }: { roomId: string }) => {
+    socket.to(roomId).emit("userStopTyping", { userId: socketUser.id });
+  });
+
   socket.on("summarize", async ({ roomId, since }: { roomId: string; since: string | null }) => {
     await summarizeConversation({ roomId, redis, io, prisma, since, socketId: socket.id });
     socket.emit("summarizeDone");

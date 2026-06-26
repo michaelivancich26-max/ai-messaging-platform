@@ -1,22 +1,38 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 interface Props {
   onSend: (content: string) => void;
+  onTyping?: () => void;
+  onStopTyping?: () => void;
 }
 
-export default function MessageInput({ onSend }: Props) {
+export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) {
   const [value, setValue] = useState("");
   const [imageError, setImageError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const stopTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTyping = useRef(false);
+
+  const emitTyping = useCallback(() => {
+    if (!isTyping.current) { isTyping.current = true; onTyping?.(); }
+    if (stopTypingTimer.current) clearTimeout(stopTypingTimer.current);
+    stopTypingTimer.current = setTimeout(() => {
+      isTyping.current = false;
+      onStopTyping?.();
+    }, 2000);
+  }, [onTyping, onStopTyping]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = value.trim();
     if (!trimmed) return;
+    isTyping.current = false;
+    if (stopTypingTimer.current) clearTimeout(stopTypingTimer.current);
+    onStopTyping?.();
     onSend(trimmed);
     setValue("");
   }
@@ -25,7 +41,13 @@ export default function MessageInput({ onSend }: Props) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const trimmed = value.trim();
-      if (trimmed) { onSend(trimmed); setValue(""); }
+      if (trimmed) {
+        isTyping.current = false;
+        if (stopTypingTimer.current) clearTimeout(stopTypingTimer.current);
+        onStopTyping?.();
+        onSend(trimmed);
+        setValue("");
+      }
     }
   }
 
@@ -81,7 +103,7 @@ export default function MessageInput({ onSend }: Props) {
 
         <textarea
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => { setValue(e.target.value); if (e.target.value) emitTyping(); }}
           onKeyDown={handleKeyDown}
           placeholder="Message… (Enter to send, Shift+Enter for newline)"
           rows={1}

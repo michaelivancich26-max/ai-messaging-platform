@@ -46,6 +46,7 @@ export default function RoomPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [onlineMembers, setOnlineMembers] = useState<{ userId: string; username: string }[]>([]);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +90,12 @@ export default function RoomPage() {
     socket.on("kicked", () => { alert("You were kicked from this room."); router.push("/lobby"); });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
+    socket.on("userTyping", ({ userId: uid, username: uname }: { userId: string; username: string }) => {
+      setTypingUsers((prev) => new Map(prev).set(uid, uname));
+    });
+    socket.on("userStopTyping", ({ userId: uid }: { userId: string }) => {
+      setTypingUsers((prev) => { const next = new Map(prev); next.delete(uid); return next; });
+    });
     const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
     socket.emit("joinRoom", { roomId, roomName: roomId, password: roomPassword });
 
@@ -154,12 +161,22 @@ export default function RoomPage() {
       socket.off("kicked");
       socket.off("roomMembers");
       socket.off("roomMeta");
+      socket.off("userTyping");
+      socket.off("userStopTyping");
     };
   }, [status, roomId, userId, username]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  function emitTyping() {
+    getSocket({ id: userId, username }).emit("typing", { roomId });
+  }
+
+  function emitStopTyping() {
+    getSocket({ id: userId, username }).emit("stopTyping", { roomId });
+  }
 
   function kickUser(targetUserId: string) {
     const s = getSocket({ id: userId, username });
@@ -266,7 +283,28 @@ export default function RoomPage() {
       <div ref={bottomRef} />
 
       <FunctionsBar onSummarize={() => setSummarizeModalOpen(true)} summarizing={summarizing} onVibeSearch={() => setVibeSearchOpen(true)} />
-      <MessageInput onSend={sendMessage} />
+
+      {/* Typing indicator */}
+      {typingUsers.size > 0 && (() => {
+        const names = Array.from(typingUsers.values());
+        const label = names.length === 1
+          ? `${names[0]} is typing`
+          : names.length === 2
+          ? `${names[0]} and ${names[1]} are typing`
+          : `${names[0]} and ${names.length - 1} others are typing`;
+        return (
+          <div className="flex items-center gap-2 px-5 py-1.5 text-xs text-gray-400">
+            <span className="flex gap-0.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+            </span>
+            <span>{label}</span>
+          </div>
+        );
+      })()}
+
+      <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} />
 
       {summarizeModalOpen && (
         <SummarizeModal onConfirm={summarize} onClose={() => setSummarizeModalOpen(false)} />
