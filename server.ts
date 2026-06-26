@@ -677,7 +677,8 @@ app.get("/api/graph", async (req, res) => {
       roomIdFilter = [scopeRoomId];
     } else if (userId) {
       const memberships = await prisma.roomMember.findMany({ where: { userId }, select: { roomId: true } });
-      roomIdFilter = memberships.map(m => m.roomId);
+      // Only apply filter when the user actually has memberships; an empty array would return nothing
+      if (memberships.length > 0) roomIdFilter = memberships.map(m => m.roomId);
     }
 
     const roomWhere = roomIdFilter ? { id: { in: roomIdFilter }, isDM: false } : { isDM: false };

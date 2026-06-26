@@ -124,6 +124,14 @@ export default function RoomPage() {
     const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
     socket.emit("joinRoom", { roomId, roomName: roomId, password: roomPassword });
 
+    // Backfill membership for users who entered this room before RoomMember existed
+    if (userId && !roomId.startsWith("dm-")) {
+      fetch(`${SERVER}/api/rooms/${roomId}/join`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      }).catch(() => {});
+    }
+
     socket.on("history", (history: ChatMessage[]) => {
       const restoredAnnotations: Record<string, { pronoun: string; referent: string }> = {};
       const visibleMessages: ChatMessage[] = [];
