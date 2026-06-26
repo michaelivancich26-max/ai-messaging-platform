@@ -27,11 +27,12 @@ interface Props {
   onClose: () => void;
   onKick: (userId: string) => void;
   onMetaUpdate: (meta: RoomMeta) => void;
+  onDelete?: () => void;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
-export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId, isOwner, isAdmin, onClose, onKick, onMetaUpdate }: Props) {
+export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId, isOwner, isAdmin, onClose, onKick, onMetaUpdate, onDelete }: Props) {
   const canEdit = isOwner || isAdmin;
 
   const [editDesc, setEditDesc] = useState(meta?.description ?? "");
@@ -42,6 +43,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [confirmKick, setConfirmKick] = useState<Member | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Sync local state when meta changes from socket
   const [lastMetaId, setLastMetaId] = useState<string | null>(null);
@@ -244,6 +246,18 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
+
+            {onDelete && (
+              <div className="border-t border-gray-800 pt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">Danger zone</p>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="w-full rounded-lg border border-red-900/50 bg-red-950/30 py-2 text-sm font-semibold text-red-400 hover:bg-red-950/60 transition-colors"
+                >
+                  Delete room
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -255,6 +269,16 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
           confirmLabel="Kick"
           onConfirm={() => { onKick(confirmKick.userId); setConfirmKick(null); }}
           onCancel={() => setConfirmKick(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          title={`Delete "${meta?.name}"?`}
+          message="All messages will be permanently deleted and everyone will be removed. This cannot be undone."
+          confirmLabel="Delete room"
+          onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
+          onCancel={() => setConfirmDelete(false)}
         />
       )}
     </div>

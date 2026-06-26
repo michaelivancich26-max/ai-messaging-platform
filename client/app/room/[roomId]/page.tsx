@@ -204,6 +204,14 @@ export default function RoomPage() {
     s.emit("kick", { roomId, targetUserId });
   }
 
+  async function deleteRoom() {
+    const res = await fetch(`${SERVER}/api/rooms/${roomId}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    if (res.ok) router.push("/lobby");
+  }
+
   function sendMessage(content: string) {
     // Optimistic: show message immediately with a temp id
     const tempId = `temp-${Date.now()}`;
@@ -350,6 +358,7 @@ export default function RoomPage() {
           onClose={() => setDetailsOpen(false)}
           onKick={kickUser}
           onMetaUpdate={(meta) => setRoomMeta(meta)}
+          onDelete={(isOwner || isAdmin) ? deleteRoom : undefined}
         />
       )}
       </div>
