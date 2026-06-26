@@ -691,16 +691,23 @@ app.get("/api/graph", async (req, res) => {
     const edgeWhere = roomIdFilter ? { roomId: { in: roomIdFilter } } : {};
 
     type CountRow = { nodeId: string; count: bigint };
-    const [rawNodes, edges, rooms, counts] = await Promise.all([
+    const [rawNodes, edges, rooms] = await Promise.all([
       prisma.graphNode.findMany({ where: nodeWhere, orderBy: { createdAt: "asc" } }),
       prisma.graphEdge.findMany({ where: edgeWhere, orderBy: { createdAt: "asc" } }),
       prisma.room.findMany({ where: roomWhere, select: { id: true, name: true } }),
-      prisma.$queryRaw<CountRow[]>`SELECT "nodeId", COUNT(*) AS count FROM "GraphNodeMessage" GROUP BY "nodeId"`,
     ]);
+    // GraphNodeMessage may not exist yet on some deployments — degrade gracefully
+    let counts: CountRow[] = [];
+    try {
+      counts = await prisma.$queryRaw<CountRow[]>`SELECT "nodeId", COUNT(*) AS count FROM "GraphNodeMessage" GROUP BY "nodeId"`;
+    } catch (err) {
+      console.error("[Graph] GraphNodeMessage count query failed:", err);
+    }
     const countMap = new Map(counts.map((r) => [r.nodeId, Number(r.count)]));
     const nodes = rawNodes.map((n) => ({ ...n, correctionCount: countMap.get(n.id) ?? 0 }));
     res.json({ nodes, edges, rooms });
-  } catch {
+  } catch (err) {
+    console.error("[Graph] Error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
