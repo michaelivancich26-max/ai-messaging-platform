@@ -18,6 +18,7 @@ type Deps = {
   settings: { factualCorrection: boolean; ambiguityResolution: boolean };
   emitRoom?: string;
   aiPersona?: string;
+  roomName: string; // actual room slug for DB lookups (roomId key may be a channelId cuid)
 };
 
 type Issue =
@@ -109,7 +110,7 @@ async function streamAndSave(
   io.to(emitRoom).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
 
-async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, aiPersona }: Deps) {
+async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, aiPersona, roomName }: Deps) {
   pendingTimers.delete(roomId);
 
   const wantFactual = settings.factualCorrection;
@@ -174,7 +175,7 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
 
   // Persist graph entities first so nodes exist when we link corrections to them
   if (parsed.entities?.length || parsed.relations?.length) {
-    await persistGraph(roomId, parsed.entities ?? [], parsed.relations ?? [], prisma);
+    await persistGraph(roomName, parsed.entities ?? [], parsed.relations ?? [], prisma);
   }
 
   // Stream issues sequentially so bubbles don't all start at once
@@ -185,7 +186,7 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
       payload = { type: "ambiguity", ...issue.ambiguity };
     }
-    if (payload) await streamAndSave(payload, roomId, prisma, io, emitRoom ?? roomId, issue.relatedEntities ?? []);
+    if (payload) await streamAndSave(payload, roomName, prisma, io, emitRoom ?? roomId, issue.relatedEntities ?? []);
   }
 }
 

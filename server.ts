@@ -240,7 +240,7 @@ io.on("connection", (socket) => {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
-          scheduleAI(channelId ?? roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined });
+          scheduleAI(channelId ?? roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name });
         }
       } catch (err) {
         console.error("sendMessage error:", err);
