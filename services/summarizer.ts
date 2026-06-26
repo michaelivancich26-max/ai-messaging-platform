@@ -12,54 +12,62 @@ type Params = {
   io: Server;
   prisma: PrismaClient;
   since: string | null;
+  channelId: string | null;
   socketId: string;
 };
 
-export async function summarizeConversation({ roomId, io, prisma, since, socketId }: Params) {
+export async function summarizeConversation({ roomId, io, prisma, since, channelId, socketId }: Params) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
   if (!room) return;
 
-  const messages = await prisma.message.findMany({
-    where: {
+  try {
+    const messages = await prisma.message.findMany({
+      where: {
+        roomId: room.id,
+        senderType: SenderType.HUMAN,
+        ...(channelId ? { channelId } : {}),
+        ...(since ? { createdAt: { gte: new Date(since) } } : {}),
+      },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // Filter out image messages — base64 content is huge and meaningless to summarize
+    const textMessages = messages.filter(m => !m.content.startsWith('{"type":"image"'));
+    if (textMessages.length === 0) return;
+
+    const context = textMessages
+      .map((m) => `[${m.user?.username ?? "unknown"}]: ${m.content}`)
+      .join("\n");
+
+    const timeLabel = since
+      ? `since ${new Date(since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : "of the full conversation";
+
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 256,
+      system:
+        "You are a chat summarizer. Write a concise 2-4 sentence summary of the conversation provided. Focus on the key topics discussed and any conclusions reached. Be neutral and factual.",
+      messages: [{ role: "user", content: `Summarize this conversation ${timeLabel}:\n\n${context}` }],
+    });
+
+    const text = response.content[0].type === "text" ? response.content[0].text : null;
+    if (!text) return;
+
+    const payload = {
+      id: `summary-${Date.now()}`,
+      content: JSON.stringify({ type: "summary", text }),
+      senderType: SenderType.AI,
+      type: "summary",
+      createdAt: new Date().toISOString(),
+      userId: null,
       roomId: room.id,
-      senderType: SenderType.HUMAN,
-      ...(since ? { createdAt: { gte: new Date(since) } } : {}),
-    },
-    include: { user: true },
-    orderBy: { createdAt: "asc" },
-  });
+      user: null,
+    };
 
-  if (messages.length === 0) return;
-
-  const context = messages
-    .map((m) => `[${m.user?.username ?? "unknown"}]: ${m.content}`)
-    .join("\n");
-
-  const timeLabel = since
-    ? `since ${new Date(since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-    : "of the full conversation";
-
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 256,
-    system:
-      "You are a chat summarizer. Write a concise 2-4 sentence summary of the conversation provided. Focus on the key topics discussed and any conclusions reached. Be neutral and factual.",
-    messages: [{ role: "user", content: `Summarize this conversation ${timeLabel}:\n\n${context}` }],
-  });
-
-  const text = response.content[0].type === "text" ? response.content[0].text : null;
-  if (!text) return;
-
-  const payload = {
-    id: `summary-${Date.now()}`,
-    content: JSON.stringify({ type: "summary", text }),
-    senderType: SenderType.AI,
-    type: "summary",
-    createdAt: new Date().toISOString(),
-    userId: null,
-    roomId: room.id,
-    user: null,
-  };
-
-  io.to(socketId).emit("message", payload);
+    io.to(socketId).emit("message", payload);
+  } catch (err) {
+    console.error("[Summarizer] Error:", err);
+  }
 }

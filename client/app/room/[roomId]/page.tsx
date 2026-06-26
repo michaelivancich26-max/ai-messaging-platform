@@ -301,7 +301,7 @@ export default function RoomPage() {
     setSummarizeModalOpen(false);
     setSummarizing(true);
     const s = getSocket({ id: userId, username });
-    s.emit("summarize", { roomId, since: since?.toISOString() ?? null });
+    s.emit("summarize", { roomId, since: since?.toISOString() ?? null, channelId: activeChannel?.id ?? null });
     s.once("summarizeDone", () => setSummarizing(false));
   }
 

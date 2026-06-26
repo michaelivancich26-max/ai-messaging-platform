@@ -256,9 +256,14 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("userStopTyping", { userId: socketUser.id });
   });
 
-  socket.on("summarize", async ({ roomId, since }: { roomId: string; since: string | null }) => {
-    await summarizeConversation({ roomId, redis, io, prisma, since, socketId: socket.id });
-    socket.emit("summarizeDone");
+  socket.on("summarize", async ({ roomId, since, channelId }: { roomId: string; since: string | null; channelId: string | null }) => {
+    try {
+      await summarizeConversation({ roomId, redis, io, prisma, since, channelId: channelId ?? null, socketId: socket.id });
+    } catch (err) {
+      console.error("[summarize]", err);
+    } finally {
+      socket.emit("summarizeDone");
+    }
   });
 });
 
