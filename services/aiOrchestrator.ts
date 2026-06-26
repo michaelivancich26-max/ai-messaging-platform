@@ -7,6 +7,9 @@ import { SenderType } from "@prisma/client";
 const client = new Anthropic();
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
+const COOLDOWN_KEY = (roomId: string) => `ai:cooldown:${roomId}`;
+const AI_COOLDOWN_SECONDS = 30;
+const MIN_MESSAGE_LENGTH = 20;
 
 type OrchestratorParams = {
   roomId: string;
@@ -47,11 +50,20 @@ async function emitAIMessage(content: string, roomId: string, prisma: PrismaClie
 }
 
 export async function orchestrateAI({ roomId, redis, io, prisma, settings }: OrchestratorParams) {
-  const { context, latestMessage } = await getChatContext(roomId, redis);
-
   const wantFactual = settings.factualCorrection;
   const wantAmbiguity = settings.ambiguityResolution;
   if (!wantFactual && !wantAmbiguity) return;
+
+  const { context, latestMessage } = await getChatContext(roomId, redis);
+
+  // Skip short messages — too brief to contain factual claims or ambiguous pronouns
+  const rawContent = latestMessage.replace(/^\[.*?\]:\s*/, "");
+  if (rawContent.length < MIN_MESSAGE_LENGTH) return;
+
+  // Per-room cooldown — only one AI call per room every N seconds
+  const onCooldown = await (redis as any).get(COOLDOWN_KEY(roomId));
+  if (onCooldown) return;
+  await (redis as any).set(COOLDOWN_KEY(roomId), "1", { EX: AI_COOLDOWN_SECONDS });
 
   // Single Haiku call: detect intents AND generate responses in one shot
   const systemPrompt = [

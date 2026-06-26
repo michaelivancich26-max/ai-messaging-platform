@@ -49,7 +49,7 @@ const redis = createClient({ url: process.env.REDIS_URL ?? "redis://localhost:63
 redis.connect().catch(console.error);
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
-const WINDOW_SIZE = 15;
+const WINDOW_SIZE = 6;
 
 io.on("connection", (socket) => {
   socket.on("joinRoom", async (payload: { roomId: string; roomName: string }) => {
