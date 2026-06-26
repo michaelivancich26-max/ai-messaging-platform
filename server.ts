@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import cors from "cors";
 import { orchestrateAI } from "./services/aiOrchestrator";
 import { summarizeConversation } from "./services/summarizer";
+import { containsSlur } from "./services/contentFilter";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
 const ALLOWED_ORIGINS = [
@@ -90,6 +91,10 @@ io.on("connection", (socket) => {
       const { roomId, userId, username, settings } = payload;
       const content = payload.content?.trim().replace(/\0/g, "").slice(0, 2000);
       if (!content) return;
+      if (containsSlur(content)) {
+        socket.emit("error", { message: "Message contains prohibited language and was not sent." });
+        return;
+      }
 
       try {
         // Ensure user exists
@@ -152,6 +157,7 @@ app.post("/api/rooms", async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
   const creatorId = req.body?.creatorId as string | undefined;
   if (!name) return res.status(400).json({ error: "Invalid room name" });
+  if (containsSlur(name)) return res.status(400).json({ error: "Room name contains prohibited language." });
   try {
     const existing = await prisma.room.findUnique({ where: { name } });
     if (existing) return res.status(409).json({ error: "Room already exists" });
