@@ -40,6 +40,8 @@ model Room {
   messages       Message[]
   sections       Section[]
   channels       Channel[]
+  graphNodes     GraphNode[]
+  graphEdges     GraphEdge[]
 }
 
 model Section {
@@ -62,6 +64,31 @@ model Channel {
   section   Section?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   messages  Message[]
   createdAt DateTime  @default(now())
+}
+
+model GraphNode {
+  id        String      @id @default(cuid())
+  label     String
+  type      String      // person | place | topic | concept
+  roomId    String
+  room      Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  fromEdges GraphEdge[] @relation("FromNode")
+  toEdges   GraphEdge[] @relation("ToNode")
+  createdAt DateTime    @default(now())
+
+  @@unique([label, roomId])
+}
+
+model GraphEdge {
+  id         String    @id @default(cuid())
+  label      String
+  roomId     String
+  fromNodeId String
+  toNodeId   String
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  fromNode   GraphNode @relation("FromNode", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode     GraphNode @relation("ToNode", fields: [toNodeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
 }
 
 model Message {

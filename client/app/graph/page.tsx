@@ -1,0 +1,382 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import Sidebar from "@/components/Sidebar";
+
+interface GNode {
+  id: string;
+  label: string;
+  type: string;
+  roomId: string;
+  // simulation state
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
+
+interface GEdge {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  label: string;
+  roomId: string;
+}
+
+interface Room {
+  id: string;
+  name: string;
+}
+
+const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+
+const ROOM_COLORS = [
+  "#6366f1", "#f59e0b", "#10b981", "#ec4899",
+  "#3b82f6", "#8b5cf6", "#f97316", "#14b8a6",
+  "#ef4444", "#84cc16",
+];
+
+const TYPE_COLOR: Record<string, string> = {
+  person: "#818cf8",
+  place: "#34d399",
+  topic: "#fbbf24",
+  concept: "#c084fc",
+};
+
+export default function GraphPage() {
+  const { status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
+  const router = useRouter();
+
+  const [nodes, setNodes] = useState<GNode[]>([]);
+  const [edges, setEdges] = useState<GEdge[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hovered, setHovered] = useState<GNode | null>(null);
+  const [selected, setSelected] = useState<GNode | null>(null);
+  const [filterRoom, setFilterRoom] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<string | null>(null);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const nodesRef = useRef<GNode[]>([]);
+  const animRef = useRef<number>(0);
+  const dragRef = useRef<{ id: string; ox: number; oy: number } | null>(null);
+  const [, forceRender] = useState(0);
+
+  const W = typeof window !== "undefined" ? window.innerWidth - 256 - 2 : 1000;
+  const H = typeof window !== "undefined" ? window.innerHeight : 700;
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch(`${SERVER}/api/graph`)
+      .then(r => r.json())
+      .then(data => {
+        const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = data.nodes ?? [];
+        const initialized = rawNodes.map(n => ({
+          ...n,
+          x: W / 2 + (Math.random() - 0.5) * 300,
+          y: H / 2 + (Math.random() - 0.5) * 300,
+          vx: 0, vy: 0,
+        }));
+        nodesRef.current = initialized;
+        setNodes(initialized);
+        setEdges(data.edges ?? []);
+        setRooms(data.rooms ?? []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [status]);
+
+  // Force simulation
+  useEffect(() => {
+    if (loading) return;
+
+    function tick() {
+      const ns = nodesRef.current;
+      if (ns.length === 0) { animRef.current = requestAnimationFrame(tick); return; }
+
+      const REPEL = 3500;
+      const ATTRACT = 0.04;
+      const GRAVITY = 0.015;
+      const DAMPING = 0.8;
+      const MIN_DIST = 40;
+
+      // Repulsion
+      for (let i = 0; i < ns.length; i++) {
+        for (let j = i + 1; j < ns.length; j++) {
+          const dx = ns[j].x - ns[i].x;
+          const dy = ns[j].y - ns[i].y;
+          const dist = Math.max(Math.sqrt(dx * dx + dy * dy), MIN_DIST);
+          const force = REPEL / (dist * dist);
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          ns[i].vx -= fx; ns[i].vy -= fy;
+          ns[j].vx += fx; ns[j].vy += fy;
+        }
+      }
+
+      // Attraction along edges
+      const idToIdx = new Map(ns.map((n, i) => [n.id, i]));
+      for (const e of edges) {
+        const i = idToIdx.get(e.fromNodeId);
+        const j = idToIdx.get(e.toNodeId);
+        if (i == null || j == null) continue;
+        const dx = ns[j].x - ns[i].x;
+        const dy = ns[j].y - ns[i].y;
+        ns[i].vx += dx * ATTRACT; ns[i].vy += dy * ATTRACT;
+        ns[j].vx -= dx * ATTRACT; ns[j].vy -= dy * ATTRACT;
+      }
+
+      // Gravity + bounds
+      const cx = W / 2, cy = H / 2;
+      for (const n of ns) {
+        if (dragRef.current?.id === n.id) continue;
+        n.vx += (cx - n.x) * GRAVITY;
+        n.vy += (cy - n.y) * GRAVITY;
+        n.vx *= DAMPING; n.vy *= DAMPING;
+        n.x += n.vx; n.y += n.vy;
+        n.x = Math.max(24, Math.min(W - 24, n.x));
+        n.y = Math.max(24, Math.min(H - 24, n.y));
+      }
+
+      forceRender(v => v + 1);
+      animRef.current = requestAnimationFrame(tick);
+    }
+
+    animRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [loading, edges, W, H]);
+
+  // Sync nodesRef when nodes state changes externally
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+
+  const roomColorMap = new Map(rooms.map((r, i) => [r.id, ROOM_COLORS[i % ROOM_COLORS.length]]));
+  const roomNameMap = new Map(rooms.map(r => [r.id, r.name]));
+
+  const visibleNodes = nodesRef.current.filter(n =>
+    (!filterRoom || n.roomId === filterRoom) &&
+    (!filterType || n.type === filterType)
+  );
+  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = edges.filter(e => visibleNodeIds.has(e.fromNodeId) && visibleNodeIds.has(e.toNodeId));
+
+  const selectedEdges = selected
+    ? edges.filter(e => e.fromNodeId === selected.id || e.toNodeId === selected.id)
+    : [];
+  const selectedNeighbourIds = new Set(selectedEdges.flatMap(e => [e.fromNodeId, e.toNodeId]));
+
+  // Drag handlers
+  function onMouseDown(e: React.MouseEvent, node: GNode) {
+    e.stopPropagation();
+    const svg = svgRef.current!;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+    dragRef.current = { id: node.id, ox: svgPt.x - node.x, oy: svgPt.y - node.y };
+  }
+
+  function onMouseMove(e: React.MouseEvent) {
+    if (!dragRef.current) return;
+    const svg = svgRef.current!;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+    const n = nodesRef.current.find(n => n.id === dragRef.current!.id);
+    if (n) { n.x = svgPt.x - dragRef.current.ox; n.y = svgPt.y - dragRef.current.oy; n.vx = 0; n.vy = 0; }
+  }
+
+  function onMouseUp() { dragRef.current = null; }
+
+  if (status === "loading") return (
+    <div className="flex h-screen items-center justify-center bg-gray-950 text-gray-500">Loading…</div>
+  );
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-gray-950 text-gray-100">
+      <Sidebar />
+
+      <div className="flex flex-1 flex-col min-w-0">
+        {/* Header */}
+        <div className="flex h-14 shrink-0 items-center gap-4 border-b border-gray-800 px-5">
+          <span className="text-sm font-semibold text-gray-100">Knowledge Graph</span>
+          <span className="text-xs text-gray-600">{visibleNodes.length} nodes · {visibleEdges.length} edges</span>
+
+          <div className="ml-auto flex items-center gap-2">
+            {/* Room filter */}
+            <select value={filterRoom ?? ""} onChange={e => setFilterRoom(e.target.value || null)}
+              className="rounded-lg bg-gray-800 px-2 py-1 text-xs text-gray-300 outline-none ring-1 ring-gray-700">
+              <option value="">All rooms</option>
+              {rooms.map(r => <option key={r.id} value={r.id}>#{r.name}</option>)}
+            </select>
+
+            {/* Type filter */}
+            <select value={filterType ?? ""} onChange={e => setFilterType(e.target.value || null)}
+              className="rounded-lg bg-gray-800 px-2 py-1 text-xs text-gray-300 outline-none ring-1 ring-gray-700">
+              <option value="">All types</option>
+              <option value="person">People</option>
+              <option value="place">Places</option>
+              <option value="topic">Topics</option>
+              <option value="concept">Concepts</option>
+            </select>
+
+            {selected && (
+              <button onClick={() => setSelected(null)}
+                className="rounded-lg bg-gray-800 px-3 py-1 text-xs text-gray-400 hover:text-gray-200 transition-colors">
+                Clear selection
+              </button>
+            )}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Loading graph…</div>
+        ) : nodesRef.current.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-12 w-12 text-gray-800">
+              <path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.818a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .845-.143Z" clipRule="evenodd" />
+            </svg>
+            <p className="text-sm text-gray-600">No graph data yet.</p>
+            <p className="text-xs text-gray-700">The AI builds the graph as conversations happen in rooms.</p>
+          </div>
+        ) : (
+          <div className="relative flex-1 overflow-hidden">
+            <svg ref={svgRef} width="100%" height="100%"
+              onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+              onClick={() => setSelected(null)}
+              className="cursor-default">
+
+              {/* Edges */}
+              <g>
+                {visibleEdges.map(e => {
+                  const from = nodesRef.current.find(n => n.id === e.fromNodeId);
+                  const to = nodesRef.current.find(n => n.id === e.toNodeId);
+                  if (!from || !to) return null;
+                  const isHighlighted = selectedEdges.some(se => se.id === e.id);
+                  return (
+                    <g key={e.id}>
+                      <line
+                        x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+                        stroke={isHighlighted ? "#6366f1" : "#374151"}
+                        strokeWidth={isHighlighted ? 1.5 : 1}
+                        strokeOpacity={selected && !isHighlighted ? 0.15 : 0.6}
+                      />
+                      {/* Edge label */}
+                      {isHighlighted && (
+                        <text
+                          x={(from.x + to.x) / 2}
+                          y={(from.y + to.y) / 2 - 4}
+                          fill="#818cf8"
+                          fontSize={9}
+                          textAnchor="middle"
+                          className="pointer-events-none select-none">
+                          {e.label}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+
+              {/* Nodes */}
+              <g>
+                {visibleNodes.map(n => {
+                  const isSelected = selected?.id === n.id;
+                  const isNeighbour = selectedNeighbourIds.has(n.id);
+                  const dimmed = selected && !isSelected && !isNeighbour;
+                  const color = TYPE_COLOR[n.type] ?? "#9ca3af";
+                  const r = isSelected ? 10 : 7;
+
+                  return (
+                    <g key={n.id}
+                      transform={`translate(${n.x},${n.y})`}
+                      className="cursor-pointer"
+                      onMouseDown={ev => onMouseDown(ev, n)}
+                      onClick={ev => { ev.stopPropagation(); setSelected(isSelected ? null : n); }}
+                      onMouseEnter={() => setHovered(n)}
+                      onMouseLeave={() => setHovered(null)}>
+
+                      {/* Room halo */}
+                      <circle r={r + 3}
+                        fill={roomColorMap.get(n.roomId) ?? "#4b5563"}
+                        opacity={dimmed ? 0.05 : 0.18} />
+
+                      {/* Node */}
+                      <circle r={r}
+                        fill={color}
+                        opacity={dimmed ? 0.15 : 1}
+                        stroke={isSelected ? "#fff" : "transparent"}
+                        strokeWidth={1.5} />
+
+                      {/* Label */}
+                      <text
+                        y={r + 11}
+                        fill={dimmed ? "#374151" : "#d1d5db"}
+                        fontSize={10}
+                        textAnchor="middle"
+                        className="pointer-events-none select-none">
+                        {n.label}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+
+            {/* Hover tooltip */}
+            {hovered && !selected && (
+              <div className="pointer-events-none absolute left-4 top-4 rounded-xl border border-gray-700 bg-gray-900/95 px-3 py-2 text-xs shadow-xl">
+                <p className="font-semibold text-gray-100">{hovered.label}</p>
+                <p className="mt-0.5 capitalize text-gray-500">{hovered.type} · #{roomNameMap.get(hovered.roomId)}</p>
+              </div>
+            )}
+
+            {/* Selection panel */}
+            {selected && (
+              <div className="absolute right-4 top-4 w-56 rounded-xl border border-gray-700 bg-gray-900/95 p-4 text-xs shadow-xl">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: TYPE_COLOR[selected.type] ?? "#9ca3af" }} />
+                  <p className="font-semibold text-gray-100 truncate">{selected.label}</p>
+                </div>
+                <p className="mb-1 capitalize text-gray-500">{selected.type}</p>
+                <p className="mb-3 text-gray-500">Room: #{roomNameMap.get(selected.roomId)}</p>
+
+                {selectedEdges.length > 0 && (
+                  <>
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-600">Connections</p>
+                    <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {selectedEdges.map(e => {
+                        const other = nodesRef.current.find(n =>
+                          n.id === (e.fromNodeId === selected.id ? e.toNodeId : e.fromNodeId)
+                        );
+                        return (
+                          <li key={e.id} className="flex items-start gap-1.5">
+                            <span className="mt-0.5 text-gray-600">→</span>
+                            <span>
+                              <span className="text-indigo-400">{e.label}</span>
+                              {" "}<span className="text-gray-300">{other?.label}</span>
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Legend */}
+            <div className="absolute bottom-4 left-4 flex flex-col gap-1.5 rounded-xl border border-gray-800 bg-gray-900/90 px-3 py-2.5 text-[10px]">
+              {Object.entries(TYPE_COLOR).map(([type, color]) => (
+                <div key={type} className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
+                  <span className="capitalize text-gray-500">{type}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

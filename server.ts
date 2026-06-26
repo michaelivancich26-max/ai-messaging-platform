@@ -606,6 +606,20 @@ app.delete("/api/rooms/:name", async (req, res) => {
   }
 });
 
+// GET /api/graph — full cross-room knowledge graph
+app.get("/api/graph", async (_req, res) => {
+  try {
+    const [nodes, edges, rooms] = await Promise.all([
+      prisma.graphNode.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.graphEdge.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.room.findMany({ where: { isDM: false }, select: { id: true, name: true } }),
+    ]);
+    res.json({ nodes, edges, rooms });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 const PORT = process.env.PORT ?? 3001;
 
 async function start() {

@@ -233,6 +233,19 @@ export default function Sidebar({ activeRoomName }: Props) {
         </div>
       </nav>
 
+      {/* Graph link */}
+      <div className="border-t border-gray-800 p-2">
+        <button onClick={() => router.push("/graph")}
+          className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-800 hover:text-amber-400 transition-colors ${collapsed ? "justify-center" : ""}`}
+          title="Knowledge Graph">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
+            <path d="M13.024 9.25c.47 0 .827-.433.637-.863a4 4 0 0 0-4.094-2.364c-.468.05-.665.576-.43.984l.208.356a.75.75 0 0 0 .84.336 2.5 2.5 0 0 1 2.396.95c.209.28.582.41.443-.402Z" />
+            <path fillRule="evenodd" d="M10 2a8 8 0 1 0 0 16A8 8 0 0 0 10 2ZM4 10a6 6 0 1 1 12 0A6 6 0 0 1 4 10Z" clipRule="evenodd" />
+          </svg>
+          {!collapsed && <span className="text-sm">Knowledge Graph</span>}
+        </button>
+      </div>
+
       {/* Sign out */}
       <div className="border-t border-gray-800 p-2">
         <button onClick={() => signOut({ callbackUrl: "/" })}

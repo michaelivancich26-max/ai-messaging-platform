@@ -31,6 +31,8 @@ type AIResponse = {
     factual_correction?: string;
     ambiguity?: { pronoun: string; referent: string; quote: string };
   }>;
+  entities?: Array<{ name: string; type: "person" | "place" | "topic" | "concept" }>;
+  relations?: Array<{ from: string; to: string; label: string }>;
 };
 
 const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -94,19 +96,25 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
 
   const systemPrompt = [
     personaLine,
-    "Scan ALL messages below and return ONLY valid JSON with this shape:",
-    '{ "issues": [] }',
+    "Scan ALL messages below and return ONLY valid JSON with this exact shape:",
+    '{ "issues": [], "entities": [], "relations": [] }',
     "",
-    "Each element of \"issues\" is one of:",
+    "\"issues\" — each element is one of:",
     wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<polite 1-2 sentence correction>" }' : "",
     wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" } }' : "",
     "",
-    "Rules:",
-    "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim (wrong date, location, attribution). Set sarcasm:true if the claim is intentionally ironic/joking.",
-    "RESOLVE_AMBIGUITY: a message uses a pronoun (it, he, she, they, there, that, this) whose referent is genuinely unclear but resolvable from context.",
-    "Report every issue you find — there may be 0, 1, or several across different messages.",
-    "Ignore opinions, greetings, and statements that are correct or simply informal.",
-    'Return { "issues": [] } if nothing stands out.',
+    "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim. Set sarcasm:true if intentionally ironic.",
+    "RESOLVE_AMBIGUITY: a pronoun whose referent is unclear but resolvable from context.",
+    "",
+    "\"entities\" — named things explicitly mentioned: people, places, topics, or concepts. Each:",
+    '- { "name": "<1-3 word label>", "type": "person" | "place" | "topic" | "concept" }',
+    "Only include clearly named entities. Skip pronouns, generic words, and filler.",
+    "",
+    "\"relations\" — connections between two entities you extracted:",
+    '- { "from": "<entity name>", "to": "<entity name>", "label": "<short verb phrase>" }',
+    "Only create relations where both entities appear in \"entities\".",
+    "",
+    'Return { "issues": [], "entities": [], "relations": [] } if nothing applies.',
   ].filter(Boolean).join("\n");
 
   let parsed: AIResponse;
@@ -143,6 +151,56 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
       payload = { type: "ambiguity", ...issue.ambiguity };
     }
     if (payload) await streamAndSave(payload, roomId, prisma, io, emitRoom ?? roomId);
+  }
+
+  // Persist graph entities and relations
+  if (parsed.entities?.length || parsed.relations?.length) {
+    await persistGraph(roomId, parsed.entities ?? [], parsed.relations ?? [], prisma);
+  }
+}
+
+async function persistGraph(
+  roomName: string,
+  entities: NonNullable<AIResponse["entities"]>,
+  relations: NonNullable<AIResponse["relations"]>,
+  prisma: PrismaClient,
+) {
+  try {
+    const room = await prisma.room.findUnique({ where: { name: roomName } });
+    if (!room) return;
+
+    // Upsert nodes (deduped by label+roomId)
+    const nodeMap = new Map<string, string>(); // label → id
+    for (const e of entities) {
+      if (!e.name?.trim()) continue;
+      const label = e.name.trim().slice(0, 100);
+      const node = await prisma.graphNode.upsert({
+        where: { label_roomId: { label, roomId: room.id } },
+        update: {},
+        create: { label, type: e.type ?? "concept", roomId: room.id },
+      });
+      nodeMap.set(label.toLowerCase(), node.id);
+    }
+
+    // Create edges where both endpoints exist
+    for (const r of relations) {
+      const fromId = nodeMap.get(r.from?.trim().toLowerCase());
+      const toId = nodeMap.get(r.to?.trim().toLowerCase());
+      if (!fromId || !toId || fromId === toId) continue;
+      // Skip duplicate edges (same from/to/label in same room)
+      const exists = await prisma.graphEdge.findFirst({
+        where: { fromNodeId: fromId, toNodeId: toId, label: r.label.slice(0, 100), roomId: room.id },
+      });
+      if (!exists) {
+        await prisma.graphEdge.create({
+          data: { fromNodeId: fromId, toNodeId: toId, label: r.label.slice(0, 100), roomId: room.id },
+        });
+      }
+    }
+
+    console.log(`[Graph] Persisted ${nodeMap.size} nodes, ${relations.length} relation(s) for room ${roomName}`);
+  } catch (err) {
+    console.error("[Graph] Persist error:", err);
   }
 }
 
