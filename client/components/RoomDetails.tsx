@@ -15,6 +15,7 @@ interface RoomMeta {
   isPrivate: boolean;
   maxMembers: number | null;
   creatorId: string | null;
+  aiPersona: string | null;
 }
 
 interface Props {
@@ -39,6 +40,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
   const [editMax, setEditMax] = useState(meta?.maxMembers?.toString() ?? "");
   const [editPrivate, setEditPrivate] = useState(meta?.isPrivate ?? false);
   const [editPassword, setEditPassword] = useState("");
+  const [editPersona, setEditPersona] = useState(meta?.aiPersona ?? "");
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
@@ -52,6 +54,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
     setEditDesc(meta.description ?? "");
     setEditMax(meta.maxMembers?.toString() ?? "");
     setEditPrivate(meta.isPrivate);
+    setEditPersona(meta.aiPersona ?? "");
   }
 
   async function saveChanges() {
@@ -64,6 +67,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
         description: editDesc,
         maxMembers: editMax ? parseInt(editMax) : null,
         isPrivate: editPrivate,
+        aiPersona: editPersona.trim() || null,
       };
       if (editPrivate && editPassword) body.password = editPassword;
       const res = await fetch(`${SERVER}/api/rooms/${meta.name}`, {
@@ -234,6 +238,22 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 </div>
               </div>
             )}
+
+            {/* AI Moderator Persona */}
+            <div>
+              <label className="mb-1 block text-xs text-gray-400">
+                AI moderator persona <span className="text-gray-600">(optional)</span>
+              </label>
+              <textarea
+                value={editPersona}
+                onChange={(e) => setEditPersona(e.target.value)}
+                maxLength={500}
+                rows={3}
+                placeholder={"e.g. A strict Victorian professor who corrects errors with dry wit and quotes Shakespeare when disappointed."}
+                className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+              />
+              <p className="mt-1 text-[10px] text-gray-600">Describe a character. The AI will adopt this voice when flagging issues.</p>
+            </div>
 
             {saveMsg && (
               <p className={`text-xs ${saveMsg === "Saved." ? "text-green-400" : "text-red-400"}`}>{saveMsg}</p>

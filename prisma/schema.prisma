@@ -36,6 +36,7 @@ model Room {
   isDM           Boolean   @default(false)
   participant1Id String?
   participant2Id String?
+  aiPersona      String?
   messages       Message[]
   sections       Section[]
   channels       Channel[]

@@ -16,7 +16,8 @@ type Deps = {
   io: Server;
   prisma: PrismaClient;
   settings: { factualCorrection: boolean; ambiguityResolution: boolean };
-  emitRoom?: string; // socket room to emit AI messages to (defaults to roomId)
+  emitRoom?: string;
+  aiPersona?: string;
 };
 
 type Issue =
@@ -77,7 +78,7 @@ async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClien
   io.to(emitRoom).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
 
-async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom }: Deps) {
+async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, aiPersona }: Deps) {
   pendingTimers.delete(roomId);
 
   const wantFactual = settings.factualCorrection;
@@ -87,8 +88,12 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom }
   const context = await getChatContext(roomId, redis);
   if (!context.trim()) return;
 
+  const personaLine = aiPersona
+    ? `You are playing the role of: ${aiPersona}. Stay in character in your corrections and tone, but remain helpful and concise.`
+    : "You are a real-time chat assistant monitoring a group conversation.";
+
   const systemPrompt = [
-    "You are a real-time chat assistant monitoring a group conversation.",
+    personaLine,
     "Scan ALL messages below and return ONLY valid JSON with this shape:",
     '{ "issues": [] }',
     "",

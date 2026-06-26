@@ -25,6 +25,7 @@ interface RoomMeta {
   isPrivate: boolean;
   maxMembers: number | null;
   creatorId: string | null;
+  aiPersona: string | null;
 }
 
 export type Annotation = { pronoun: string; referent: string };

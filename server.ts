@@ -240,7 +240,7 @@ io.on("connection", (socket) => {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
-          scheduleAI(channelId ?? roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget });
+          scheduleAI(channelId ?? roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined });
         }
       } catch (err) {
         console.error("sendMessage error:", err);
@@ -550,12 +550,13 @@ app.get("/api/rooms/:name", async (req, res) => {
 
 app.patch("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId, description, maxMembers, isPrivate, password: newPassword } = req.body as {
+  const { userId, description, maxMembers, isPrivate, password: newPassword, aiPersona } = req.body as {
     userId: string;
     description?: string;
     maxMembers?: number | null;
     isPrivate?: boolean;
     password?: string;
+    aiPersona?: string | null;
   };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
@@ -573,6 +574,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
       if (!isPrivate) data.password = null;
     }
     if (newPassword) data.password = await bcrypt.hash(newPassword, 10);
+    if (aiPersona !== undefined) data.aiPersona = aiPersona?.trim().slice(0, 500) || null;
 
     const updated = await prisma.room.update({ where: { name }, data });
     const { password: _pw, ...rest } = updated as any;
