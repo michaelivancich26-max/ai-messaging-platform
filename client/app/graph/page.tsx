@@ -55,8 +55,9 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 export default function GraphPage() {
-  const { status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
+  const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
+  const userId: string = (session?.user as any)?.id ?? "";
 
   const [nodes, setNodes] = useState<GNode[]>([]);
   const [edges, setEdges] = useState<GEdge[]>([]);
@@ -80,11 +81,27 @@ export default function GraphPage() {
   const H = typeof window !== "undefined" ? window.innerHeight : 700;
 
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (status !== "authenticated" || !userId) return;
+
     fetch(`${SERVER}/api/graph`)
       .then(r => r.json())
-      .then(data => {
-        const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = data.nodes ?? [];
+      .then(async data => {
+        const allRooms: Room[] = data.rooms ?? [];
+        // Filter to only rooms the user has joined
+        let joinedRoomIds: Set<string> = new Set(allRooms.map((r: Room) => r.id));
+        try {
+          const lobbyRes = await fetch(`${SERVER}/api/lobby?userId=${encodeURIComponent(userId)}`);
+          if (lobbyRes.ok) {
+            const lobby = await lobbyRes.json();
+            const joinedIds = (lobby.rooms ?? []).map((r: Room) => r.id);
+            joinedRoomIds = new Set(joinedIds);
+          }
+        } catch { /* fall back to showing all */ }
+
+        const joinedRooms = allRooms.filter(r => joinedRoomIds.has(r.id));
+        const joinedRoomIdSet = new Set(joinedRooms.map(r => r.id));
+
+        const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = (data.nodes ?? []).filter((n: GNode) => joinedRoomIdSet.has(n.roomId));
         const initialized = rawNodes.map(n => ({
           ...n,
           correctionCount: n.correctionCount ?? 0,
@@ -94,12 +111,12 @@ export default function GraphPage() {
         }));
         nodesRef.current = initialized;
         setNodes(initialized);
-        setEdges(data.edges ?? []);
-        setRooms(data.rooms ?? []);
+        setEdges((data.edges ?? []).filter((e: GEdge) => joinedRoomIdSet.has(e.roomId)));
+        setRooms(joinedRooms);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [status]);
+  }, [status, userId]);
 
   // Force simulation
   useEffect(() => {

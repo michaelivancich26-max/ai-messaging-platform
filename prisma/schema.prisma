@@ -21,6 +21,18 @@ model User {
   createdAt    DateTime  @default(now())
   messages     Message[]
   roomsCreated Room[]
+  roomMembers  RoomMember[]
+}
+
+model RoomMember {
+  id        String   @id @default(cuid())
+  userId    String
+  roomId    String
+  joinedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
 }
 
 model Room {
@@ -42,6 +54,7 @@ model Room {
   channels       Channel[]
   graphNodes     GraphNode[]
   graphEdges     GraphEdge[]
+  members        RoomMember[]
 }
 
 model Section {
@@ -67,16 +80,28 @@ model Channel {
 }
 
 model GraphNode {
-  id        String      @id @default(cuid())
-  label     String
-  type      String      // person | place | topic | concept
-  roomId    String
-  room      Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  fromEdges GraphEdge[] @relation("FromNode")
-  toEdges   GraphEdge[] @relation("ToNode")
-  createdAt DateTime    @default(now())
+  id           String               @id @default(cuid())
+  label        String
+  type         String               // person | place | topic | concept
+  roomId       String
+  room         Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  fromEdges    GraphEdge[]          @relation("FromNode")
+  toEdges      GraphEdge[]          @relation("ToNode")
+  corrections  GraphNodeMessage[]
+  createdAt    DateTime             @default(now())
 
   @@unique([label, roomId])
+}
+
+model GraphNodeMessage {
+  id        String    @id @default(cuid())
+  nodeId    String
+  messageId String
+  node      GraphNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  message   Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@unique([nodeId, messageId])
 }
 
 model GraphEdge {
@@ -99,7 +124,8 @@ model Message {
   userId     String?
   roomId     String
   channelId  String?
-  user       User?      @relation(fields: [userId], references: [id])
-  room       Room       @relation(fields: [roomId], references: [id])
-  channel    Channel?   @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  user         User?              @relation(fields: [userId], references: [id])
+  room         Room               @relation(fields: [roomId], references: [id])
+  channel      Channel?           @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  graphNodes   GraphNodeMessage[]
 }

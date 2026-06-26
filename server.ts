@@ -264,17 +264,16 @@ io.on("connection", (socket) => {
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// Combined lobby fetch — rooms + DMs + users in one round trip
+// Combined lobby fetch — joined rooms + DMs + users in one round trip
 app.get("/api/lobby", async (req, res) => {
   const userId = req.query.userId as string;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
-    const [rooms, dms, users] = await Promise.all([
-      prisma.room.findMany({
-        where: { isDM: false },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        include: { _count: { select: { messages: true } } },
+    const [memberships, dms, users] = await Promise.all([
+      prisma.roomMember.findMany({
+        where: { userId },
+        include: { room: { include: { _count: { select: { messages: true } } } } },
+        orderBy: { joinedAt: "desc" },
       }),
       prisma.room.findMany({
         where: { isDM: true, OR: [{ participant1Id: userId }, { participant2Id: userId }] },
@@ -287,13 +286,63 @@ app.get("/api/lobby", async (req, res) => {
         orderBy: { username: "asc" },
       }),
     ]);
-    res.json({
-      rooms: rooms.map(({ password: _pw, ...r }) => r),
-      dms,
-      users,
-    });
+    const rooms = memberships.map(({ room: { password: _pw, ...r } }) => r);
+    res.json({ rooms, dms, users });
   } catch {
     res.status(500).json({ error: "Failed to load lobby" });
+  }
+});
+
+// Browse all public rooms (for the discover page)
+app.get("/api/rooms/browse", async (req, res) => {
+  const userId = req.query.userId as string;
+  try {
+    const rooms = await prisma.room.findMany({
+      where: { isDM: false },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { _count: { select: { messages: true, members: true } } },
+    });
+    let joinedIds = new Set<string>();
+    if (userId) {
+      const memberships = await prisma.roomMember.findMany({ where: { userId }, select: { roomId: true } });
+      joinedIds = new Set(memberships.map(m => m.roomId));
+    }
+    res.json(rooms.map(({ password: _pw, ...r }) => ({ ...r, joined: joinedIds.has(r.id) })));
+  } catch {
+    res.status(500).json({ error: "Failed to browse rooms" });
+  }
+});
+
+// POST /api/rooms/:name/join
+app.post("/api/rooms/:name/join", async (req, res) => {
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    await prisma.roomMember.upsert({
+      where: { userId_roomId: { userId, roomId: room.id } },
+      update: {},
+      create: { userId, roomId: room.id },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Failed to join room" });
+  }
+});
+
+// POST /api/rooms/:name/leave
+app.post("/api/rooms/:name/leave", async (req, res) => {
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    await prisma.roomMember.deleteMany({ where: { userId, roomId: room.id } });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Failed to leave room" });
   }
 });
 
@@ -383,6 +432,10 @@ app.post("/api/rooms", async (req, res) => {
     });
     // Auto-create default "general" channel for every new room
     await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
+    // Auto-join the creator
+    if (creatorId) {
+      await prisma.roomMember.create({ data: { userId: creatorId, roomId: room.id } });
+    }
     res.json({ ...room, password: undefined });
   } catch {
     res.status(500).json({ error: "Failed to create room" });
@@ -521,13 +574,19 @@ app.delete("/api/rooms/:name/channels/:id", async (req, res) => {
 
 app.post("/api/rooms/:name/auth", async (req, res) => {
   const { name } = req.params;
-  const { password } = req.body as { password: string };
+  const { password, userId } = req.body as { password: string; userId?: string };
   if (!password) return res.status(400).json({ error: "Password required" });
   try {
     const room = await prisma.room.findUnique({ where: { name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
-    if (!room.isPrivate || !room.password) return res.json({ ok: true });
+    if (!room.isPrivate || !room.password) {
+      if (userId) await prisma.roomMember.upsert({ where: { userId_roomId: { userId, roomId: room.id } }, update: {}, create: { userId, roomId: room.id } });
+      return res.json({ ok: true });
+    }
     const valid = await bcrypt.compare(password, room.password);
+    if (valid && userId) {
+      await prisma.roomMember.upsert({ where: { userId_roomId: { userId, roomId: room.id } }, update: {}, create: { userId, roomId: room.id } });
+    }
     res.json({ ok: valid });
   } catch {
     res.status(500).json({ error: "Server error" });
