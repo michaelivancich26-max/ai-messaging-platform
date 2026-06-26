@@ -105,7 +105,12 @@ export default function RoomPage() {
         socket.emit("joinChannel", { channelId: activeChannelRef.current.id });
       }
     }
+    // 'connect' fires on every (re)connect — including the initial one if not yet connected.
+    // Only call rejoin() immediately when the socket is already connected so we don't
+    // double-send if the socket is still connecting (the buffered emit + the connect-handler
+    // would both fire, sending joinChannel twice and producing duplicate history/AI cards).
     socket.on("connect", rejoin);
+    if (socket.connected) rejoin();
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
     socket.on("error", ({ message }: { message: string }) => alert(message));
     socket.on("roomDeleted", () => router.push("/lobby"));
@@ -134,9 +139,6 @@ export default function RoomPage() {
     socket.on("userStopTyping", ({ userId: uid }: { userId: string }) => {
       setTypingUsers((prev) => { const next = new Map(prev); next.delete(uid); return next; });
     });
-    // Initial join (rejoin() handles reconnects)
-    rejoin();
-
     // Backfill membership for users who entered this room before RoomMember existed
     if (userId && !roomId.startsWith("dm-")) {
       fetch(`${SERVER}/api/rooms/${roomId}/join`, {
