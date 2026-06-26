@@ -150,12 +150,31 @@ app.get("/api/rooms", async (_req, res) => {
 
 app.post("/api/rooms", async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
+  const creatorId = req.body?.creatorId as string | undefined;
   if (!name) return res.status(400).json({ error: "Invalid room name" });
   try {
-    const room = await prisma.room.upsert({ where: { name }, create: { name }, update: {} });
+    const existing = await prisma.room.findUnique({ where: { name } });
+    if (existing) return res.status(409).json({ error: "Room already exists" });
+    const room = await prisma.room.create({ data: { name, creatorId: creatorId ?? null } });
     res.json(room);
   } catch {
     res.status(500).json({ error: "Failed to create room" });
+  }
+});
+
+app.delete("/api/rooms/:name", async (req, res) => {
+  const { name } = req.params;
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (room.creatorId !== userId) return res.status(403).json({ error: "Only the creator can delete this room" });
+    await prisma.message.deleteMany({ where: { roomId: room.id } });
+    await prisma.room.delete({ where: { name } });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Failed to delete room" });
   }
 });
 
