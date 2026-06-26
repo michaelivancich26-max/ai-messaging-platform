@@ -9,15 +9,27 @@ import { orchestrateAI } from "./services/aiOrchestrator";
 import { summarizeConversation } from "./services/summarizer";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
+const ALLOWED_ORIGINS = [
+  CLIENT_ORIGIN,
+  "http://localhost:3000",
+  "https://ai-messaging-platform-7wpu.space",
+  "https://ai-messaging-platform-7wpu.vercel.app",
+];
 
 const app = express();
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: process.env.CLIENT_URL ?? "http://localhost:3000" },
+  cors: { origin: ALLOWED_ORIGINS, credentials: true },
 });
 
 // Socket middleware — attach session user to socket
