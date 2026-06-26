@@ -11,6 +11,7 @@ import FunctionsBar from "@/components/FunctionsBar";
 import SummarizeModal from "@/components/SummarizeModal";
 import VibeSearch from "@/components/VibeSearch";
 import RoomDetails from "@/components/RoomDetails";
+import { AIStreamingCard } from "@/components/AIInterjectionCard";
 import type { ChatMessage } from "@/lib/types";
 import type { Settings } from "@/components/SettingsPanel";
 import { parseAIContent } from "@/lib/types";
@@ -301,17 +302,11 @@ export default function RoomPage() {
       <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} />
       <div ref={bottomRef} />
 
-      {/* Streaming AI bubbles */}
+      {/* Streaming AI cards — same amber card, text types in live */}
       {streamingMsgs.size > 0 && (
-        <div className="space-y-3 px-4 py-2">
+        <div className="space-y-2 px-4 py-2">
           {Array.from(streamingMsgs.entries()).map(([tempId, { text, sarcasm }]) => (
-            <div key={tempId} className="flex flex-col items-start">
-              <span className="mb-1 text-xs text-indigo-400/70">AI {sarcasm ? "· sarcasm detected" : ""}</span>
-              <div className="max-w-prose rounded-2xl rounded-tl-sm bg-indigo-950/60 px-4 py-2 text-sm leading-relaxed text-indigo-100 ring-1 ring-indigo-500/20">
-                {text}
-                <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-indigo-400 align-middle" />
-              </div>
-            </div>
+            <AIStreamingCard key={tempId} text={text} sarcasm={sarcasm} />
           ))}
         </div>
       )}
