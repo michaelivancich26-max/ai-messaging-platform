@@ -665,14 +665,30 @@ app.delete("/api/rooms/:name", async (req, res) => {
   }
 });
 
-// GET /api/graph — full cross-room knowledge graph
-app.get("/api/graph", async (_req, res) => {
+// GET /api/graph — knowledge graph (filtered to userId's joined rooms when provided; roomId scopes to one room)
+app.get("/api/graph", async (req, res) => {
   try {
+    const userId = req.query.userId as string | undefined;
+    const scopeRoomId = req.query.roomId as string | undefined;  // DB room id for per-room graph
+
+    // Build room id filter
+    let roomIdFilter: string[] | undefined;
+    if (scopeRoomId) {
+      roomIdFilter = [scopeRoomId];
+    } else if (userId) {
+      const memberships = await prisma.roomMember.findMany({ where: { userId }, select: { roomId: true } });
+      roomIdFilter = memberships.map(m => m.roomId);
+    }
+
+    const roomWhere = roomIdFilter ? { id: { in: roomIdFilter }, isDM: false } : { isDM: false };
+    const nodeWhere = roomIdFilter ? { roomId: { in: roomIdFilter } } : {};
+    const edgeWhere = roomIdFilter ? { roomId: { in: roomIdFilter } } : {};
+
     type CountRow = { nodeId: string; count: bigint };
     const [rawNodes, edges, rooms, counts] = await Promise.all([
-      prisma.graphNode.findMany({ orderBy: { createdAt: "asc" } }),
-      prisma.graphEdge.findMany({ orderBy: { createdAt: "asc" } }),
-      prisma.room.findMany({ where: { isDM: false }, select: { id: true, name: true } }),
+      prisma.graphNode.findMany({ where: nodeWhere, orderBy: { createdAt: "asc" } }),
+      prisma.graphEdge.findMany({ where: edgeWhere, orderBy: { createdAt: "asc" } }),
+      prisma.room.findMany({ where: roomWhere, select: { id: true, name: true } }),
       prisma.$queryRaw<CountRow[]>`SELECT "nodeId", COUNT(*) AS count FROM "GraphNodeMessage" GROUP BY "nodeId"`,
     ]);
     const countMap = new Map(counts.map((r) => [r.nodeId, Number(r.count)]));

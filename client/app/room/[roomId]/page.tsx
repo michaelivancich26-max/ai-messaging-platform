@@ -13,6 +13,7 @@ import VibeSearch from "@/components/VibeSearch";
 import RoomDetails from "@/components/RoomDetails";
 import Sidebar from "@/components/Sidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
+import RoomGraph from "@/components/RoomGraph";
 import { AIStreamingCard } from "@/components/AIInterjectionCard";
 import type { ChatMessage } from "@/lib/types";
 import type { Settings } from "@/components/SettingsPanel";
@@ -54,6 +55,7 @@ export default function RoomPage() {
   const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean }>>(new Map());
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [channelRefresh, setChannelRefresh] = useState(0);
+  const [roomGraphOpen, setRoomGraphOpen] = useState(false);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -306,8 +308,16 @@ export default function RoomPage() {
       {/* Channel list — only for non-DM rooms */}
       {!roomId.startsWith("dm-") && (
         <div className="w-44 shrink-0 border-r border-gray-800 flex flex-col">
-          <div className="flex h-14 items-center border-b border-gray-800 px-3">
-            <span className="text-xs font-semibold text-gray-300 truncate">#{roomId}</span>
+          <div className="flex h-14 items-center border-b border-gray-800 px-3 gap-1">
+            <span className="text-xs font-semibold text-gray-300 truncate flex-1">#{roomId}</span>
+            <button
+              onClick={() => setRoomGraphOpen(v => !v)}
+              title="Room knowledge graph"
+              className={`shrink-0 rounded-lg p-1 transition-colors ${roomGraphOpen ? "text-amber-400 bg-amber-900/30" : "text-gray-600 hover:text-amber-400 hover:bg-gray-800"}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path fillRule="evenodd" d="M10 1a9 9 0 1 0 0 18A9 9 0 0 0 10 1ZM4.5 9.5a.75.75 0 0 0 0 1.5h3.69l-1.22 1.22a.75.75 0 1 0 1.06 1.06l2.5-2.5a.75.75 0 0 0 0-1.06l-2.5-2.5a.75.75 0 0 0-1.06 1.06l1.22 1.22H4.5Zm6.25-3.25a.75.75 0 0 1 .75-.75h.5a3 3 0 0 1 0 6h-.5a.75.75 0 0 1 0-1.5h.5a1.5 1.5 0 0 0 0-3h-.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
           <div className="flex-1 overflow-hidden">
             <ChannelList
@@ -320,6 +330,15 @@ export default function RoomPage() {
             />
           </div>
         </div>
+      )}
+
+      {/* Per-room knowledge graph panel */}
+      {roomGraphOpen && !roomId.startsWith("dm-") && roomMeta && (
+        <RoomGraph
+          roomName={roomId}
+          roomDbId={roomMeta.id}
+          onClose={() => setRoomGraphOpen(false)}
+        />
       )}
 
       <div className="flex flex-1 flex-col min-w-0">

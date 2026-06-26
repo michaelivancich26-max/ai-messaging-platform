@@ -83,25 +83,10 @@ export default function GraphPage() {
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
 
-    fetch(`${SERVER}/api/graph`)
+    fetch(`${SERVER}/api/graph?userId=${encodeURIComponent(userId)}`)
       .then(r => r.json())
-      .then(async data => {
-        const allRooms: Room[] = data.rooms ?? [];
-        // Filter to only rooms the user has joined
-        let joinedRoomIds: Set<string> = new Set(allRooms.map((r: Room) => r.id));
-        try {
-          const lobbyRes = await fetch(`${SERVER}/api/lobby?userId=${encodeURIComponent(userId)}`);
-          if (lobbyRes.ok) {
-            const lobby = await lobbyRes.json();
-            const joinedIds = (lobby.rooms ?? []).map((r: Room) => r.id);
-            joinedRoomIds = new Set(joinedIds);
-          }
-        } catch { /* fall back to showing all */ }
-
-        const joinedRooms = allRooms.filter(r => joinedRoomIds.has(r.id));
-        const joinedRoomIdSet = new Set(joinedRooms.map(r => r.id));
-
-        const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = (data.nodes ?? []).filter((n: GNode) => joinedRoomIdSet.has(n.roomId));
+      .then(data => {
+        const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = data.nodes ?? [];
         const initialized = rawNodes.map(n => ({
           ...n,
           correctionCount: n.correctionCount ?? 0,
@@ -111,8 +96,8 @@ export default function GraphPage() {
         }));
         nodesRef.current = initialized;
         setNodes(initialized);
-        setEdges((data.edges ?? []).filter((e: GEdge) => joinedRoomIdSet.has(e.roomId)));
-        setRooms(joinedRooms);
+        setEdges(data.edges ?? []);
+        setRooms(data.rooms ?? []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
