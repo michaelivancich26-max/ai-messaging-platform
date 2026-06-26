@@ -367,6 +367,7 @@ app.post("/api/rooms", async (req, res) => {
   const isPrivate: boolean = req.body?.isPrivate === true;
   const rawPassword: string | undefined = req.body?.password;
   const maxMembers: number | null = req.body?.maxMembers ? parseInt(req.body.maxMembers) : null;
+  const aiPersona: string | null = req.body?.aiPersona?.trim().slice(0, 500) || null;
 
   if (!name) return res.status(400).json({ error: "Invalid room name" });
   if (containsSlur(name)) return res.status(400).json({ error: "Room name contains prohibited language." });
@@ -378,7 +379,7 @@ app.post("/api/rooms", async (req, res) => {
     if (existing) return res.status(409).json({ error: "Room already exists" });
     const password = isPrivate && rawPassword ? await bcrypt.hash(rawPassword, 10) : null;
     const room = await prisma.room.create({
-      data: { name, description, creatorId: creatorId ?? null, isPrivate, password, maxMembers },
+      data: { name, description, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona },
     });
     // Auto-create default "general" channel for every new room
     await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });

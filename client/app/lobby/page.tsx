@@ -52,6 +52,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [maxMembers, setMaxMembers] = useState("");
+  const [aiPersona, setAiPersona] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -62,7 +63,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
     try {
       const res = await fetch(`${SERVER}/api/rooms`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined, isPrivate, password: isPrivate ? password : undefined, maxMembers: maxMembers ? parseInt(maxMembers) : undefined, creatorId: userId }),
+        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined, isPrivate, password: isPrivate ? password : undefined, maxMembers: maxMembers ? parseInt(maxMembers) : undefined, creatorId: userId, aiPersona: aiPersona.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Failed to create room."); return; }
@@ -116,6 +117,20 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
               </div>
             </div>
           )}
+          {/* AI Persona */}
+          <div className="rounded-xl border border-gray-700/60 bg-gray-800/40 p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-400 shrink-0">
+                <path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z" />
+              </svg>
+              <span className="text-xs font-medium text-gray-300">AI moderator persona <span className="text-gray-600">(optional)</span></span>
+            </div>
+            <textarea value={aiPersona} onChange={e => setAiPersona(e.target.value)} maxLength={500} rows={2}
+              placeholder={"e.g. A sarcastic but fair debate coach who quotes philosophers when correcting mistakes."}
+              className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-amber-500" />
+            <p className="mt-1.5 text-[10px] text-gray-600">Give the AI a character. It will adopt this voice when flagging errors in your room. You can change this later in room settings.</p>
+          </div>
+
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-700 py-2 text-sm text-gray-400 hover:bg-gray-800 transition-colors">Cancel</button>
