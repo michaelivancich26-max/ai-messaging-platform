@@ -1,20 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import { parseAIContent } from "@/lib/types";
 
 interface GNode {
   id: string;
   label: string;
   type: string;
   roomId: string;
+  correctionCount: number;
   // simulation state
   x: number;
   y: number;
   vx: number;
   vy: number;
+}
+
+interface RawMessage {
+  id: string;
+  content: string;
+  createdAt: string;
+  senderType: string;
 }
 
 interface GEdge {
@@ -57,6 +66,9 @@ export default function GraphPage() {
   const [selected, setSelected] = useState<GNode | null>(null);
   const [filterRoom, setFilterRoom] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<RawMessage[]>([]);
+  const [correctionsLoading, setCorrectionsLoading] = useState(false);
+  const [correctionsExpanded, setCorrectionsExpanded] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<GNode[]>([]);
@@ -75,6 +87,7 @@ export default function GraphPage() {
         const rawNodes: Omit<GNode, "x" | "y" | "vx" | "vy">[] = data.nodes ?? [];
         const initialized = rawNodes.map(n => ({
           ...n,
+          correctionCount: n.correctionCount ?? 0,
           x: W / 2 + (Math.random() - 0.5) * 300,
           y: H / 2 + (Math.random() - 0.5) * 300,
           vx: 0, vy: 0,
@@ -221,7 +234,7 @@ export default function GraphPage() {
             </select>
 
             {selected && (
-              <button onClick={() => setSelected(null)}
+              <button onClick={() => { setSelected(null); setCorrections([]); setCorrectionsExpanded(false); }}
                 className="rounded-lg bg-gray-800 px-3 py-1 text-xs text-gray-400 hover:text-gray-200 transition-colors">
                 Clear selection
               </button>
@@ -243,7 +256,7 @@ export default function GraphPage() {
           <div className="relative flex-1 overflow-hidden">
             <svg ref={svgRef} width="100%" height="100%"
               onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
-              onClick={() => setSelected(null)}
+              onClick={() => { setSelected(null); setCorrections([]); setCorrectionsExpanded(false); }}
               className="cursor-default">
 
               {/* Edges */}
@@ -292,7 +305,20 @@ export default function GraphPage() {
                       transform={`translate(${n.x},${n.y})`}
                       className="cursor-pointer"
                       onMouseDown={ev => onMouseDown(ev, n)}
-                      onClick={ev => { ev.stopPropagation(); setSelected(isSelected ? null : n); }}
+                      onClick={ev => {
+                        ev.stopPropagation();
+                        if (isSelected) { setSelected(null); setCorrections([]); setCorrectionsExpanded(false); return; }
+                        setSelected(n);
+                        setCorrections([]);
+                        setCorrectionsExpanded(false);
+                        if (n.correctionCount > 0) {
+                          setCorrectionsLoading(true);
+                          fetch(`${SERVER}/api/graph/nodes/${n.id}/messages`)
+                            .then(r => r.json())
+                            .then(msgs => { setCorrections(msgs); setCorrectionsLoading(false); })
+                            .catch(() => setCorrectionsLoading(false));
+                        }
+                      }}
                       onMouseEnter={() => setHovered(n)}
                       onMouseLeave={() => setHovered(null)}>
 
@@ -307,6 +333,12 @@ export default function GraphPage() {
                         opacity={dimmed ? 0.15 : 1}
                         stroke={isSelected ? "#fff" : "transparent"}
                         strokeWidth={1.5} />
+
+                      {/* Correction badge */}
+                      {n.correctionCount > 0 && (
+                        <circle r={3.5} cx={r - 1} cy={-(r - 1)}
+                          fill="#f59e0b" opacity={dimmed ? 0.15 : 1} />
+                      )}
 
                       {/* Label */}
                       <text
@@ -333,18 +365,20 @@ export default function GraphPage() {
 
             {/* Selection panel */}
             {selected && (
-              <div className="absolute right-4 top-4 w-56 rounded-xl border border-gray-700 bg-gray-900/95 p-4 text-xs shadow-xl">
-                <div className="mb-3 flex items-center gap-2">
+              <div className="absolute right-4 top-4 w-72 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-xl border border-gray-700 bg-gray-900/95 p-4 text-xs shadow-xl flex flex-col gap-3">
+                <div className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: TYPE_COLOR[selected.type] ?? "#9ca3af" }} />
                   <p className="font-semibold text-gray-100 truncate">{selected.label}</p>
                 </div>
-                <p className="mb-1 capitalize text-gray-500">{selected.type}</p>
-                <p className="mb-3 text-gray-500">Room: #{roomNameMap.get(selected.roomId)}</p>
+                <div>
+                  <p className="capitalize text-gray-500">{selected.type}</p>
+                  <p className="text-gray-500">Room: #{roomNameMap.get(selected.roomId)}</p>
+                </div>
 
                 {selectedEdges.length > 0 && (
-                  <>
+                  <div>
                     <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-600">Connections</p>
-                    <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+                    <ul className="space-y-1.5 max-h-32 overflow-y-auto">
                       {selectedEdges.map(e => {
                         const other = nodesRef.current.find(n =>
                           n.id === (e.fromNodeId === selected.id ? e.toNodeId : e.fromNodeId)
@@ -360,7 +394,50 @@ export default function GraphPage() {
                         );
                       })}
                     </ul>
-                  </>
+                  </div>
+                )}
+
+                {selected.correctionCount > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setCorrectionsExpanded(v => !v)}
+                      className="flex w-full items-center gap-2 rounded-lg bg-amber-950/50 border border-amber-500/20 px-3 py-2 text-left hover:bg-amber-950/70 transition-colors">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                      <span className="text-amber-300 font-semibold">
+                        {selected.correctionCount} AI Correction{selected.correctionCount !== 1 ? "s" : ""}
+                      </span>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                        className={`ml-auto h-3.5 w-3.5 text-amber-500 transition-transform ${correctionsExpanded ? "rotate-180" : ""}`}>
+                        <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+
+                    {correctionsExpanded && (
+                      <div className="mt-2 space-y-2">
+                        {correctionsLoading ? (
+                          <p className="text-center text-gray-600 py-2">Loading…</p>
+                        ) : corrections.map(msg => {
+                          const payload = parseAIContent(msg.content);
+                          const text = payload.type === "factual" ? payload.text : payload.type === "ambiguity" ? `"${payload.quote}" — ${payload.pronoun} refers to ${payload.referent}` : "";
+                          const isSarcasm = payload.type === "factual" && payload.sarcasm;
+                          const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                          return (
+                            <div key={msg.id} className="rounded-xl border border-amber-500/20 bg-amber-950/30 px-3 py-2">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3 text-amber-400">
+                                  <path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z" />
+                                </svg>
+                                <span className="text-amber-300 font-semibold">AI Note</span>
+                                {isSarcasm && <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] text-amber-400">sarcasm</span>}
+                                <span className="ml-auto text-gray-600">{time}</span>
+                              </div>
+                              <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">{text}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

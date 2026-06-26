@@ -609,12 +609,30 @@ app.delete("/api/rooms/:name", async (req, res) => {
 // GET /api/graph — full cross-room knowledge graph
 app.get("/api/graph", async (_req, res) => {
   try {
-    const [nodes, edges, rooms] = await Promise.all([
-      prisma.graphNode.findMany({ orderBy: { createdAt: "asc" } }),
+    const [rawNodes, edges, rooms] = await Promise.all([
+      prisma.graphNode.findMany({
+        orderBy: { createdAt: "asc" },
+        include: { _count: { select: { corrections: true } } },
+      }),
       prisma.graphEdge.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.room.findMany({ where: { isDM: false }, select: { id: true, name: true } }),
     ]);
+    const nodes = rawNodes.map(({ _count, ...n }) => ({ ...n, correctionCount: _count.corrections }));
     res.json({ nodes, edges, rooms });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/graph/nodes/:id/messages — AI correction cards linked to a graph node
+app.get("/api/graph/nodes/:id/messages", async (req, res) => {
+  try {
+    const links = await prisma.graphNodeMessage.findMany({
+      where: { nodeId: req.params.id },
+      include: { message: true },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(links.map((l) => l.message));
   } catch {
     res.status(500).json({ error: "Server error" });
   }

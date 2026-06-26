@@ -30,6 +30,7 @@ type AIResponse = {
     sarcasm?: boolean;
     factual_correction?: string;
     ambiguity?: { pronoun: string; referent: string; quote: string };
+    relatedEntities?: string[]; // entity names from this scan that this issue is about
   }>;
   entities?: Array<{ name: string; type: "person" | "place" | "topic" | "concept" }>;
   relations?: Array<{ from: string; to: string; label: string }>;
@@ -49,9 +50,34 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-// Stream the human-readable text portion of an issue, then save and emit the real message.
-// Ambiguity issues have no text to stream — they go through normal emit.
-async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClient, io: Server, emitRoom: string) {
+async function linkMessageToEntities(
+  messageId: string,
+  roomId: string,
+  relatedEntities: string[],
+  prisma: PrismaClient,
+) {
+  if (!relatedEntities?.length) return;
+  for (const label of relatedEntities) {
+    const node = await prisma.graphNode.findUnique({
+      where: { label_roomId: { label: label.trim().slice(0, 100), roomId } },
+    });
+    if (!node) continue;
+    await prisma.graphNodeMessage.upsert({
+      where: { nodeId_messageId: { nodeId: node.id, messageId } },
+      update: {},
+      create: { nodeId: node.id, messageId },
+    });
+  }
+}
+
+async function streamAndSave(
+  payload: Issue,
+  roomId: string,
+  prisma: PrismaClient,
+  io: Server,
+  emitRoom: string,
+  relatedEntities: string[] = [],
+) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
   if (!room) return;
 
@@ -59,6 +85,7 @@ async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClien
     const msg = await prisma.message.create({
       data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
     });
+    await linkMessageToEntities(msg.id, room.id, relatedEntities, prisma);
     io.to(emitRoom).emit("message", { ...msg, type: "ai_interjection" });
     return;
   }
@@ -76,6 +103,7 @@ async function streamAndSave(payload: Issue, roomId: string, prisma: PrismaClien
   const msg = await prisma.message.create({
     data: { content: JSON.stringify(payload), senderType: SenderType.AI, roomId: room.id, userId: null },
   });
+  await linkMessageToEntities(msg.id, room.id, relatedEntities, prisma);
 
   io.to(emitRoom).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
@@ -100,11 +128,12 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     '{ "issues": [], "entities": [], "relations": [] }',
     "",
     "\"issues\" — each element is one of:",
-    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<polite 1-2 sentence correction>" }' : "",
-    wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" } }' : "",
+    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<polite 1-2 sentence correction>", "relatedEntities": ["<entity name>", ...] }' : "",
+    wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" }, "relatedEntities": ["<entity name>", ...] }' : "",
     "",
     "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim. Set sarcasm:true if intentionally ironic.",
     "RESOLVE_AMBIGUITY: a pronoun whose referent is unclear but resolvable from context.",
+    "relatedEntities: names from the \"entities\" array that this specific issue is about. Use exact same names.",
     "",
     "\"entities\" — named things explicitly mentioned: people, places, topics, or concepts. Each:",
     '- { "name": "<1-3 word label>", "type": "person" | "place" | "topic" | "concept" }',
@@ -142,6 +171,11 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
 
   console.log(`[AI] Found ${parsed.issues.length} issue(s) in room ${roomId}`);
 
+  // Persist graph entities first so nodes exist when we link corrections to them
+  if (parsed.entities?.length || parsed.relations?.length) {
+    await persistGraph(roomId, parsed.entities ?? [], parsed.relations ?? [], prisma);
+  }
+
   // Stream issues sequentially so bubbles don't all start at once
   for (const issue of parsed.issues) {
     let payload: Issue | null = null;
@@ -150,12 +184,7 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
       payload = { type: "ambiguity", ...issue.ambiguity };
     }
-    if (payload) await streamAndSave(payload, roomId, prisma, io, emitRoom ?? roomId);
-  }
-
-  // Persist graph entities and relations
-  if (parsed.entities?.length || parsed.relations?.length) {
-    await persistGraph(roomId, parsed.entities ?? [], parsed.relations ?? [], prisma);
+    if (payload) await streamAndSave(payload, roomId, prisma, io, emitRoom ?? roomId, issue.relatedEntities ?? []);
   }
 }
 
