@@ -10,9 +10,19 @@ import SettingsPanel from "@/components/SettingsPanel";
 import FunctionsBar from "@/components/FunctionsBar";
 import SummarizeModal from "@/components/SummarizeModal";
 import VibeSearch from "@/components/VibeSearch";
+import RoomDetails from "@/components/RoomDetails";
 import type { ChatMessage } from "@/lib/types";
 import type { Settings } from "@/components/SettingsPanel";
 import { parseAIContent } from "@/lib/types";
+
+interface RoomMeta {
+  id: string;
+  name: string;
+  description: string | null;
+  isPrivate: boolean;
+  maxMembers: number | null;
+  creatorId: string | null;
+}
 
 export type Annotation = { pronoun: string; referent: string };
 
@@ -33,11 +43,16 @@ export default function RoomPage() {
   const [vibeSearching, setVibeSearching] = useState(false);
   const [vibeResultStatus, setVibeResultStatus] = useState<"idle" | "found" | "not_found">("idle");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [onlineMembers, setOnlineMembers] = useState<{ userId: string; username: string }[]>([]);
+  const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
+  const isAdmin: boolean = (session?.user as any)?.isAdmin ?? false;
+  const isOwner = roomMeta?.creatorId === userId;
   const [dmPartner, setDmPartner] = useState<string | null>(null);
 
   const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -71,6 +86,9 @@ export default function RoomPage() {
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
     socket.on("error", ({ message }: { message: string }) => alert(message));
     socket.on("roomDeleted", () => router.push("/lobby"));
+    socket.on("kicked", () => { alert("You were kicked from this room."); router.push("/lobby"); });
+    socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
+    socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
     socket.emit("joinRoom", { roomId, roomName: roomId, password: roomPassword });
 
@@ -122,12 +140,20 @@ export default function RoomPage() {
       socket.off("connect_error");
       socket.off("error");
       socket.off("roomDeleted");
+      socket.off("kicked");
+      socket.off("roomMembers");
+      socket.off("roomMeta");
     };
   }, [status, roomId, userId, username]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  function kickUser(targetUserId: string) {
+    const s = getSocket({ id: userId, username });
+    s.emit("kick", { roomId, targetUserId });
+  }
 
   function sendMessage(content: string) {
     const s = getSocket({ id: userId, username });
@@ -183,6 +209,17 @@ export default function RoomPage() {
         </button>
         <span className="text-lg font-semibold">{dmPartner ? `@ ${dmPartner}` : `#${roomId}`}</span>
         <span className="ml-auto text-sm text-gray-500">{username}</span>
+        <button onClick={() => setDetailsOpen((v) => !v)}
+          className="ml-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 relative" title="Room details">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+          </svg>
+          {onlineMembers.length > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[9px] font-bold text-white">
+              {onlineMembers.length}
+            </span>
+          )}
+        </button>
         <button onClick={() => setSettingsOpen(true)}
           className="ml-3 rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300" title="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -211,6 +248,20 @@ export default function RoomPage() {
       )}
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} onChange={setSettings} />
+
+      {detailsOpen && (
+        <RoomDetails
+          roomId={roomId}
+          meta={roomMeta}
+          onlineMembers={onlineMembers}
+          currentUserId={userId}
+          isOwner={isOwner}
+          isAdmin={isAdmin}
+          onClose={() => setDetailsOpen(false)}
+          onKick={kickUser}
+          onMetaUpdate={(meta) => setRoomMeta(meta)}
+        />
+      )}
     </div>
   );
 }

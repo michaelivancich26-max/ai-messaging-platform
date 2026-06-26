@@ -52,19 +52,38 @@ redis.connect().catch(console.error);
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
 const WINDOW_SIZE = 6;
 
+// Presence: roomId → Map<socketId, { userId, username }>
+const presence = new Map<string, Map<string, { userId: string; username: string }>>();
+
+function broadcastPresence(roomId: string) {
+  const members = presence.get(roomId);
+  const list = members ? Array.from(members.values()) : [];
+  io.to(roomId).emit("roomMembers", list);
+}
+
+function leavePresence(socketId: string) {
+  for (const [roomId, members] of presence.entries()) {
+    if (members.has(socketId)) {
+      members.delete(socketId);
+      broadcastPresence(roomId);
+      if (members.size === 0) presence.delete(roomId);
+    }
+  }
+}
+
 io.on("connection", (socket) => {
+  const socketUser = (socket as any).user as { id: string; username: string };
+
+  socket.on("disconnect", () => leavePresence(socket.id));
+
   socket.on("joinRoom", async (payload: { roomId: string; roomName: string; password?: string }) => {
     const { roomId, roomName, password } = payload;
     try {
       const room = await prisma.room.findUnique({ where: { name: roomName } });
-      if (!room) {
-        socket.emit("roomDeleted");
-        return;
-      }
-      const socketUser = (socket as any).user as { id: string; username: string };
+      if (!room) { socket.emit("roomDeleted"); return; }
+
       if (room.isDM && room.participant1Id !== socketUser.id && room.participant2Id !== socketUser.id) {
-        socket.emit("roomDeleted");
-        return;
+        socket.emit("roomDeleted"); return;
       }
       if (room.isPrivate && room.password) {
         const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
@@ -77,6 +96,7 @@ io.on("connection", (socket) => {
         }
       }
       socket.data.roomDbId = room.id;
+      socket.data.roomId = roomId;
 
       const history = await prisma.message.findMany({
         where: { roomId: room.id },
@@ -95,10 +115,48 @@ io.on("connection", (socket) => {
       });
 
       socket.emit("history", mapped);
+      socket.join(roomId);
+
+      // Presence
+      if (!presence.has(roomId)) presence.set(roomId, new Map());
+      presence.get(roomId)!.set(socket.id, { userId: socketUser.id, username: socketUser.username });
+      broadcastPresence(roomId);
+
+      // Send room meta (without password hash)
+      const { password: _pw, ...roomMeta } = room as any;
+      socket.emit("roomMeta", roomMeta);
     } catch (err) {
       console.error("joinRoom error:", err);
     }
-    socket.join(roomId);
+  });
+
+  socket.on("kick", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      const isAdmin = requestingUser?.isAdmin ?? false;
+      if (room.creatorId !== socketUser.id && !isAdmin) {
+        socket.emit("error", { message: "Only the room owner can kick members." });
+        return;
+      }
+      // Find and disconnect all sockets belonging to targetUserId in this room
+      const members = presence.get(roomId);
+      if (!members) return;
+      for (const [sid, info] of members.entries()) {
+        if (info.userId === targetUserId) {
+          const targetSocket = io.sockets.sockets.get(sid);
+          if (targetSocket) {
+            targetSocket.emit("kicked", { roomId });
+            targetSocket.leave(roomId);
+          }
+          members.delete(sid);
+        }
+      }
+      broadcastPresence(roomId);
+    } catch (err) {
+      console.error("kick error:", err);
+    }
   });
 
   socket.on(
@@ -113,7 +171,6 @@ io.on("connection", (socket) => {
       }
 
       try {
-        // Ensure user exists
         let user = await prisma.user.findUnique({ where: { username } });
         if (!user) {
           user = await prisma.user.create({
@@ -121,20 +178,11 @@ io.on("connection", (socket) => {
           }).catch(() => prisma.user.findUniqueOrThrow({ where: { username } }));
         }
 
-        // Room must already exist — never auto-create on message send
         const room = await prisma.room.findUnique({ where: { name: roomId } });
-        if (!room) {
-          socket.emit("roomDeleted");
-          return;
-        }
+        if (!room) { socket.emit("roomDeleted"); return; }
 
         const message = await prisma.message.create({
-          data: {
-            content,
-            senderType: SenderType.HUMAN,
-            roomId: room.id,
-            userId: user.id,
-          },
+          data: { content, senderType: SenderType.HUMAN, roomId: room.id, userId: user.id },
           include: { user: true },
         });
 
@@ -143,8 +191,6 @@ io.on("connection", (socket) => {
         await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
 
         io.to(roomId).emit("message", { ...message, type: "human" });
-
-        // Schedule a 30s batch scan — first message starts the timer, the rest accumulate
         scheduleAI(roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true } });
       } catch (err) {
         console.error("sendMessage error:", err);
@@ -249,6 +295,57 @@ app.post("/api/rooms/:name/auth", async (req, res) => {
     res.json({ ok: valid });
   } catch {
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/api/rooms/:name", async (req, res) => {
+  const { name } = req.params;
+  try {
+    const room = await prisma.room.findUnique({
+      where: { name },
+      include: { _count: { select: { messages: true } } },
+    });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const { password: _pw, ...rest } = room as any;
+    res.json(rest);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.patch("/api/rooms/:name", async (req, res) => {
+  const { name } = req.params;
+  const { userId, description, maxMembers, isPrivate, password: newPassword } = req.body as {
+    userId: string;
+    description?: string;
+    maxMembers?: number | null;
+    isPrivate?: boolean;
+    password?: string;
+  };
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+    const isAdmin = requestingUser?.isAdmin ?? false;
+    if (room.creatorId !== userId && !isAdmin) return res.status(403).json({ error: "Only the creator can edit this room" });
+
+    const data: any = {};
+    if (description !== undefined) data.description = description?.trim().slice(0, 200) || null;
+    if (maxMembers !== undefined) data.maxMembers = maxMembers;
+    if (isPrivate !== undefined) {
+      data.isPrivate = isPrivate;
+      if (!isPrivate) data.password = null;
+    }
+    if (newPassword) data.password = await bcrypt.hash(newPassword, 10);
+
+    const updated = await prisma.room.update({ where: { name }, data });
+    const { password: _pw, ...rest } = updated as any;
+    // Notify everyone in the room of updated meta
+    io.to(name).emit("roomMeta", rest);
+    res.json(rest);
+  } catch {
+    res.status(500).json({ error: "Failed to update room" });
   }
 });
 
