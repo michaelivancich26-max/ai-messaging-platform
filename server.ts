@@ -132,7 +132,7 @@ io.on("connection", (socket) => {
   );
 
   socket.on("summarize", async ({ roomId, since }: { roomId: string; since: string | null }) => {
-    await summarizeConversation({ roomId, redis, io, prisma, since });
+    await summarizeConversation({ roomId, redis, io, prisma, since, socketId: socket.id });
     socket.emit("summarizeDone");
   });
 });

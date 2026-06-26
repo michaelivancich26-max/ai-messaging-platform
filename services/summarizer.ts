@@ -11,10 +11,11 @@ type Params = {
   redis: RedisClientType | ReturnType<typeof import("redis").createClient>;
   io: Server;
   prisma: PrismaClient;
-  since: string | null; // ISO string or null for all messages
+  since: string | null;
+  socketId: string;
 };
 
-export async function summarizeConversation({ roomId, io, prisma, since }: Params) {
+export async function summarizeConversation({ roomId, io, prisma, since, socketId }: Params) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
   if (!room) return;
 
@@ -49,14 +50,16 @@ export async function summarizeConversation({ roomId, io, prisma, since }: Param
   const text = response.content[0].type === "text" ? response.content[0].text : null;
   if (!text) return;
 
-  const aiMessage = await prisma.message.create({
-    data: {
-      content: JSON.stringify({ type: "summary", text }),
-      senderType: SenderType.AI,
-      roomId: room.id,
-      userId: null,
-    },
-  });
+  const payload = {
+    id: `summary-${Date.now()}`,
+    content: JSON.stringify({ type: "summary", text }),
+    senderType: SenderType.AI,
+    type: "summary",
+    createdAt: new Date().toISOString(),
+    userId: null,
+    roomId: room.id,
+    user: null,
+  };
 
-  io.to(roomId).emit("message", { ...aiMessage, type: "summary" });
+  io.to(socketId).emit("message", payload);
 }
