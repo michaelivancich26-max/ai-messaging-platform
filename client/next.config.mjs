@@ -1,13 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/socket/:path*",
-        destination: "http://localhost:3001/:path*",
-      },
-    ];
-  },
-};
+const nextConfig = {};
 
 export default nextConfig;
