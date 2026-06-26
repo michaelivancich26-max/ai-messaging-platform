@@ -8,6 +8,7 @@ import cors from "cors";
 import { scheduleAI } from "./services/aiOrchestrator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
+import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
 const ALLOWED_ORIGINS = [
@@ -52,8 +53,8 @@ const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
 const WINDOW_SIZE = 6;
 
 io.on("connection", (socket) => {
-  socket.on("joinRoom", async (payload: { roomId: string; roomName: string }) => {
-    const { roomId, roomName } = payload;
+  socket.on("joinRoom", async (payload: { roomId: string; roomName: string; password?: string }) => {
+    const { roomId, roomName, password } = payload;
     try {
       const room = await prisma.room.findUnique({ where: { name: roomName } });
       if (!room) {
@@ -64,6 +65,16 @@ io.on("connection", (socket) => {
       if (room.isDM && room.participant1Id !== socketUser.id && room.participant2Id !== socketUser.id) {
         socket.emit("roomDeleted");
         return;
+      }
+      if (room.isPrivate && room.password) {
+        const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+        const isAdmin = requestingUser?.isAdmin ?? false;
+        const isCreator = room.creatorId === socketUser.id;
+        if (!isAdmin && !isCreator) {
+          if (!password) { socket.emit("error", { message: "Password required." }); return; }
+          const valid = await bcrypt.compare(password, room.password);
+          if (!valid) { socket.emit("error", { message: "Incorrect password." }); return; }
+        }
       }
       socket.data.roomDbId = room.id;
 
@@ -156,7 +167,7 @@ app.get("/api/rooms", async (_req, res) => {
     take: 50,
     include: { _count: { select: { messages: true } } },
   });
-  res.json(rooms);
+  res.json(rooms.map(({ password: _pw, ...r }) => r));
 });
 
 app.get("/api/users", async (req, res) => {
@@ -203,15 +214,41 @@ app.post("/api/dm", async (req, res) => {
 app.post("/api/rooms", async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
   const creatorId = req.body?.creatorId as string | undefined;
+  const description = req.body?.description?.trim().slice(0, 200) || null;
+  const isPrivate: boolean = req.body?.isPrivate === true;
+  const rawPassword: string | undefined = req.body?.password;
+  const maxMembers: number | null = req.body?.maxMembers ? parseInt(req.body.maxMembers) : null;
+
   if (!name) return res.status(400).json({ error: "Invalid room name" });
   if (containsSlur(name)) return res.status(400).json({ error: "Room name contains prohibited language." });
+  if (isPrivate && !rawPassword) return res.status(400).json({ error: "Private rooms require a password." });
+  if (maxMembers !== null && (maxMembers < 2 || maxMembers > 500)) return res.status(400).json({ error: "Max members must be between 2 and 500." });
+
   try {
     const existing = await prisma.room.findUnique({ where: { name } });
     if (existing) return res.status(409).json({ error: "Room already exists" });
-    const room = await prisma.room.create({ data: { name, creatorId: creatorId ?? null } });
-    res.json(room);
+    const password = isPrivate && rawPassword ? await bcrypt.hash(rawPassword, 10) : null;
+    const room = await prisma.room.create({
+      data: { name, description, creatorId: creatorId ?? null, isPrivate, password, maxMembers },
+    });
+    res.json({ ...room, password: undefined });
   } catch {
     res.status(500).json({ error: "Failed to create room" });
+  }
+});
+
+app.post("/api/rooms/:name/auth", async (req, res) => {
+  const { name } = req.params;
+  const { password } = req.body as { password: string };
+  if (!password) return res.status(400).json({ error: "Password required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    if (!room.isPrivate || !room.password) return res.json({ ok: true });
+    const valid = await bcrypt.compare(password, room.password);
+    res.json({ ok: valid });
+  } catch {
+    res.status(500).json({ error: "Server error" });
   }
 });
 

@@ -26,9 +26,13 @@ model User {
 model Room {
   id             String    @id @default(cuid())
   name           String    @unique
+  description    String?
   createdAt      DateTime  @default(now())
   creatorId      String?
   creator        User?     @relation(fields: [creatorId], references: [id])
+  isPrivate      Boolean   @default(false)
+  password       String?
+  maxMembers     Int?
   isDM           Boolean   @default(false)
   participant1Id String?
   participant2Id String?
