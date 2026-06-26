@@ -7,7 +7,7 @@ import { SenderType } from "@prisma/client";
 const client = new Anthropic();
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
-const SCAN_INTERVAL_MS = 30_000;
+const SCAN_INTERVAL_MS = 5_000;
 const STREAM_CHUNK_SIZE = 3;   // characters per emit
 const STREAM_DELAY_MS = 18;    // ms between chunks (~55 chars/sec — readable typing speed)
 
