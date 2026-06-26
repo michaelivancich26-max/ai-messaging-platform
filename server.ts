@@ -5,7 +5,7 @@ import { PrismaClient, SenderType } from "@prisma/client";
 import { createClient } from "redis";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
-import { orchestrateAI } from "./services/aiOrchestrator";
+import { scheduleAI } from "./services/aiOrchestrator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 
@@ -133,8 +133,8 @@ io.on("connection", (socket) => {
 
         io.to(roomId).emit("message", { ...message, type: "human" });
 
-        // Fire-and-forget AI orchestration — does not block chat
-        orchestrateAI({ roomId, redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true } }).catch(console.error);
+        // Schedule a 30s batch scan — first message starts the timer, the rest accumulate
+        scheduleAI(roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true } });
       } catch (err) {
         console.error("sendMessage error:", err);
       }
