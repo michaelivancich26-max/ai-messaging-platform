@@ -270,9 +270,14 @@ export default function LobbyPage() {
         fetch(`${SERVER}/api/dm?userId=${userId}`),
         fetch(`${SERVER}/api/users?excludeId=${userId}`),
       ]);
-      setRooms(await roomsRes.json());
-      setDMs(await dmsRes.json());
-      setUsers(await usersRes.json());
+      const [roomsData, dmsData, usersData] = await Promise.all([
+        roomsRes.json(),
+        dmsRes.json(),
+        usersRes.json(),
+      ]);
+      if (Array.isArray(roomsData)) setRooms(roomsData);
+      if (Array.isArray(dmsData)) setDMs(dmsData);
+      if (Array.isArray(usersData)) setUsers(usersData);
     } catch { /* server may still be starting */ } finally {
       setLoading(false);
     }
@@ -487,7 +492,7 @@ export default function LobbyPage() {
       {showCreate && (
         <CreateRoomModal
           onClose={() => setShowCreate(false)}
-          onCreate={(room) => { setRooms((prev) => [room, ...prev]); router.push(`/room/${room.name}`); }}
+          onCreate={(room) => { setRooms((prev) => [{ ...room, _count: { messages: 0 } }, ...prev]); router.push(`/room/${room.name}`); }}
         />
       )}
 
