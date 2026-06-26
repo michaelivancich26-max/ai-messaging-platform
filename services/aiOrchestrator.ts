@@ -62,10 +62,17 @@ async function linkMessageToEntities(
       where: { label_roomId: { label: label.trim().slice(0, 100), roomId } },
     });
     if (!node) continue;
-    await prisma.graphNodeMessage.upsert({
-      where: { nodeId_messageId: { nodeId: node.id, messageId } },
-      update: {},
-      create: { nodeId: node.id, messageId },
+    // Use nested write through relation to avoid needing prisma.graphNodeMessage accessor
+    await prisma.graphNode.update({
+      where: { id: node.id },
+      data: {
+        corrections: {
+          connectOrCreate: {
+            where: { nodeId_messageId: { nodeId: node.id, messageId } },
+            create: { messageId },
+          },
+        },
+      },
     });
   }
 }

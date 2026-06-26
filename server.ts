@@ -612,12 +612,12 @@ app.get("/api/graph", async (_req, res) => {
     const [rawNodes, edges, rooms] = await Promise.all([
       prisma.graphNode.findMany({
         orderBy: { createdAt: "asc" },
-        include: { _count: { select: { corrections: true } } },
+        include: { corrections: { select: { id: true } } },
       }),
       prisma.graphEdge.findMany({ orderBy: { createdAt: "asc" } }),
       prisma.room.findMany({ where: { isDM: false }, select: { id: true, name: true } }),
     ]);
-    const nodes = rawNodes.map(({ _count, ...n }) => ({ ...n, correctionCount: _count.corrections }));
+    const nodes = rawNodes.map(({ corrections, ...n }) => ({ ...n, correctionCount: corrections.length }));
     res.json({ nodes, edges, rooms });
   } catch {
     res.status(500).json({ error: "Server error" });
@@ -627,12 +627,16 @@ app.get("/api/graph", async (_req, res) => {
 // GET /api/graph/nodes/:id/messages — AI correction cards linked to a graph node
 app.get("/api/graph/nodes/:id/messages", async (req, res) => {
   try {
-    const links = await prisma.graphNodeMessage.findMany({
-      where: { nodeId: req.params.id },
-      include: { message: true },
-      orderBy: { createdAt: "desc" },
+    const node = await prisma.graphNode.findUnique({
+      where: { id: req.params.id },
+      include: {
+        corrections: {
+          include: { message: true },
+          orderBy: { createdAt: "desc" },
+        },
+      },
     });
-    res.json(links.map((l) => l.message));
+    res.json(node?.corrections.map((c) => c.message) ?? []);
   } catch {
     res.status(500).json({ error: "Server error" });
   }
