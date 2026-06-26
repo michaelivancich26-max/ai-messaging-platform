@@ -130,7 +130,18 @@ export default function RoomPage() {
           return;
         }
       }
-      setMessages((prev) => [...prev, msg]);
+      setMessages((prev) => {
+        // Replace optimistic temp message from same user with matching content
+        const tempIdx = prev.findIndex(
+          (m) => m.id.startsWith("temp-") && m.content === msg.content && m.userId === msg.userId
+        );
+        if (tempIdx !== -1) {
+          const next = [...prev];
+          next[tempIdx] = msg;
+          return next;
+        }
+        return [...prev, msg];
+      });
     });
 
     return () => {
@@ -156,6 +167,20 @@ export default function RoomPage() {
   }
 
   function sendMessage(content: string) {
+    // Optimistic: show message immediately with a temp id
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: tempId,
+      content,
+      type: content.startsWith('{"type":"image"') ? "image" : "human",
+      senderType: "HUMAN",
+      createdAt: new Date().toISOString(),
+      roomId,
+      userId,
+      user: { username },
+    } as any;
+    setMessages((prev) => [...prev, optimistic]);
+
     const s = getSocket({ id: userId, username });
     s.emit("sendMessage", { roomId, userId, username, content, settings });
   }

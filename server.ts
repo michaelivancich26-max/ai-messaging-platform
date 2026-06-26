@@ -101,19 +101,25 @@ io.on("connection", (socket) => {
       const history = await prisma.message.findMany({
         where: { roomId: room.id },
         orderBy: { createdAt: "asc" },
-        take: 50,
+        take: 20,
         include: { user: true },
       });
 
       const mapped = history.map((m) => {
         let type: string = "human";
+        let content = m.content;
         if (m.senderType === "AI") {
           if (m.content.startsWith('{"type":"summary"')) type = "summary";
           else type = "ai_interjection";
         } else if (m.content.startsWith('{"type":"image"')) {
           type = "image";
+          // Strip heavy base64 src from history — client loads it lazily by message id
+          try {
+            const p = JSON.parse(m.content);
+            content = JSON.stringify({ type: "image", src: null, filename: p.filename, messageId: m.id });
+          } catch {}
         }
-        return { ...m, type };
+        return { ...m, content, type };
       });
 
       socket.emit("history", mapped);
@@ -222,6 +228,39 @@ io.on("connection", (socket) => {
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+// Combined lobby fetch — rooms + DMs + users in one round trip
+app.get("/api/lobby", async (req, res) => {
+  const userId = req.query.userId as string;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const [rooms, dms, users] = await Promise.all([
+      prisma.room.findMany({
+        where: { isDM: false },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { _count: { select: { messages: true } } },
+      }),
+      prisma.room.findMany({
+        where: { isDM: true, OR: [{ participant1Id: userId }, { participant2Id: userId }] },
+        orderBy: { createdAt: "desc" },
+        include: { _count: { select: { messages: true } } },
+      }),
+      prisma.user.findMany({
+        where: { id: { not: userId } },
+        select: { id: true, username: true },
+        orderBy: { username: "asc" },
+      }),
+    ]);
+    res.json({
+      rooms: rooms.map(({ password: _pw, ...r }) => r),
+      dms,
+      users,
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to load lobby" });
+  }
+});
+
 app.get("/api/rooms", async (_req, res) => {
   const rooms = await prisma.room.findMany({
     where: { isDM: false },
@@ -230,6 +269,18 @@ app.get("/api/rooms", async (_req, res) => {
     include: { _count: { select: { messages: true } } },
   });
   res.json(rooms.map(({ password: _pw, ...r }) => r));
+});
+
+// Lazy-load full image data for a specific message (history sends stubs)
+app.get("/api/messages/:id/image", async (req, res) => {
+  try {
+    const msg = await prisma.message.findUnique({ where: { id: req.params.id } });
+    if (!msg || !msg.content.startsWith('{"type":"image"')) return res.status(404).json({ error: "Not found" });
+    const parsed = JSON.parse(msg.content);
+    res.json({ src: parsed.src, filename: parsed.filename });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.get("/api/users", async (req, res) => {

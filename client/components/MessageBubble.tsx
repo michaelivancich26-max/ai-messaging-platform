@@ -13,8 +13,9 @@ interface Props {
 
 interface ImagePayload {
   type: "image";
-  src: string;
+  src: string | null;
   filename: string;
+  messageId?: string;
 }
 
 function parseImageContent(content: string): ImagePayload | null {
@@ -58,21 +59,49 @@ function HighlightedContent({ content, annotation }: { content: string; annotati
   );
 }
 
+const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+
 function ImageMessage({ payload, isSelf }: { payload: ImagePayload; isSelf: boolean }) {
   const [lightbox, setLightbox] = useState(false);
+  const [src, setSrc] = useState<string | null>(payload.src);
+  const [loading, setLoading] = useState(false);
+
+  async function loadImage() {
+    if (src || loading || !payload.messageId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${SERVER}/api/messages/${payload.messageId}/image`);
+      const data = await res.json();
+      if (data.src) setSrc(data.src);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <>
       <div
-        className={`overflow-hidden rounded-2xl cursor-zoom-in ${isSelf ? "rounded-tr-sm" : "rounded-tl-sm"}`}
-        onClick={() => setLightbox(true)}
+        className={`overflow-hidden rounded-2xl ${isSelf ? "rounded-tr-sm" : "rounded-tl-sm"} ${src ? "cursor-zoom-in" : "cursor-pointer"}`}
+        onClick={() => { if (src) setLightbox(true); else loadImage(); }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={payload.src}
-          alt={payload.filename}
-          className="max-h-64 max-w-xs object-cover transition-opacity hover:opacity-90"
-        />
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src} alt={payload.filename} className="max-h-64 max-w-xs object-cover transition-opacity hover:opacity-90" />
+        ) : (
+          <div className="flex h-24 w-48 items-center justify-center gap-2 rounded-2xl bg-gray-800 text-sm text-gray-400">
+            {loading ? (
+              <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-500">
+                <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909-.48-.480a.75.75 0 0 0-1.06 0L6.75 13.09l-1.96-1.96a.75.75 0 0 0-1.06 0L2.5 11.06Zm9.25-7.56a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z" clipRule="evenodd" />
+              </svg>
+            )}
+            <span className="text-xs">{loading ? "Loading…" : "Tap to load"}</span>
+          </div>
+        )}
       </div>
       {lightbox && (
         <div
@@ -82,12 +111,12 @@ function ImageMessage({ payload, isSelf }: { payload: ImagePayload; isSelf: bool
           <div className="relative max-h-[90vh] max-w-[90vw]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={payload.src}
+              src={src ?? ""}
               alt={payload.filename}
               className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
             />
             <a
-              href={payload.src}
+              href={src ?? ""}
               download={payload.filename}
               onClick={(e) => e.stopPropagation()}
               className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80"

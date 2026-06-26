@@ -265,19 +265,13 @@ export default function LobbyPage() {
 
   async function fetchAll() {
     try {
-      const [roomsRes, dmsRes, usersRes] = await Promise.all([
-        fetch(`${SERVER}/api/rooms`),
-        fetch(`${SERVER}/api/dm?userId=${userId}`),
-        fetch(`${SERVER}/api/users?excludeId=${userId}`),
-      ]);
-      const [roomsData, dmsData, usersData] = await Promise.all([
-        roomsRes.json(),
-        dmsRes.json(),
-        usersRes.json(),
-      ]);
-      if (Array.isArray(roomsData)) setRooms(roomsData);
-      if (Array.isArray(dmsData)) setDMs(dmsData);
-      if (Array.isArray(usersData)) setUsers(usersData);
+      const res = await fetch(`${SERVER}/api/lobby?userId=${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.rooms)) setRooms(data.rooms);
+        if (Array.isArray(data.dms)) setDMs(data.dms);
+        if (Array.isArray(data.users)) setUsers(data.users);
+      }
     } catch { /* server may still be starting */ } finally {
       setLoading(false);
     }
