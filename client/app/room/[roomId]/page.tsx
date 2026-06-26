@@ -358,8 +358,10 @@ export default function RoomPage() {
       {!roomId.startsWith("dm-") && !activeChannel ? (
         <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
       ) : (
-      <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} />
-      <div ref={bottomRef} />
+        <>
+          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} />
+          <div ref={bottomRef} />
+        </>
       )}
 
       {/* Streaming AI cards — same amber card, text types in live */}
