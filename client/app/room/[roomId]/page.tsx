@@ -114,7 +114,9 @@ export default function RoomPage() {
     socket.on("channelsUpdated", () => setChannelRefresh(v => v + 1));
     socket.on("pollSuggested", (s: { question: string; options: string[] }) => setPollSuggestion(s));
     socket.on("pollCreated", (poll: Poll) => setActivePolls(prev => [poll, ...prev]));
-    socket.on("pollUpdated", (poll: Poll) => setActivePolls(prev => prev.map(p => p.id === poll.id ? poll : p)));
+    socket.on("pollUpdated", (poll: Poll) => setActivePolls(prev =>
+      poll.closedAt ? prev.filter(p => p.id !== poll.id) : prev.map(p => p.id === poll.id ? poll : p)
+    ));
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     socket.on("aiStreamStart", ({ tempId, sarcasm }: { tempId: string; sarcasm: boolean }) => {
