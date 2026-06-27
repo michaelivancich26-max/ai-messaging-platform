@@ -28,11 +28,12 @@ type Issue =
 
 type AIResponse = {
   issues: Array<{
-    type: "FACTUAL_UNCERTAINTY" | "RESOLVE_AMBIGUITY";
+    type: "FACTUAL_UNCERTAINTY" | "RESOLVE_AMBIGUITY" | "SUGGEST_POLL";
     sarcasm?: boolean;
     factual_correction?: string;
     ambiguity?: { pronoun: string; referent: string; quote: string };
-    relatedEntities?: string[]; // entity names from this scan that this issue is about
+    poll?: { question: string; options: string[] };
+    relatedEntities?: string[];
   }>;
   entities?: Array<{ name: string; type: "person" | "place" | "topic" | "concept" }>;
   relations?: Array<{ from: string; to: string; label: string }>;
@@ -143,9 +144,11 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     "\"issues\" — each element is one of:",
     wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<one blunt sentence stating the correct fact, no softening, no \'actually\', no apology>", "relatedEntities": ["<entity name>", ...] }' : "",
     wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" }, "relatedEntities": ["<entity name>", ...] }' : "",
+    '- { "type": "SUGGEST_POLL", "poll": { "question": "<concise poll question>", "options": ["<option 1>", "<option 2>"] } }',
     "",
     "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim. Only flag clear, verifiable errors — not opinions or estimates. Set sarcasm:true if the original claim was intentionally ironic. Write the correction as a raw fact: e.g. \"Mount Everest is 8,849 m tall.\" not \"Actually, I think you'll find...\"",
     "RESOLVE_AMBIGUITY: a pronoun whose referent is unclear but resolvable from context.",
+    "SUGGEST_POLL: the group is actively debating between 2-4 specific options and a vote would help. Only suggest when the debate is live and unresolved. Extract the real options being discussed (2-4 max). Never suggest a poll for hypotheticals or resolved topics.",
     "relatedEntities: names from the \"entities\" array that this specific issue is about. Use exact same names.",
     "",
     "\"entities\" — named things explicitly mentioned: people, places, topics, or concepts. Each:",
@@ -191,6 +194,13 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
 
   // Stream issues sequentially so bubbles don't all start at once
   for (const issue of parsed.issues) {
+    if (issue.type === "SUGGEST_POLL" && issue.poll?.question && issue.poll.options?.length >= 2) {
+      io.to(emitRoom ?? roomId).emit("pollSuggested", {
+        question: issue.poll.question,
+        options: issue.poll.options.slice(0, 4),
+      });
+      continue;
+    }
     let payload: Issue | null = null;
     if (issue.type === "FACTUAL_UNCERTAINTY" && wantFactual && issue.factual_correction) {
       payload = { type: "factual", text: issue.factual_correction, sarcasm: issue.sarcasm ?? false };

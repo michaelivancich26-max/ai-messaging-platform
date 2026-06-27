@@ -57,6 +57,30 @@ model Room {
   graphNodes     GraphNode[]
   graphEdges     GraphEdge[]
   members        RoomMember[]
+  polls          Poll[]
+}
+
+model Poll {
+  id        String     @id @default(cuid())
+  roomId    String
+  channelId String?
+  question  String
+  options   String[]
+  createdBy String
+  closedAt  DateTime?
+  createdAt DateTime   @default(now())
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  votes     PollVote[]
+}
+
+model PollVote {
+  id      String @id @default(cuid())
+  pollId  String
+  userId  String
+  option  String
+  poll    Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, userId])
 }
 
 model Section {

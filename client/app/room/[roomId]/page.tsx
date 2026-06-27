@@ -7,6 +7,8 @@ import { getSocket } from "@/lib/socket";
 import ChatWindow from "@/components/ChatWindow";
 import MessageInput from "@/components/MessageInput";
 import FunctionsBar from "@/components/FunctionsBar";
+import PollBanner from "@/components/PollBanner";
+import PollCard, { type Poll } from "@/components/PollCard";
 import SummarizeModal from "@/components/SummarizeModal";
 import VibeSearch from "@/components/VibeSearch";
 import RoomPanel from "@/components/RoomPanel";
@@ -46,6 +48,8 @@ export default function RoomPage() {
   const [channelRefresh, setChannelRefresh] = useState(0);
   const [roomGraphOpen, setRoomGraphOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [pollSuggestion, setPollSuggestion] = useState<{ question: string; options: string[] } | null>(null);
+  const [activePolls, setActivePolls] = useState<Poll[]>([]);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
     roomId.startsWith("dm-") ? "chat" : "channels"
@@ -108,6 +112,9 @@ export default function RoomPage() {
     socket.on("roomDeleted", () => router.push("/lobby"));
     socket.on("kicked", () => { alert("You were kicked from this room."); router.push("/lobby"); });
     socket.on("channelsUpdated", () => setChannelRefresh(v => v + 1));
+    socket.on("pollSuggested", (s: { question: string; options: string[] }) => setPollSuggestion(s));
+    socket.on("pollCreated", (poll: Poll) => setActivePolls(prev => [poll, ...prev]));
+    socket.on("pollUpdated", (poll: Poll) => setActivePolls(prev => prev.map(p => p.id === poll.id ? poll : p)));
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     socket.on("aiStreamStart", ({ tempId, sarcasm }: { tempId: string; sarcasm: boolean }) => {
@@ -199,6 +206,9 @@ export default function RoomPage() {
       socket.off("error");
       socket.off("roomDeleted");
       socket.off("kicked");
+      socket.off("pollSuggested");
+      socket.off("pollCreated");
+      socket.off("pollUpdated");
       socket.off("roomMembers");
       socket.off("roomMeta");
       socket.off("aiStreamStart");
@@ -243,6 +253,12 @@ export default function RoomPage() {
     activeChannelRef.current = channel;
     setActiveChannel(channel);
     setMessages([]);
+    setActivePolls([]);
+    setPollSuggestion(null);
+    fetch(`${SERVER}/api/channels/${channel.id}/polls`)
+      .then(r => r.json())
+      .then((polls: Poll[]) => setActivePolls(polls))
+      .catch(() => {});
     // Join the socket room for real-time messages
     const s = getSocket({ id: userId, username });
     s.emit("joinChannel", { channelId: channel.id });
@@ -269,6 +285,21 @@ export default function RoomPage() {
         setAnnotations(restoredAnnotations);
       })
       .catch(() => {});
+  }
+
+  function createPoll(question: string, options: string[]) {
+    getSocket({ id: userId, username }).emit("createPoll", {
+      roomId, channelId: activeChannel?.id ?? null, question, options, userId,
+    });
+    setPollSuggestion(null);
+  }
+
+  function votePoll(pollId: string, option: string) {
+    getSocket({ id: userId, username }).emit("votePoll", { pollId, userId, option });
+  }
+
+  function closePoll(pollId: string) {
+    getSocket({ id: userId, username }).emit("closePoll", { pollId, userId });
   }
 
   function kickUser(targetUserId: string) {
@@ -444,6 +475,31 @@ export default function RoomPage() {
           <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} />
           <div ref={bottomRef} />
         </>
+      )}
+
+      {/* Poll suggestion banner */}
+      {pollSuggestion && (
+        <PollBanner
+          suggestion={pollSuggestion}
+          onDismiss={() => setPollSuggestion(null)}
+          onConfirm={createPoll}
+        />
+      )}
+
+      {/* Active polls */}
+      {activePolls.length > 0 && (
+        <div className="shrink-0 max-h-64 overflow-y-auto border-t border-gray-800/60">
+          {activePolls.map(poll => (
+            <PollCard
+              key={poll.id}
+              poll={poll}
+              currentUserId={userId}
+              canClose={isOwner || isAdmin || poll.createdBy === userId}
+              onVote={votePoll}
+              onClose={closePoll}
+            />
+          ))}
+        </div>
       )}
 
       <FunctionsBar onSummarize={() => setSummarizeModalOpen(true)} summarizing={summarizing} onVibeSearch={() => setVibeSearchOpen(true)} />

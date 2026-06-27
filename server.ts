@@ -265,6 +265,59 @@ io.on("connection", (socket) => {
       socket.emit("summarizeDone");
     }
   });
+
+  socket.on("createPoll", async ({ roomId, channelId, question, options, userId }: {
+    roomId: string; channelId?: string | null; question: string; options: string[]; userId: string;
+  }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const poll = await (prisma as any).poll.create({
+        data: { roomId: room.id, channelId: channelId ?? null, question: question.trim().slice(0, 200), options: options.map((o: string) => o.trim().slice(0, 100)).filter(Boolean).slice(0, 4), createdBy: userId },
+        include: { votes: true },
+      });
+      const emitTarget = channelId ? `channel:${channelId}` : roomId;
+      io.to(emitTarget).emit("pollCreated", poll);
+    } catch (err) {
+      console.error("[createPoll]", err);
+    }
+  });
+
+  socket.on("votePoll", async ({ pollId, userId, option }: { pollId: string; userId: string; option: string }) => {
+    try {
+      await (prisma as any).pollVote.upsert({
+        where: { pollId_userId: { pollId, userId } },
+        update: { option },
+        create: { pollId, userId, option },
+      });
+      const poll = await (prisma as any).poll.findUnique({ where: { id: pollId }, include: { votes: true } });
+      if (!poll) return;
+      const room = await prisma.room.findUnique({ where: { id: poll.roomId } });
+      const emitTarget = poll.channelId ? `channel:${poll.channelId}` : room?.name ?? poll.roomId;
+      io.to(emitTarget).emit("pollUpdated", poll);
+    } catch (err) {
+      console.error("[votePoll]", err);
+    }
+  });
+
+  socket.on("closePoll", async ({ pollId, userId }: { pollId: string; userId: string }) => {
+    try {
+      const poll = await (prisma as any).poll.findUnique({ where: { id: pollId } });
+      if (!poll) return;
+      const room = await prisma.room.findUnique({ where: { id: poll.roomId } });
+      const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (poll.createdBy !== userId && room?.creatorId !== userId && !requestingUser?.isAdmin) return;
+      const updated = await (prisma as any).poll.update({
+        where: { id: pollId },
+        data: { closedAt: new Date() },
+        include: { votes: true },
+      });
+      const emitTarget = poll.channelId ? `channel:${poll.channelId}` : room?.name ?? poll.roomId;
+      io.to(emitTarget).emit("pollUpdated", updated);
+    } catch (err) {
+      console.error("[closePoll]", err);
+    }
+  });
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -717,6 +770,20 @@ app.delete("/api/rooms/:name", async (req, res) => {
   }
 });
 
+// GET /api/channels/:id/polls — active polls for a channel
+app.get("/api/channels/:id/polls", async (req, res) => {
+  try {
+    const polls = await (prisma as any).poll.findMany({
+      where: { channelId: req.params.id, closedAt: null },
+      include: { votes: true },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json(polls);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/graph — knowledge graph (filtered to userId's joined rooms when provided; roomId scopes to one room)
 app.get("/api/graph", async (req, res) => {
   try {
@@ -867,6 +934,36 @@ async function start() {
     console.log("[DB] GraphNodeMessage table ready");
   } catch (e) {
     console.error("[DB] GraphNodeMessage setup failed:", e);
+  }
+
+  // Ensure Poll tables exist
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Poll" (
+        "id" TEXT NOT NULL, "roomId" TEXT NOT NULL, "channelId" TEXT,
+        "question" TEXT NOT NULL, "options" TEXT[] NOT NULL, "createdBy" TEXT NOT NULL,
+        "closedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Poll_pkey" PRIMARY KEY ("id")
+      );
+      CREATE TABLE IF NOT EXISTS "PollVote" (
+        "id" TEXT NOT NULL, "pollId" TEXT NOT NULL, "userId" TEXT NOT NULL, "option" TEXT NOT NULL,
+        CONSTRAINT "PollVote_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "PollVote_pollId_userId_key" ON "PollVote"("pollId", "userId");
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Poll_roomId_fkey') THEN
+          ALTER TABLE "Poll" ADD CONSTRAINT "Poll_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PollVote_pollId_fkey') THEN
+          ALTER TABLE "PollVote" ADD CONSTRAINT "PollVote_pollId_fkey" FOREIGN KEY ("pollId") REFERENCES "Poll"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    console.log("[DB] Poll tables ready");
+  } catch (e) {
+    console.error("[DB] Poll tables setup failed:", e);
   }
 
   // Ensure User profile columns exist (Railway migration history can get out of sync)
