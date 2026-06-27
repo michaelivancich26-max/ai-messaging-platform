@@ -6,6 +6,7 @@ import { createClient } from "redis";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
+import { evaluateClaim, computeCredibility } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import bcrypt from "bcryptjs";
@@ -320,6 +321,74 @@ io.on("connection", (socket) => {
       io.to(emitTarget).emit("pollUpdated", updated);
     } catch (err) {
       console.error("[closePoll]", err);
+    }
+  });
+
+  socket.on("stakeClaim", async ({ messageId, roomId, channelId, text }: {
+    messageId: string; roomId: string; channelId?: string | null; text: string;
+  }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+
+      // Prevent duplicate claims on the same message
+      const existing = await (prisma as any).claim.findFirst({ where: { messageId } });
+      if (existing) { socket.emit("claimStaked", { claimId: existing.id, messageId, status: existing.status, claimantId: existing.claimantId, challengeCount: 0 }); return; }
+
+      const claim = await (prisma as any).claim.create({
+        data: { messageId, roomId: room.id, channelId: channelId ?? null, claimantId: socketUser.id, text: text.slice(0, 500), status: "PENDING" },
+      });
+
+      const emitTarget = channelId ? `channel:${channelId}` : roomId;
+      io.to(emitTarget).emit("claimStaked", { claimId: claim.id, messageId, status: "PENDING", claimantId: socketUser.id, challengeCount: 0 });
+
+      // Evaluate asynchronously
+      try {
+        const { verdict, reasoning } = await evaluateClaim(text, "");
+        await (prisma as any).claim.update({
+          where: { id: claim.id },
+          data: { status: verdict, verdict: reasoning, updatedAt: new Date() },
+        });
+        const cred = await computeCredibility(socketUser.id, prisma);
+        io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId, status: verdict, reasoning, claimantId: socketUser.id, challengeCount: 0 });
+        io.to(emitTarget).emit("credibilityUpdate", cred);
+      } catch (e) {
+        console.error("[stakeClaim] evaluation error:", e);
+      }
+    } catch (err) {
+      console.error("[stakeClaim]", err);
+    }
+  });
+
+  socket.on("challengeClaim", async ({ claimId, roomId, channelId }: {
+    claimId: string; roomId: string; channelId?: string | null;
+  }) => {
+    try {
+      const claim = await (prisma as any).claim.findUnique({ where: { id: claimId } });
+      if (!claim) return;
+
+      await (prisma as any).claimChallenge.create({
+        data: { claimId, challengerId: socketUser.id },
+      });
+
+      const challenges = await (prisma as any).claimChallenge.findMany({ where: { claimId } });
+      const emitTarget = channelId ? `channel:${channelId}` : roomId;
+
+      // Re-evaluate with fresh eyes
+      try {
+        const { verdict, reasoning } = await evaluateClaim(claim.text, `This claim has been challenged ${challenges.length} time(s). Be extra rigorous.`);
+        await (prisma as any).claim.update({
+          where: { id: claimId },
+          data: { status: verdict, verdict: reasoning, updatedAt: new Date() },
+        });
+        const cred = await computeCredibility(claim.claimantId, prisma);
+        io.to(emitTarget).emit("claimVerdict", { claimId, messageId: claim.messageId, status: verdict, reasoning, claimantId: claim.claimantId, challengeCount: challenges.length });
+        io.to(emitTarget).emit("credibilityUpdate", cred);
+      } catch (e) {
+        console.error("[challengeClaim] evaluation error:", e);
+      }
+    } catch (err) {
+      console.error("[challengeClaim]", err);
     }
   });
 });
@@ -788,6 +857,25 @@ app.get("/api/channels/:id/polls", async (req, res) => {
   }
 });
 
+// GET /api/channels/:id/claims — all claims for a channel with credibility scores
+app.get("/api/channels/:id/claims", async (req, res) => {
+  try {
+    const claims = await (prisma as any).claim.findMany({
+      where: { channelId: req.params.id },
+      include: { _count: { select: { challenges: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+    const claimantIds: string[] = [...new Set<string>(claims.map((c: any) => c.claimantId as string))];
+    const credScores: Record<string, any> = {};
+    for (const uid of claimantIds) {
+      credScores[uid] = await computeCredibility(uid, prisma);
+    }
+    res.json({ claims: claims.map((c: any) => ({ ...c, challengeCount: c._count.challenges, _count: undefined })), credScores });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/graph — knowledge graph (filtered to userId's joined rooms when provided; roomId scopes to one room)
 app.get("/api/graph", async (req, res) => {
   try {
@@ -968,6 +1056,48 @@ async function start() {
     console.log("[DB] Poll tables ready");
   } catch (e) {
     console.error("[DB] Poll tables setup failed:", e);
+  }
+
+  // Ensure Claim tables exist
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ClaimStatus') THEN
+          CREATE TYPE "ClaimStatus" AS ENUM ('PENDING', 'SUPPORTED', 'REFUTED', 'CONTESTED');
+        END IF;
+      END $$;
+      CREATE TABLE IF NOT EXISTS "Claim" (
+        "id" TEXT NOT NULL, "messageId" TEXT NOT NULL, "roomId" TEXT NOT NULL,
+        "channelId" TEXT, "claimantId" TEXT NOT NULL, "text" TEXT NOT NULL,
+        "status" "ClaimStatus" NOT NULL DEFAULT 'PENDING', "verdict" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Claim_pkey" PRIMARY KEY ("id")
+      );
+      CREATE TABLE IF NOT EXISTS "ClaimChallenge" (
+        "id" TEXT NOT NULL, "claimId" TEXT NOT NULL, "challengerId" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "ClaimChallenge_pkey" PRIMARY KEY ("id")
+      );
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Claim_messageId_fkey') THEN
+          ALTER TABLE "Claim" ADD CONSTRAINT "Claim_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Claim_roomId_fkey') THEN
+          ALTER TABLE "Claim" ADD CONSTRAINT "Claim_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ClaimChallenge_claimId_fkey') THEN
+          ALTER TABLE "ClaimChallenge" ADD CONSTRAINT "ClaimChallenge_claimId_fkey" FOREIGN KEY ("claimId") REFERENCES "Claim"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+    console.log("[DB] Claim tables ready");
+  } catch (e) {
+    console.error("[DB] Claim tables setup failed:", e);
   }
 
   // Ensure User profile columns exist (Railway migration history can get out of sync)

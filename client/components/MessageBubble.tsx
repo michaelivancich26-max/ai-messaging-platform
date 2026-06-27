@@ -1,14 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
 import type { Annotation } from "@/app/room/[roomId]/page";
+import CredibilityBadge from "./CredibilityBadge";
+import ClaimBadge from "./ClaimBadge";
 
 interface Props {
   message: ChatMessage;
   isSelf: boolean;
   annotation?: Annotation;
   highlighted?: boolean;
+  claim?: ClaimInfo;
+  credScore?: CredScore;
+  onStakeClaim?: (messageId: string) => void;
+  onChallengeClaim?: (claimId: string) => void;
 }
 
 interface ImagePayload {
@@ -157,19 +163,22 @@ function Avatar({ username, avatarUrl, size = 7 }: { username: string; avatarUrl
 
 export { Avatar };
 
-export default function MessageBubble({ message, isSelf, annotation, highlighted }: Props) {
+export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, onStakeClaim, onChallengeClaim }: Props) {
   const username = message.user?.username ?? "unknown";
   const avatarUrl = (message.user as any)?.avatarUrl ?? null;
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const imagePayload = parseImageContent(message.content);
+  const isHuman = message.type === "human";
+  const canStake = isHuman && !message.id.startsWith("temp-") && onStakeClaim;
 
   return (
-    <div className={`flex items-end gap-2 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
+    <div className={`group flex items-end gap-2 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
       {!isSelf && <Avatar username={username} avatarUrl={avatarUrl} size={7} />}
 
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
-        <span className="mb-1 text-xs text-gray-500">
+        <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
           {isSelf ? "You" : username} · {time}
+          {credScore && <CredibilityBadge score={credScore} />}
         </span>
 
         {imagePayload ? (
@@ -191,6 +200,23 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
               : message.content
             }
           </div>
+        )}
+
+        {/* Claim badge or stake button */}
+        {isHuman && (
+          claim
+            ? <ClaimBadge claim={claim} canChallenge={!isSelf} onChallenge={(id) => onChallengeClaim?.(id)} />
+            : canStake && (
+              <button
+                onClick={() => onStakeClaim(message.id)}
+                className="mt-1 flex items-center gap-1 rounded-full border border-gray-700/50 px-2 py-0.5 text-[10px] text-gray-600 opacity-0 group-hover:opacity-100 hover:border-gray-500 hover:text-gray-400 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                  <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
+                </svg>
+                Stake claim
+              </button>
+            )
         )}
       </div>
     </div>

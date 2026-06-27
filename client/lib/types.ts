@@ -17,6 +17,26 @@ export type AIPayload =
   | { type: "summary"; text: string }
   | { type: "mention_response"; text: string };
 
+export type ClaimStatus = "PENDING" | "SUPPORTED" | "REFUTED" | "CONTESTED";
+
+export interface ClaimInfo {
+  id: string;
+  messageId: string;
+  claimantId: string;
+  status: ClaimStatus;
+  reasoning?: string;
+  challengeCount: number;
+}
+
+export interface CredScore {
+  userId: string;
+  score: number;
+  supported: number;
+  refuted: number;
+  contested: number;
+  total: number;
+}
+
 export function parseAIContent(content: string): AIPayload {
   try {
     return JSON.parse(content) as AIPayload;

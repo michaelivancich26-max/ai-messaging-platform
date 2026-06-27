@@ -1,4 +1,4 @@
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
 import type { Annotation } from "@/app/room/[roomId]/page";
 import MessageBubble from "./MessageBubble";
 import AIInterjectionCard, { AIStreamingCard } from "./AIInterjectionCard";
@@ -11,9 +11,13 @@ interface Props {
   highlightedId?: string | null;
   messageRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   streamingMsgs?: Map<string, { text: string; sarcasm: boolean; isMention?: boolean }>;
+  claims?: Record<string, ClaimInfo>;
+  credibilityScores?: Record<string, CredScore>;
+  onStakeClaim?: (messageId: string) => void;
+  onChallengeClaim?: (claimId: string) => void;
 }
 
-export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs }: Props) {
+export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, onStakeClaim, onChallengeClaim }: Props) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
       {messages.map((msg) => {
@@ -38,6 +42,10 @@ export default function ChatWindow({ messages, currentUsername, annotations, hig
               isSelf={msg.user?.username === currentUsername}
               annotation={annotations[msg.id]}
               highlighted={highlightedId === msg.id}
+              claim={claims?.[msg.id]}
+              credScore={msg.userId ? credibilityScores?.[msg.userId] : undefined}
+              onStakeClaim={onStakeClaim}
+              onChallengeClaim={onChallengeClaim}
             />
           </div>
         );

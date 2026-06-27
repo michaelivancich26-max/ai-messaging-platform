@@ -12,6 +12,13 @@ enum SenderType {
   AI
 }
 
+enum ClaimStatus {
+  PENDING
+  SUPPORTED
+  REFUTED
+  CONTESTED
+}
+
 model User {
   id           String    @id @default(cuid())
   username     String    @unique
@@ -58,6 +65,7 @@ model Room {
   graphEdges     GraphEdge[]
   members        RoomMember[]
   polls          Poll[]
+  claims         Claim[]
 }
 
 model Poll {
@@ -154,4 +162,29 @@ model Message {
   room         Room               @relation(fields: [roomId], references: [id])
   channel      Channel?           @relation(fields: [channelId], references: [id], onDelete: SetNull)
   graphNodes   GraphNodeMessage[]
+  claims       Claim[]
+}
+
+model Claim {
+  id          String           @id @default(cuid())
+  messageId   String
+  roomId      String
+  channelId   String?
+  claimantId  String
+  text        String
+  status      ClaimStatus      @default(PENDING)
+  verdict     String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  message     Message          @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  room        Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  challenges  ClaimChallenge[]
+}
+
+model ClaimChallenge {
+  id           String   @id @default(cuid())
+  claimId      String
+  challengerId String
+  createdAt    DateTime @default(now())
+  claim        Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
 }

@@ -16,7 +16,7 @@ import type { Settings } from "@/components/RoomPanel";
 import Sidebar from "@/components/Sidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
 import { parseAIContent } from "@/lib/types";
 import type { RoomMeta } from "@/components/RoomPanel";
 
@@ -50,6 +50,8 @@ export default function RoomPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pollSuggestion, setPollSuggestion] = useState<{ question: string; options: string[] } | null>(null);
   const [activePolls, setActivePolls] = useState<Poll[]>([]);
+  const [claims, setClaims] = useState<Record<string, ClaimInfo>>({});
+  const [credibilityScores, setCredibilityScores] = useState<Record<string, CredScore>>({});
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
     roomId.startsWith("dm-") ? "chat" : "channels"
@@ -117,6 +119,15 @@ export default function RoomPage() {
     socket.on("pollUpdated", (poll: Poll) => setActivePolls(prev =>
       poll.closedAt ? prev.filter(p => p.id !== poll.id) : prev.map(p => p.id === poll.id ? poll : p)
     ));
+    socket.on("claimStaked", ({ claimId, messageId, status, claimantId, challengeCount }: { claimId: string; messageId: string; status: ClaimInfo["status"]; claimantId: string; challengeCount: number }) => {
+      setClaims(prev => ({ ...prev, [messageId]: { id: claimId, messageId, claimantId, status, challengeCount } }));
+    });
+    socket.on("claimVerdict", ({ claimId, messageId, status, reasoning, claimantId, challengeCount }: { claimId: string; messageId: string; status: ClaimInfo["status"]; reasoning: string; claimantId: string; challengeCount: number }) => {
+      setClaims(prev => ({ ...prev, [messageId]: { id: claimId, messageId, claimantId, status, reasoning, challengeCount } }));
+    });
+    socket.on("credibilityUpdate", (score: CredScore) => {
+      setCredibilityScores(prev => ({ ...prev, [score.userId]: score }));
+    });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
@@ -211,6 +222,9 @@ export default function RoomPage() {
       socket.off("pollSuggested");
       socket.off("pollCreated");
       socket.off("pollUpdated");
+      socket.off("claimStaked");
+      socket.off("claimVerdict");
+      socket.off("credibilityUpdate");
       socket.off("roomMembers");
       socket.off("roomMeta");
       socket.off("aiStreamStart");
@@ -257,6 +271,16 @@ export default function RoomPage() {
     setMessages([]);
     setActivePolls([]);
     setPollSuggestion(null);
+    setClaims({});
+    fetch(`${SERVER}/api/channels/${channel.id}/claims`)
+      .then(r => r.json())
+      .then(({ claims: claimsArr, credScores }: { claims: (ClaimInfo & { verdict?: string })[]; credScores: Record<string, CredScore> }) => {
+        const claimsMap: Record<string, ClaimInfo> = {};
+        claimsArr.forEach(c => { claimsMap[c.messageId] = { id: c.id, messageId: c.messageId, claimantId: c.claimantId, status: c.status, reasoning: c.verdict ?? undefined, challengeCount: c.challengeCount }; });
+        setClaims(claimsMap);
+        setCredibilityScores(prev => ({ ...prev, ...credScores }));
+      })
+      .catch(() => {});
     fetch(`${SERVER}/api/channels/${channel.id}/polls`)
       .then(r => r.json())
       .then((polls: Poll[]) => setActivePolls(polls))
@@ -302,6 +326,20 @@ export default function RoomPage() {
 
   function closePoll(pollId: string) {
     getSocket({ id: userId, username }).emit("closePoll", { pollId, userId });
+  }
+
+  function stakeClaim(messageId: string) {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    getSocket({ id: userId, username }).emit("stakeClaim", {
+      messageId, roomId, channelId: activeChannel?.id ?? null, text: msg.content,
+    });
+  }
+
+  function challengeClaim(claimId: string) {
+    getSocket({ id: userId, username }).emit("challengeClaim", {
+      claimId, roomId, channelId: activeChannel?.id ?? null,
+    });
   }
 
   function kickUser(targetUserId: string) {
@@ -474,7 +512,7 @@ export default function RoomPage() {
         <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
       ) : (
         <>
-          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} />
+          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} />
           <div ref={bottomRef} />
         </>
       )}
