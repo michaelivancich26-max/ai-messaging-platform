@@ -4,9 +4,81 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import type { CredScore } from "@/lib/types";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
-const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024; // 1.5 MB base64 limit
+const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
+
+function VeritasScorePanel({ cred }: { cred: CredScore }) {
+  const accuracy = cred.total > 0 ? Math.round((cred.supported / cred.total) * 100) : null;
+  // Relevance-weighted rating: how much of the total claim slots were filled with relevant, correct claims
+  const rating = cred.total >= 3 ? Math.min(100, Math.round((cred.score / (cred.total * 2)) * 100)) : null;
+
+  const tier =
+    cred.total < 3 ? { label: "Unrated", color: "text-gray-500", bg: "bg-gray-800/60", ring: "ring-gray-700/40" } :
+    accuracy !== null && accuracy >= 80 ? { label: "Credible",  color: "text-emerald-300", bg: "bg-emerald-950/40", ring: "ring-emerald-700/40" } :
+    accuracy !== null && accuracy >= 50 ? { label: "Mixed",     color: "text-yellow-300",  bg: "bg-yellow-950/30", ring: "ring-yellow-700/40" } :
+                                          { label: "Disputed",  color: "text-red-400",     bg: "bg-red-950/30",    ring: "ring-red-700/40"    };
+
+  return (
+    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Veritas Score</p>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${tier.bg} ${tier.color} ${tier.ring}`}>
+          {tier.label}
+        </span>
+      </div>
+
+      {/* Big score number */}
+      <div className="flex items-end gap-3">
+        <span className="text-4xl font-bold tabular-nums text-gray-100">
+          {cred.total < 3 ? "—" : cred.score.toFixed(1)}
+        </span>
+        {rating !== null && (
+          <span className="mb-1 text-sm text-gray-500">pts · {rating}% rating</span>
+        )}
+      </div>
+
+      {cred.total < 3 && (
+        <p className="text-xs text-gray-600">Make at least 3 verified claims to earn a score.</p>
+      )}
+
+      {/* Accuracy bar */}
+      {cred.total >= 1 && accuracy !== null && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-[10px] text-gray-600">
+            <span className="text-emerald-400">{accuracy}% accuracy</span>
+            <span>{cred.total} claim{cred.total !== 1 ? "s" : ""} evaluated</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-gray-800 flex">
+            <div className="bg-emerald-500 transition-all" style={{ width: `${accuracy}%` }} />
+            <div className="bg-red-500 transition-all" style={{ width: `${cred.total > 0 ? Math.round((cred.refuted / cred.total) * 100) : 0}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* Stat pills */}
+      <div className="flex flex-wrap gap-2 pt-1">
+        <span className="flex items-center gap-1.5 rounded-full bg-emerald-900/30 px-2.5 py-1 text-xs text-emerald-400 ring-1 ring-emerald-700/30">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          {cred.supported} supported
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full bg-red-900/30 px-2.5 py-1 text-xs text-red-400 ring-1 ring-red-700/30">
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+          {cred.refuted} refuted
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full bg-gray-800 px-2.5 py-1 text-xs text-gray-500 ring-1 ring-gray-700/30">
+          <span className="h-1.5 w-1.5 rounded-full bg-gray-500" />
+          {cred.contested} contested
+        </span>
+      </div>
+
+      <p className="text-[10px] text-gray-700 leading-relaxed pt-1">
+        Score weights supported claims by their relevance to the debate proposition — a technically true but off-topic claim earns less than one that directly advances the argument. Refuted claims always cost full points.
+      </p>
+    </div>
+  );
+}
 
 export default function ProfilePage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
@@ -16,6 +88,7 @@ export default function ProfilePage() {
 
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [cred, setCred] = useState<CredScore | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -28,6 +101,7 @@ export default function ProfilePage() {
       .then(data => {
         setBio(data.bio ?? "");
         setAvatarUrl(data.avatarUrl ?? null);
+        if (data.cred) setCred(data.cred);
       })
       .catch(() => {});
   }, [status, userId]);
@@ -111,6 +185,9 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
+
+            {/* Veritas Score */}
+            {cred && <VeritasScorePanel cred={cred} />}
 
             {/* Bio */}
             <div className="space-y-2">

@@ -409,10 +409,11 @@ io.on("connection", (socket) => {
 
       // Evaluate asynchronously
       try {
-        const { verdict, reasoning } = await evaluateClaim(text, "");
+        const proposition = (room as any).proposition ?? null;
+        const { verdict, reasoning, relevance } = await evaluateClaim(text, "", proposition);
         await (prisma as any).claim.update({
           where: { id: claim.id },
-          data: { status: verdict, verdict: reasoning, updatedAt: new Date() },
+          data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
         });
         const cred = await computeCredibility(socketUser.id, prisma);
         io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId, status: verdict, reasoning, claimantId: socketUser.id, challengeCount: 0 });
@@ -441,10 +442,16 @@ io.on("connection", (socket) => {
 
       // Re-evaluate with fresh eyes
       try {
-        const { verdict, reasoning } = await evaluateClaim(claim.text, `This claim has been challenged ${challenges.length} time(s). Be extra rigorous.`);
+        const claimRoom = await prisma.room.findUnique({ where: { id: claim.roomId } });
+        const proposition = (claimRoom as any)?.proposition ?? null;
+        const { verdict, reasoning, relevance } = await evaluateClaim(
+          claim.text,
+          `This claim has been challenged ${challenges.length} time(s). Be extra rigorous.`,
+          proposition,
+        );
         await (prisma as any).claim.update({
           where: { id: claimId },
-          data: { status: verdict, verdict: reasoning, updatedAt: new Date() },
+          data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
         });
         const cred = await computeCredibility(claim.claimantId, prisma);
         io.to(emitTarget).emit("claimVerdict", { claimId, messageId: claim.messageId, status: verdict, reasoning, claimantId: claim.claimantId, challengeCount: challenges.length });
@@ -654,7 +661,8 @@ app.get("/api/users/:id/profile", async (req, res) => {
       select: { id: true, username: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json(user);
+    const cred = await computeCredibility(req.params.id, prisma);
+    res.json({ ...user, cred });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
@@ -1285,6 +1293,15 @@ async function start() {
     console.log("[DB] Debate position tables ready");
   } catch (e) {
     console.error("[DB] Debate position tables setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Claim" ADD COLUMN IF NOT EXISTS "relevance" FLOAT NOT NULL DEFAULT 1.0;
+    `);
+    console.log("[DB] Claim relevance column ready");
+  } catch (e) {
+    console.error("[DB] Claim relevance column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
