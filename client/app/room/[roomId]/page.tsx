@@ -16,9 +16,10 @@ import type { Settings } from "@/components/RoomPanel";
 import Sidebar from "@/components/Sidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
-import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
 import { parseAIContent } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
+import TurnBanner from "@/components/TurnBanner";
 import type { RoomMeta } from "@/components/RoomPanel";
 
 export type Annotation = { pronoun: string; referent: string };
@@ -55,6 +56,7 @@ export default function RoomPage() {
   const [credibilityScores, setCredibilityScores] = useState<Record<string, CredScore>>({});
   const [positions, setPositions] = useState<Record<string, UserPositionEntry>>({});
   const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
+  const [debateTurn, setDebateTurn] = useState<DebateTurnState | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
     roomId.startsWith("dm-") ? "chat" : "channels"
@@ -141,6 +143,7 @@ export default function RoomPage() {
       const mine = entries.find(e => e.userId === userId);
       if (mine) setMyPosition(mine.position);
     });
+    socket.on("debateTurnUpdate", (turn: DebateTurnState) => setDebateTurn(turn));
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
@@ -240,6 +243,7 @@ export default function RoomPage() {
       socket.off("credibilityUpdate");
       socket.off("positionUpdate");
       socket.off("debatePositions");
+      socket.off("debateTurnUpdate");
       socket.off("roomMembers");
       socket.off("roomMeta");
       socket.off("aiStreamStart");
@@ -366,6 +370,18 @@ export default function RoomPage() {
     setMyPosition(pos);
     setPositions(prev => ({ ...prev, [userId]: { userId, username, position: pos } }));
     getSocket({ id: userId, username }).emit("setPosition", { roomId, position: pos });
+  }
+
+  function setDebateMode(mode: "open" | "structured") {
+    getSocket({ id: userId, username }).emit("setDebateMode", { roomId, mode });
+  }
+
+  function claimFloor() {
+    getSocket({ id: userId, username }).emit("claimFloor", { roomId });
+  }
+
+  function passTurn() {
+    getSocket({ id: userId, username }).emit("passTurn", { roomId });
   }
 
   function kickUser(targetUserId: string) {
@@ -541,7 +557,11 @@ export default function RoomPage() {
           positions={positions}
           myPosition={myPosition}
           credibilityScores={credibilityScores}
+          debateTurn={debateTurn}
+          isOwner={isOwner}
+          isAdmin={isAdmin}
           onSetPosition={setDebatePosition}
+          onSetDebateMode={setDebateMode}
         />
       )}
 
@@ -601,9 +621,37 @@ export default function RoomPage() {
         );
       })()}
 
-      {(roomId.startsWith("dm-") || activeChannel) && (
-        <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} />
+      {/* Turn-based debate banner */}
+      {debateTurn?.mode === "structured" && !roomId.startsWith("dm-") && (
+        <TurnBanner
+          turn={debateTurn}
+          myPosition={myPosition}
+          myUserId={userId}
+          isOwner={isOwner}
+          isAdmin={isAdmin}
+          onClaimFloor={claimFloor}
+          onPassTurn={passTurn}
+          onEndStructured={() => setDebateMode("open")}
+        />
       )}
+
+      {(roomId.startsWith("dm-") || activeChannel) && (() => {
+        const isStructured = debateTurn?.mode === "structured" && !roomId.startsWith("dm-");
+        const isMyTurn = debateTurn?.currentSpeakerId === userId;
+        const floorClaimed = !!debateTurn?.currentSpeakerId;
+        const isMySide = myPosition === debateTurn?.currentSide;
+        const locked = isStructured && !isMyTurn;
+        const reason = isStructured
+          ? !myPosition || myPosition === "NEUTRAL"
+            ? "Set a FOR or AGAINST position to participate in structured debate"
+            : !isMySide
+            ? `Waiting for the ${debateTurn?.currentSide} side to speak…`
+            : floorClaimed
+            ? `${debateTurn?.currentSpeakerName} has the floor`
+            : "Claim the floor above to speak"
+          : undefined;
+        return <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} disabled={locked} disabledReason={reason} />;
+      })()}
 
       {summarizeModalOpen && (
         <SummarizeModal onConfirm={summarize} onClose={() => setSummarizeModalOpen(false)} />

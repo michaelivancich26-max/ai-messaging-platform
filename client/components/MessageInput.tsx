@@ -8,9 +8,11 @@ interface Props {
   onSend: (content: string) => void;
   onTyping?: () => void;
   onStopTyping?: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
-export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) {
+export default function MessageInput({ onSend, onTyping, onStopTyping, disabled, disabledReason }: Props) {
   const [value, setValue] = useState("");
   const [imageError, setImageError] = useState("");
   const [showMention, setShowMention] = useState(false);
@@ -113,6 +115,19 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
       onSend(JSON.stringify({ type: "image", src, filename: file.name }));
     };
     reader.readAsDataURL(file);
+  }
+
+  if (disabled) {
+    return (
+      <div className="border-t border-gray-800 bg-gray-950 px-4 py-4">
+        <div className="flex items-center gap-3 rounded-xl bg-gray-800/60 px-4 py-3 ring-1 ring-gray-700/40">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-600">
+            <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
+          </svg>
+          <span className="text-sm text-gray-600">{disabledReason ?? "Waiting for your turn…"}</span>
+        </div>
+      </div>
+    );
   }
 
   return (

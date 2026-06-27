@@ -77,6 +77,16 @@ const presence = new Map<string, Map<string, { userId: string; username: string 
 // Debate positions: roomId → Map<userId, { userId, username, position }>
 const debatePositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
+// Structured debate turn state: roomId → turn state
+interface DebateTurnState {
+  mode: "open" | "structured";
+  currentSide: "FOR" | "AGAINST";
+  currentSpeakerId: string | null;
+  currentSpeakerName: string | null;
+  turnNumber: number;
+}
+const debateTurns = new Map<string, DebateTurnState>();
+
 function broadcastPresence(roomId: string) {
   const members = presence.get(roomId);
   const list = members ? Array.from(members.values()) : [];
@@ -130,6 +140,10 @@ io.on("connection", (socket) => {
       // Send room meta (without password hash)
       const { password: _pw, ...roomMeta } = room as any;
       socket.emit("roomMeta", roomMeta);
+
+      // Emit current turn state if structured mode is active
+      const currentTurn = debateTurns.get(roomId);
+      if (currentTurn) socket.emit("debateTurnUpdate", currentTurn);
 
       // Emit current debate positions for this room
       const roomPositions = debatePositions.get(roomId);
@@ -254,6 +268,21 @@ io.on("connection", (socket) => {
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) { socket.emit("roomDeleted"); return; }
 
+        // Enforce structured debate turn order
+        if (!isImage) {
+          const turn = debateTurns.get(roomId);
+          if (turn?.mode === "structured") {
+            if (!turn.currentSpeakerId) {
+              socket.emit("error", { message: "Claim the floor before speaking." });
+              return;
+            }
+            if (turn.currentSpeakerId !== user.id) {
+              socket.emit("error", { message: "It's not your turn to speak." });
+              return;
+            }
+          }
+        }
+
         const message = await prisma.message.create({
           data: { content, senderType: SenderType.HUMAN, roomId: room.id, userId: user.id, channelId: channelId ?? null },
           include: { user: true },
@@ -261,6 +290,17 @@ io.on("connection", (socket) => {
 
         const emitTarget = channelId ? `channel:${channelId}` : roomId;
         io.to(emitTarget).emit("message", { ...message, type: "human" });
+
+        // Auto-advance structured debate turn after speaking
+        if (!isImage) {
+          const turn = debateTurns.get(roomId);
+          if (turn?.mode === "structured" && turn.currentSpeakerId === user.id) {
+            const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
+            const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
+            debateTurns.set(roomId, newTurn);
+            io.to(emitTarget).emit("debateTurnUpdate", newTurn);
+          }
+        }
 
         if (!isImage) {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
@@ -441,6 +481,61 @@ io.on("connection", (socket) => {
       io.to(roomId).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position });
     } catch (err) {
       console.error("[setPosition]", err);
+    }
+  });
+
+  socket.on("setDebateMode", async ({ roomId, mode }: { roomId: string; mode: "open" | "structured" }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
+        socket.emit("error", { message: "Only the room owner can change debate mode." });
+        return;
+      }
+      const turn: DebateTurnState = mode === "structured"
+        ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
+        : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
+      debateTurns.set(roomId, turn);
+      io.to(roomId).emit("debateTurnUpdate", turn);
+    } catch (err) {
+      console.error("[setDebateMode]", err);
+    }
+  });
+
+  socket.on("claimFloor", ({ roomId }: { roomId: string }) => {
+    try {
+      const turn = debateTurns.get(roomId);
+      if (!turn || turn.mode !== "structured") return;
+      if (turn.currentSpeakerId) return; // already claimed
+      const roomPos = debatePositions.get(roomId);
+      const userPos = roomPos?.get(socketUser.id)?.position;
+      if (userPos !== turn.currentSide) {
+        socket.emit("error", { message: `Only a ${turn.currentSide} participant can claim the floor now.` });
+        return;
+      }
+      const newTurn: DebateTurnState = { ...turn, currentSpeakerId: socketUser.id, currentSpeakerName: socketUser.username };
+      debateTurns.set(roomId, newTurn);
+      io.to(roomId).emit("debateTurnUpdate", newTurn);
+    } catch (err) {
+      console.error("[claimFloor]", err);
+    }
+  });
+
+  socket.on("passTurn", async ({ roomId }: { roomId: string }) => {
+    try {
+      const turn = debateTurns.get(roomId);
+      if (!turn || turn.mode !== "structured") return;
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      const canPass = room?.creatorId === socketUser.id || requestingUser?.isAdmin || turn.currentSpeakerId === socketUser.id;
+      if (!canPass) return;
+      const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
+      const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
+      debateTurns.set(roomId, newTurn);
+      io.to(roomId).emit("debateTurnUpdate", newTurn);
+    } catch (err) {
+      console.error("[passTurn]", err);
     }
   });
 });

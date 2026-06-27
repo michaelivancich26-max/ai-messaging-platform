@@ -45,6 +45,14 @@ export interface CredScore {
   total: number;
 }
 
+export interface DebateTurnState {
+  mode: "open" | "structured";
+  currentSide: "FOR" | "AGAINST";
+  currentSpeakerId: string | null;
+  currentSpeakerName: string | null;
+  turnNumber: number;
+}
+
 export function parseAIContent(content: string): AIPayload {
   try {
     return JSON.parse(content) as AIPayload;

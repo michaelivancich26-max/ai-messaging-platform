@@ -1,13 +1,17 @@
 "use client";
 
-import type { DebatePosition, UserPositionEntry, CredScore } from "@/lib/types";
+import type { DebatePosition, UserPositionEntry, CredScore, DebateTurnState } from "@/lib/types";
 
 interface Props {
   proposition: string;
   positions: Record<string, UserPositionEntry>;
   myPosition: DebatePosition | null;
   credibilityScores: Record<string, CredScore>;
+  debateTurn?: DebateTurnState | null;
+  isOwner?: boolean;
+  isAdmin?: boolean;
   onSetPosition: (pos: DebatePosition) => void;
+  onSetDebateMode?: (mode: "open" | "structured") => void;
 }
 
 function computeDebateScore(
@@ -31,7 +35,7 @@ const POSITION_CONFIG: Record<DebatePosition, { label: string; active: string; i
   NEUTRAL: { label: "Neutral", active: "bg-gray-600 text-white border-gray-500",         inactive: "border-gray-700/40 text-gray-500 hover:bg-gray-800",            dot: "bg-gray-500"    },
 };
 
-export default function DebateHeader({ proposition, positions, myPosition, credibilityScores, onSetPosition }: Props) {
+export default function DebateHeader({ proposition, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, onSetPosition, onSetDebateMode }: Props) {
   const { forScore, againstScore } = computeDebateScore(positions, credibilityScores);
   const total = forScore + againstScore;
   const forPct  = total > 0 ? Math.round((forScore  / total) * 100) : 50;
@@ -60,8 +64,8 @@ export default function DebateHeader({ proposition, positions, myPosition, credi
         </div>
       )}
 
-      {/* Position picker */}
-      <div className="flex items-center gap-2">
+      {/* Position picker + structured mode toggle */}
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-gray-600 shrink-0">Your stance:</span>
         {(["FOR", "AGAINST", "NEUTRAL"] as DebatePosition[]).map(pos => {
           const cfg = POSITION_CONFIG[pos];
@@ -79,6 +83,22 @@ export default function DebateHeader({ proposition, positions, myPosition, credi
             </button>
           );
         })}
+        {(isOwner || isAdmin) && onSetDebateMode && (
+          <button
+            onClick={() => onSetDebateMode(debateTurn?.mode === "structured" ? "open" : "structured")}
+            className={`ml-auto flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${
+              debateTurn?.mode === "structured"
+                ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
+                : "border-gray-700 text-gray-500 hover:border-indigo-600/40 hover:text-indigo-400"
+            }`}
+            title={debateTurn?.mode === "structured" ? "Switch to free chat" : "Enable structured turn-based debate"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+              <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.232l-3.136 2.762a.75.75 0 0 1-1.12-.814l.853-3.576-2.79-2.39a.75.75 0 0 1 .427-1.316l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
+            </svg>
+            {debateTurn?.mode === "structured" ? "Structured on" : "Structure"}
+          </button>
+        )}
       </div>
     </div>
   );
