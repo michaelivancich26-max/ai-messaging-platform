@@ -1,4 +1,4 @@
-import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore, UserPositionEntry } from "@/lib/types";
 import type { Annotation } from "@/app/room/[roomId]/page";
 import MessageBubble from "./MessageBubble";
 import AIInterjectionCard, { AIStreamingCard } from "./AIInterjectionCard";
@@ -13,11 +13,12 @@ interface Props {
   streamingMsgs?: Map<string, { text: string; sarcasm: boolean; isMention?: boolean }>;
   claims?: Record<string, ClaimInfo>;
   credibilityScores?: Record<string, CredScore>;
+  positions?: Record<string, UserPositionEntry>;
   onStakeClaim?: (messageId: string) => void;
   onChallengeClaim?: (claimId: string) => void;
 }
 
-export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, onStakeClaim, onChallengeClaim }: Props) {
+export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, positions, onStakeClaim, onChallengeClaim }: Props) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
       {messages.map((msg) => {
@@ -44,6 +45,7 @@ export default function ChatWindow({ messages, currentUsername, annotations, hig
               highlighted={highlightedId === msg.id}
               claim={claims?.[msg.id]}
               credScore={msg.userId ? credibilityScores?.[msg.userId] : undefined}
+              senderPosition={msg.userId ? positions?.[msg.userId]?.position : undefined}
               onStakeClaim={onStakeClaim}
               onChallengeClaim={onChallengeClaim}
             />

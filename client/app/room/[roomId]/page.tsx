@@ -16,8 +16,9 @@ import type { Settings } from "@/components/RoomPanel";
 import Sidebar from "@/components/Sidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
-import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry } from "@/lib/types";
 import { parseAIContent } from "@/lib/types";
+import DebateHeader from "@/components/DebateHeader";
 import type { RoomMeta } from "@/components/RoomPanel";
 
 export type Annotation = { pronoun: string; referent: string };
@@ -52,6 +53,8 @@ export default function RoomPage() {
   const [activePolls, setActivePolls] = useState<Poll[]>([]);
   const [claims, setClaims] = useState<Record<string, ClaimInfo>>({});
   const [credibilityScores, setCredibilityScores] = useState<Record<string, CredScore>>({});
+  const [positions, setPositions] = useState<Record<string, UserPositionEntry>>({});
+  const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
     roomId.startsWith("dm-") ? "chat" : "channels"
@@ -127,6 +130,16 @@ export default function RoomPage() {
     });
     socket.on("credibilityUpdate", (score: CredScore) => {
       setCredibilityScores(prev => ({ ...prev, [score.userId]: score }));
+    });
+    socket.on("positionUpdate", (entry: UserPositionEntry) => {
+      setPositions(prev => ({ ...prev, [entry.userId]: entry }));
+    });
+    socket.on("debatePositions", (entries: UserPositionEntry[]) => {
+      const map: Record<string, UserPositionEntry> = {};
+      entries.forEach(e => { map[e.userId] = e; });
+      setPositions(prev => ({ ...prev, ...map }));
+      const mine = entries.find(e => e.userId === userId);
+      if (mine) setMyPosition(mine.position);
     });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
@@ -225,6 +238,8 @@ export default function RoomPage() {
       socket.off("claimStaked");
       socket.off("claimVerdict");
       socket.off("credibilityUpdate");
+      socket.off("positionUpdate");
+      socket.off("debatePositions");
       socket.off("roomMembers");
       socket.off("roomMeta");
       socket.off("aiStreamStart");
@@ -345,6 +360,12 @@ export default function RoomPage() {
     getSocket({ id: userId, username }).emit("challengeClaim", {
       claimId, roomId, channelId: activeChannel?.id ?? null,
     });
+  }
+
+  function setDebatePosition(pos: DebatePosition) {
+    setMyPosition(pos);
+    setPositions(prev => ({ ...prev, [userId]: { userId, username, position: pos } }));
+    getSocket({ id: userId, username }).emit("setPosition", { roomId, position: pos });
   }
 
   function kickUser(targetUserId: string) {
@@ -513,11 +534,22 @@ export default function RoomPage() {
         />
       )}
 
+      {/* Debate proposition + position picker */}
+      {!roomId.startsWith("dm-") && roomMeta && (roomMeta as any).proposition && (
+        <DebateHeader
+          proposition={(roomMeta as any).proposition}
+          positions={positions}
+          myPosition={myPosition}
+          credibilityScores={credibilityScores}
+          onSetPosition={setDebatePosition}
+        />
+      )}
+
       {!roomId.startsWith("dm-") && !activeChannel ? (
         <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
       ) : (
         <>
-          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} />
+          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} />
           <div ref={bottomRef} />
         </>
       )}

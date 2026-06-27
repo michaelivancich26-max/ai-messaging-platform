@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
+import type { ChatMessage, ClaimInfo, CredScore, DebatePosition } from "@/lib/types";
 import type { Annotation } from "@/app/room/[roomId]/page";
 import CredibilityBadge from "./CredibilityBadge";
 import ClaimBadge from "./ClaimBadge";
@@ -13,9 +13,16 @@ interface Props {
   highlighted?: boolean;
   claim?: ClaimInfo;
   credScore?: CredScore;
+  senderPosition?: DebatePosition;
   onStakeClaim?: (messageId: string) => void;
   onChallengeClaim?: (claimId: string) => void;
 }
+
+const POSITION_BUBBLE: Record<DebatePosition, { self: string; other: string; tag: string; tagText: string }> = {
+  FOR:     { self: "bg-emerald-700 text-white",          other: "bg-emerald-900/40 text-emerald-100 ring-1 ring-emerald-700/30", tag: "bg-emerald-800/60 text-emerald-300", tagText: "FOR"     },
+  AGAINST: { self: "bg-red-700 text-white",              other: "bg-red-900/40 text-red-100 ring-1 ring-red-700/30",             tag: "bg-red-800/60 text-red-300",         tagText: "AGAINST" },
+  NEUTRAL: { self: "bg-indigo-600 text-white",           other: "bg-gray-800 text-gray-100",                                     tag: "bg-gray-700/60 text-gray-400",       tagText: "N"       },
+};
 
 interface ImagePayload {
   type: "image";
@@ -163,13 +170,17 @@ function Avatar({ username, avatarUrl, size = 7 }: { username: string; avatarUrl
 
 export { Avatar };
 
-export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, onStakeClaim, onChallengeClaim }: Props) {
+export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, onStakeClaim, onChallengeClaim }: Props) {
   const username = message.user?.username ?? "unknown";
   const avatarUrl = (message.user as any)?.avatarUrl ?? null;
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const imagePayload = parseImageContent(message.content);
   const isHuman = message.type === "human";
   const canStake = isHuman && !message.id.startsWith("temp-") && onStakeClaim;
+
+  const posConfig = senderPosition ? POSITION_BUBBLE[senderPosition] : null;
+  const selfBubble   = posConfig ? posConfig.self   : "bg-indigo-600 text-white";
+  const otherBubble  = posConfig ? posConfig.other  : "bg-gray-800 text-gray-100";
 
   return (
     <div className={`group flex items-end gap-2 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
@@ -178,6 +189,9 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
           {isSelf ? "You" : username} · {time}
+          {posConfig && senderPosition !== "NEUTRAL" && (
+            <span className={`rounded-full px-1.5 py-0 text-[9px] font-bold ${posConfig.tag}`}>{posConfig.tagText}</span>
+          )}
           {credScore && <CredibilityBadge score={credScore} />}
         </span>
 
@@ -191,8 +205,8 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
               highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
             } ${
               isSelf
-                ? "rounded-tr-sm bg-indigo-600 text-white"
-                : "rounded-tl-sm bg-gray-800 text-gray-100"
+                ? `rounded-tr-sm ${selfBubble}`
+                : `rounded-tl-sm ${otherBubble}`
             }`}
           >
             {annotation

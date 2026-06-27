@@ -74,6 +74,9 @@ function mapMessages(messages: any[]) {
 // Presence: roomId → Map<socketId, { userId, username }>
 const presence = new Map<string, Map<string, { userId: string; username: string }>>();
 
+// Debate positions: roomId → Map<userId, { userId, username, position }>
+const debatePositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
+
 function broadcastPresence(roomId: string) {
   const members = presence.get(roomId);
   const list = members ? Array.from(members.values()) : [];
@@ -127,6 +130,28 @@ io.on("connection", (socket) => {
       // Send room meta (without password hash)
       const { password: _pw, ...roomMeta } = room as any;
       socket.emit("roomMeta", roomMeta);
+
+      // Emit current debate positions for this room
+      const roomPositions = debatePositions.get(roomId);
+      if (roomPositions) {
+        socket.emit("debatePositions", Array.from(roomPositions.values()));
+      } else {
+        // Load persisted positions from DB and hydrate in-memory
+        try {
+          const persisted = await prisma.$queryRawUnsafe<{ userId: string; position: string }[]>(
+            `SELECT "userId", "position"::text FROM "UserPosition" WHERE "roomId" = $1`, room.id
+          );
+          if (persisted.length > 0) {
+            const map = new Map<string, { userId: string; username: string; position: string }>();
+            for (const p of persisted) {
+              const user = await prisma.user.findUnique({ where: { id: p.userId }, select: { username: true } });
+              if (user) map.set(p.userId, { userId: p.userId, username: user.username, position: p.position });
+            }
+            debatePositions.set(roomId, map);
+            socket.emit("debatePositions", Array.from(map.values()));
+          }
+        } catch { /* table may not exist yet */ }
+      }
 
       // For DMs: emit history directly (no channels)
       if (room.isDM) {
@@ -391,6 +416,33 @@ io.on("connection", (socket) => {
       console.error("[challengeClaim]", err);
     }
   });
+
+  socket.on("setPosition", async ({ roomId, position }: { roomId: string; position: string }) => {
+    const valid = ["FOR", "AGAINST", "NEUTRAL"];
+    if (!valid.includes(position)) return;
+    try {
+      // Update in-memory map
+      if (!debatePositions.has(roomId)) debatePositions.set(roomId, new Map());
+      debatePositions.get(roomId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
+
+      // Persist to DB (best-effort)
+      try {
+        const room = await prisma.room.findUnique({ where: { name: roomId } });
+        if (room) {
+          await prisma.$executeRawUnsafe(
+            `INSERT INTO "UserPosition" ("id", "userId", "roomId", "position", "updatedAt", "createdAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3::"DebatePosition", NOW(), NOW())
+             ON CONFLICT ("userId", "roomId") DO UPDATE SET "position" = $3::"DebatePosition", "updatedAt" = NOW()`,
+            socketUser.id, room.id, position
+          );
+        }
+      } catch { /* ignore if table not yet migrated */ }
+
+      io.to(roomId).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position });
+    } catch (err) {
+      console.error("[setPosition]", err);
+    }
+  });
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -403,9 +455,9 @@ app.get("/api/lobby", async (req, res) => {
     const [memberships, dms, users] = await Promise.all([
       prisma.roomMember.findMany({
         where: { userId },
-        include: { room: { include: { _count: { select: { messages: true } } } } },
+        include: { room: { select: { id: true, name: true, description: true, proposition: true, isPrivate: true, creatorId: true, isDM: true, participant1Id: true, participant2Id: true, _count: { select: { messages: true } } } } },
         orderBy: { joinedAt: "desc" },
-      }),
+      } as any),
       prisma.room.findMany({
         where: { isDM: true, OR: [{ participant1Id: userId }, { participant2Id: userId }] },
         orderBy: { createdAt: "desc" },
@@ -417,7 +469,7 @@ app.get("/api/lobby", async (req, res) => {
         orderBy: { username: "asc" },
       }),
     ]);
-    const rooms = memberships.map(({ room: { password: _pw, ...r } }) => r);
+    const rooms = (memberships as any[]).map((m: any) => m.room);
     res.json({ rooms, dms, users });
   } catch {
     res.status(500).json({ error: "Failed to load lobby" });
@@ -576,6 +628,7 @@ app.post("/api/rooms", async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
   const creatorId = req.body?.creatorId as string | undefined;
   const description = req.body?.description?.trim().slice(0, 200) || null;
+  const proposition = req.body?.proposition?.trim().slice(0, 300) || null;
   const isPrivate: boolean = req.body?.isPrivate === true;
   const rawPassword: string | undefined = req.body?.password;
   const maxMembers: number | null = req.body?.maxMembers ? parseInt(req.body.maxMembers) : null;
@@ -591,8 +644,8 @@ app.post("/api/rooms", async (req, res) => {
     if (existing) return res.status(409).json({ error: "Room already exists" });
     const password = isPrivate && rawPassword ? await bcrypt.hash(rawPassword, 10) : null;
     const room = await prisma.room.create({
-      data: { name, description, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona },
-    });
+      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona },
+    } as any);
     // Auto-create default "general" channel for every new room
     await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
     // Auto-join the creator
@@ -788,9 +841,10 @@ app.get("/api/rooms/:name", async (req, res) => {
 
 app.patch("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId, description, maxMembers, isPrivate, password: newPassword, aiPersona } = req.body as {
+  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona } = req.body as {
     userId: string;
     description?: string;
+    proposition?: string;
     maxMembers?: number | null;
     isPrivate?: boolean;
     password?: string;
@@ -806,6 +860,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
 
     const data: any = {};
     if (description !== undefined) data.description = description?.trim().slice(0, 200) || null;
+    if (proposition !== undefined) data.proposition = proposition?.trim().slice(0, 300) || null;
     if (maxMembers !== undefined) data.maxMembers = maxMembers;
     if (isPrivate !== undefined) {
       data.isPrivate = isPrivate;
@@ -1109,6 +1164,32 @@ async function start() {
     console.log("[DB] User profile columns ready");
   } catch (e) {
     console.error("[DB] User profile columns setup failed:", e);
+  }
+
+  // Ensure debate position tables and Room.proposition exist
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "proposition" TEXT;
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'DebatePosition') THEN
+          CREATE TYPE "DebatePosition" AS ENUM ('FOR', 'AGAINST', 'NEUTRAL');
+        END IF;
+      END $$;
+      CREATE TABLE IF NOT EXISTS "UserPosition" (
+        "id"        TEXT             NOT NULL,
+        "userId"    TEXT             NOT NULL,
+        "roomId"    TEXT             NOT NULL,
+        "position"  "DebatePosition" NOT NULL,
+        "updatedAt" TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "createdAt" TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "UserPosition_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "UserPosition_userId_roomId_key"
+        ON "UserPosition"("userId", "roomId");
+    `);
+    console.log("[DB] Debate position tables ready");
+  } catch (e) {
+    console.error("[DB] Debate position tables setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

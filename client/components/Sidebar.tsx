@@ -8,6 +8,7 @@ interface Room {
   id: string;
   name: string;
   isPrivate: boolean;
+  proposition?: string | null;
   creatorId: string | null;
 }
 
@@ -124,7 +125,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
         {!collapsed && (
           <button onClick={() => router.push("/lobby")}
             className="truncate text-sm font-semibold text-gray-100 hover:text-indigo-400 transition-colors text-left">
-            Messaging
+            Veritas
           </button>
         )}
       </div>
@@ -161,7 +162,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                   className={`h-3 w-3 transition-transform ${roomsOpen ? "rotate-90" : ""}`}>
                   <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                 </svg>
-                Rooms
+                Debates
               </button>
               <button onClick={() => onBrowseClick ? onBrowseClick() : router.push("/lobby")}
                 className="ml-auto rounded p-0.5 text-gray-600 hover:text-indigo-400 transition-colors" title="Browse rooms">
@@ -179,12 +180,21 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
               ) : rooms.map(room => (
                 <li key={room.id}>
                   <button onClick={() => handleRoomClick(room)}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 transition-colors text-left
+                    className={`flex w-full flex-col rounded-lg px-3 py-1.5 transition-colors text-left
                       ${activeRoomName === room.name ? "bg-gray-800 text-gray-100" : "hover:bg-gray-800 text-gray-300 hover:text-gray-100"}`}>
-                    <span className={`shrink-0 text-xs font-bold ${room.isPrivate ? "text-amber-500" : "text-gray-500"}`}>
-                      {room.isPrivate ? <LockIcon /> : "#"}
-                    </span>
-                    <span className="truncate text-sm">{room.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`shrink-0 ${room.isPrivate ? "text-amber-500" : "text-indigo-400"}`}>
+                        {room.isPrivate ? <LockIcon /> : (
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className="h-3 w-3">
+                            <path fillRule="evenodd" d="M5.394 1.578a.667.667 0 0 1 1.212 0l1.328 3.196 3.407.495a.667.667 0 0 1 .37 1.137l-2.466 2.402.583 3.392a.667.667 0 0 1-.968.702L6 11.048l-2.86 1.854a.667.667 0 0 1-.967-.702l.582-3.392L.29 6.406a.667.667 0 0 1 .37-1.137l3.407-.495 1.327-3.196Z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="truncate text-sm font-medium">{room.name}</span>
+                    </div>
+                    {room.proposition && (
+                      <p className="mt-0.5 truncate pl-5 text-[10px] text-gray-600 italic">{room.proposition}</p>
+                    )}
                   </button>
                 </li>
               ))}

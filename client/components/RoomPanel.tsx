@@ -5,7 +5,7 @@ import ConfirmModal from "./ConfirmModal";
 
 interface Member { userId: string; username: string; avatarUrl?: string | null; }
 interface RoomMeta {
-  id: string; name: string; description: string | null; isPrivate: boolean;
+  id: string; name: string; description: string | null; proposition: string | null; isPrivate: boolean;
   maxMembers: number | null; creatorId: string | null; aiPersona: string | null;
 }
 interface Settings { factualCorrection: boolean; ambiguityResolution: boolean; }
@@ -55,6 +55,7 @@ export default function RoomPanel({
   const [tab, setTab] = useState<"room" | "settings" | "ai">(initialTab);
 
   const [editDesc, setEditDesc] = useState(meta?.description ?? "");
+  const [editProposition, setEditProposition] = useState(meta?.proposition ?? "");
   const [editMax, setEditMax] = useState(meta?.maxMembers?.toString() ?? "");
   const [editPrivate, setEditPrivate] = useState(meta?.isPrivate ?? false);
   const [editPassword, setEditPassword] = useState("");
@@ -69,6 +70,7 @@ export default function RoomPanel({
   if (meta && meta.id !== lastMetaId) {
     setLastMetaId(meta.id);
     setEditDesc(meta.description ?? "");
+    setEditProposition(meta.proposition ?? "");
     setEditMax(meta.maxMembers?.toString() ?? "");
     setEditPrivate(meta.isPrivate);
     setEditPersona(meta.aiPersona ?? "");
@@ -80,6 +82,7 @@ export default function RoomPanel({
     try {
       const body: any = {
         userId: currentUserId, description: editDesc,
+        proposition: editProposition.trim() || null,
         maxMembers: editMax ? parseInt(editMax) : null,
         isPrivate: editPrivate, aiPersona: editPersona.trim() || null,
       };
@@ -153,6 +156,12 @@ export default function RoomPanel({
                     <span className="text-[10px] text-gray-600">max {meta.maxMembers}</span>
                   )}
                 </div>
+                {meta?.proposition && (
+                  <div className="mb-2 rounded-lg bg-indigo-950/50 px-3 py-2 ring-1 ring-indigo-800/40">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500 mb-0.5">Proposition</p>
+                    <p className="text-xs text-indigo-200 leading-relaxed italic">&ldquo;{meta.proposition}&rdquo;</p>
+                  </div>
+                )}
                 {meta?.description && <p className="text-xs text-gray-400 leading-relaxed">{meta.description}</p>}
               </div>
 
@@ -194,14 +203,20 @@ export default function RoomPanel({
           {tab === "settings" && canEdit && (
             <div className="px-4 py-3 space-y-3">
               <div>
+                <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Proposition</label>
+                <textarea value={editProposition} onChange={e => setEditProposition(e.target.value)}
+                  maxLength={300} rows={2} placeholder="The statement being debated…"
+                  className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+              </div>
+              <div>
                 <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Description</label>
                 <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)}
-                  maxLength={200} rows={2} placeholder="What's this room for?"
+                  maxLength={200} rows={2} placeholder="What's this debate about?"
                   className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
               </div>
 
               <div>
-                <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Max members</label>
+                <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Max participants</label>
                 <input type="number" value={editMax} onChange={e => setEditMax(e.target.value)}
                   placeholder="Unlimited" min={2} max={500}
                   className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />

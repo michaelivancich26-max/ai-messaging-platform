@@ -1,5 +1,13 @@
 export type MessageType = "human" | "ai_interjection" | "summary";
 
+export type DebatePosition = "FOR" | "AGAINST" | "NEUTRAL";
+
+export interface UserPositionEntry {
+  userId: string;
+  username: string;
+  position: DebatePosition;
+}
+
 export interface ChatMessage {
   id: string;
   content: string;

@@ -46,7 +46,7 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
 // ─── Create Room Modal ──────────────────────────────────────────────────────
 function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClose: () => void; onCreate: (name: string) => void }) {
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [proposition, setProposition] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -62,10 +62,10 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
     try {
       const res = await fetch(`${SERVER}/api/rooms`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined, isPrivate, password: isPrivate ? password : undefined, maxMembers: maxMembers ? parseInt(maxMembers) : undefined, creatorId: userId, aiPersona: aiPersona.trim() || undefined }),
+        body: JSON.stringify({ name: name.trim(), proposition: proposition.trim() || undefined, isPrivate, password: isPrivate ? password : undefined, maxMembers: maxMembers ? parseInt(maxMembers) : undefined, creatorId: userId, aiPersona: aiPersona.trim() || undefined }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Failed to create room."); return; }
+      if (!res.ok) { setError(data.error ?? "Failed to create debate."); return; }
       onCreate(data.name);
     } catch { setError("Could not reach server."); } finally { setCreating(false); }
   }
@@ -74,24 +74,30 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Create a room</h2>
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-indigo-400">
+              <path fillRule="evenodd" d="M10 2a1 1 0 0 1 .894.553l2.991 5.994 6.61.961a1 1 0 0 1 .554 1.706l-4.783 4.664 1.128 6.587a1 1 0 0 1-1.451 1.054L10 20.573l-5.943 3.126a1 1 0 0 1-1.45-1.054l1.128-6.587L-.05 11.214a1 1 0 0 1 .554-1.706l6.61-.961L9.106 2.553A1 1 0 0 1 10 2Z" clipRule="evenodd" />
+            </svg>
+            <h2 className="text-base font-semibold">Start a Debate</h2>
+          </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
           </button>
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-400">Room name <span className="text-red-400">*</span></label>
-            <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. general" maxLength={40}
+            <label className="mb-1.5 block text-xs font-medium text-gray-400">Proposition <span className="text-gray-600">(optional)</span></label>
+            <textarea autoFocus value={proposition} onChange={e => setProposition(e.target.value)} placeholder="e.g. AI will replace most jobs by 2035" maxLength={300} rows={2}
+              className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+            <p className="mt-1 text-[10px] text-gray-600">The statement being debated. Participants take FOR or AGAINST positions.</p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-gray-400">Debate name <span className="text-red-400">*</span></label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. ai-jobs-debate" maxLength={40}
               className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-400">Description <span className="text-gray-600">(optional)</span></label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What's this room for?" maxLength={200} rows={2}
-              className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-400">Max members <span className="text-gray-600">(optional)</span></label>
+            <label className="mb-1.5 block text-xs font-medium text-gray-400">Max participants <span className="text-gray-600">(optional)</span></label>
             <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} placeholder="Unlimited" min={2} max={500}
               className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
           </div>
@@ -124,16 +130,16 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
               <span className="text-xs font-medium text-gray-300">AI moderator persona <span className="text-gray-600">(optional)</span></span>
             </div>
             <textarea value={aiPersona} onChange={e => setAiPersona(e.target.value)} maxLength={500} rows={2}
-              placeholder={"e.g. A sarcastic but fair debate coach who quotes philosophers when correcting mistakes."}
+              placeholder={"e.g. A rigorous Socratic moderator who demands evidence for every claim."}
               className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-amber-500" />
-            <p className="mt-1.5 text-[10px] text-gray-600">Give the AI a character. It will adopt this voice when flagging errors in your room. You can change this later in room settings.</p>
+            <p className="mt-1.5 text-[10px] text-gray-600">The AI fact-checker&apos;s personality. It will evaluate claims and award credibility scores.</p>
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-700 py-2 text-sm text-gray-400 hover:bg-gray-800 transition-colors">Cancel</button>
             <button type="submit" disabled={!name.trim() || (isPrivate && !password) || creating}
               className="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors">
-              {creating ? "Creating…" : "Create room"}
+              {creating ? "Starting…" : "Start debate"}
             </button>
           </div>
         </form>
@@ -142,11 +148,12 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
   );
 }
 
-// ─── Browse Rooms Panel ──────────────────────────────────────────────────────
+// ─── Debate Board Panel ──────────────────────────────────────────────────────
 interface BrowseRoom {
   id: string;
   name: string;
   description: string | null;
+  proposition: string | null;
   isPrivate: boolean;
   creatorId: string | null;
   joined: boolean;
@@ -214,13 +221,13 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
             <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
           </svg>
         </button>
-        <h1 className="text-sm font-semibold text-gray-100">Browse Rooms</h1>
+        <h1 className="text-sm font-semibold text-gray-100">Debate Board</h1>
         <div className="ml-auto flex items-center gap-2">
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rooms…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search debates…"
             className="w-32 sm:w-52 rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
           <button onClick={onCreateClick}
             className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors">
-            + Create room
+            + Start debate
           </button>
         </div>
       </div>
@@ -234,22 +241,30 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map(room => (
-              <div key={room.id} className="flex flex-col gap-3 rounded-2xl border border-gray-800 bg-gray-900 p-4">
+              <div key={room.id} className="flex flex-col gap-3 rounded-2xl border border-gray-800 bg-gray-900 p-4 hover:border-gray-700 transition-colors">
                 <div className="flex items-start gap-2">
-                  <span className={`mt-0.5 shrink-0 text-xs font-bold ${room.isPrivate ? "text-amber-500" : "text-gray-500"}`}>
+                  <span className={`mt-0.5 shrink-0 ${room.isPrivate ? "text-amber-500" : "text-indigo-500"}`}>
                     {room.isPrivate ? (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                         <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
                       </svg>
-                    ) : "#"}
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path fillRule="evenodd" d="M10 2a1 1 0 0 1 .894.553l2.991 5.994 6.61.961a1 1 0 0 1 .554 1.706l-4.783 4.664 1.128 6.587a1 1 0 0 1-1.451 1.054L10 20.573l-5.943 3.126a1 1 0 0 1-1.45-1.054l1.128-6.587L-.05 11.214a1 1 0 0 1 .554-1.706l6.61-.961L9.106 2.553A1 1 0 0 1 10 2Z" clipRule="evenodd" />
+                      </svg>
+                    )}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-gray-100">{room.name}</p>
-                    {room.description && <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{room.description}</p>}
+                    {room.proposition ? (
+                      <p className="mt-0.5 text-xs text-indigo-300/80 line-clamp-2 italic">&ldquo;{room.proposition}&rdquo;</p>
+                    ) : room.description ? (
+                      <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{room.description}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-gray-600">
-                  <span>{room._count.members} member{room._count.members !== 1 ? "s" : ""}</span>
+                  <span>{room._count.members} participant{room._count.members !== 1 ? "s" : ""}</span>
                   <span>{room._count.messages} message{room._count.messages !== 1 ? "s" : ""}</span>
                 </div>
                 <button
@@ -260,7 +275,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                       ? "bg-gray-800 text-gray-300 hover:bg-gray-700"
                       : "bg-indigo-600 text-white hover:bg-indigo-500"
                   } disabled:opacity-40`}>
-                  {joining === room.id ? "Joining…" : room.joined ? "Open" : room.isPrivate ? "Join (private)" : "Join"}
+                  {joining === room.id ? "Joining…" : room.joined ? "Enter debate" : room.isPrivate ? "Join (private)" : "Join debate"}
                 </button>
               </div>
             ))}
@@ -315,20 +330,24 @@ export default function LobbyPage() {
           </button>
           <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-indigo-600/20 mb-6">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-10 w-10 text-indigo-400">
-              <path d="M4.913 2.658c2.075-.27 4.19-.408 6.337-.408 2.147 0 4.262.139 6.337.408 1.922.25 3.291 1.861 3.405 3.727a4.403 4.403 0 0 0-1.032-.211 50.89 50.89 0 0 0-8.42 0c-2.358.196-4.04 2.19-4.04 4.434v4.286a4.47 4.47 0 0 0 2.433 3.984L7.28 21.53A.75.75 0 0 1 6 21v-4.03a48.527 48.527 0 0 1-1.087-.128C2.905 16.58 1.5 14.833 1.5 12.862V6.638c0-1.97 1.405-3.718 3.413-3.979Z" />
-              <path d="M15.75 7.5c-1.376 0-2.739.057-4.086.169C10.124 7.797 9 9.103 9 10.609v4.285c0 1.507 1.128 2.814 2.67 2.94 1.243.102 2.5.157 3.768.165l2.782 2.781a.75.75 0 0 0 1.28-.53v-2.39l.33-.026c1.542-.125 2.67-1.433 2.67-2.94v-4.286c0-1.505-1.125-2.811-2.664-2.94A49.392 49.392 0 0 0 15.75 7.5Z" />
+              <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
             </svg>
           </div>
           <h1 className="mb-2 text-2xl font-bold text-gray-100">Welcome back, {username}</h1>
-          <p className="mb-8 text-sm text-gray-500">Join a room or start a DM from the sidebar.</p>
+          <p className="mb-2 text-sm text-gray-500 max-w-sm">Debate real topics. Stake your claims. Let AI be the judge.</p>
+          <div className="mb-8 flex items-center gap-4 text-xs text-gray-600">
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />FOR</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />AGAINST</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />AI fact-checked</span>
+          </div>
           <div className="flex gap-3">
             <button onClick={() => setView("browse")}
               className="rounded-xl border border-gray-700 px-5 py-2.5 text-sm font-semibold text-gray-300 hover:bg-gray-800 transition-colors">
-              Browse rooms
+              Debate Board
             </button>
             <button onClick={() => setShowCreate(true)}
               className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
-              + Create a room
+              + Start a debate
             </button>
           </div>
         </main>

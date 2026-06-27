@@ -19,6 +19,12 @@ enum ClaimStatus {
   CONTESTED
 }
 
+enum DebatePosition {
+  FOR
+  AGAINST
+  NEUTRAL
+}
+
 model User {
   id           String    @id @default(cuid())
   username     String    @unique
@@ -58,6 +64,7 @@ model Room {
   participant1Id String?
   participant2Id String?
   aiPersona      String?
+  proposition    String?
   messages       Message[]
   sections       Section[]
   channels       Channel[]
@@ -187,4 +194,15 @@ model ClaimChallenge {
   challengerId String
   createdAt    DateTime @default(now())
   claim        Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+}
+
+model UserPosition {
+  id        String         @id @default(cuid())
+  userId    String
+  roomId    String
+  position  DebatePosition
+  updatedAt DateTime       @updatedAt
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, roomId])
 }
