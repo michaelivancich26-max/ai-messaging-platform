@@ -14,7 +14,8 @@ export interface ChatMessage {
 export type AIPayload =
   | { type: "factual"; text: string; sarcasm?: boolean }
   | { type: "ambiguity"; pronoun: string; referent: string; quote: string }
-  | { type: "summary"; text: string };
+  | { type: "summary"; text: string }
+  | { type: "mention_response"; text: string };
 
 export function parseAIContent(content: string): AIPayload {
   try {

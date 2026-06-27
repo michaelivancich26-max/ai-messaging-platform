@@ -24,7 +24,8 @@ type Deps = {
 
 type Issue =
   | { type: "factual"; text: string; sarcasm: boolean }
-  | { type: "ambiguity"; pronoun: string; referent: string; quote: string };
+  | { type: "ambiguity"; pronoun: string; referent: string; quote: string }
+  | { type: "mention_response"; text: string };
 
 type AIResponse = {
   issues: Array<{
@@ -108,8 +109,10 @@ async function streamAndSave(
 
   const tempId = `ai-stream-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const text = payload.text;
+  const isMention = payload.type === "mention_response";
+  const sarcasm = payload.type === "factual" ? payload.sarcasm : false;
 
-  io.to(emitRoom).emit("aiStreamStart", { tempId, sarcasm: payload.sarcasm });
+  io.to(emitRoom).emit("aiStreamStart", { tempId, sarcasm, isMention });
 
   for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
     io.to(emitRoom).emit("aiStreamChunk", { tempId, chunk: text.slice(i, i + STREAM_CHUNK_SIZE) });
@@ -277,4 +280,59 @@ export function scheduleAI(roomId: string, deps: Deps) {
   if (pendingTimers.has(roomId)) return;
   const timer = setTimeout(() => runScan(roomId, deps), SCAN_INTERVAL_MS);
   pendingTimers.set(roomId, timer);
+}
+
+export async function respondToMention(question: string, roomId: string, deps: Deps) {
+  const { redis, io, prisma, emitRoom, aiPersona, roomName, channelId } = deps;
+  const emitTarget = emitRoom ?? roomId;
+  const context = await getChatContext(roomId, redis);
+
+  // Poll creation intent
+  if (/\b(create|make|start|run|add)\b.{0,30}\bpoll\b/i.test(question)) {
+    try {
+      const res = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 256,
+        system: "Extract a poll from the user's request. Return ONLY valid JSON: { \"question\": \"...\", \"options\": [\"...\", \"...\"] } with 2-4 concise options. Nothing else.",
+        messages: [{ role: "user", content: `Request: ${question}\n\nConversation context:\n${context}` }],
+      });
+      const raw = res.content[0].type === "text" ? res.content[0].text : "";
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) {
+        const poll = JSON.parse(match[0]);
+        if (poll.question && Array.isArray(poll.options) && poll.options.length >= 2) {
+          io.to(emitTarget).emit("pollSuggested", { question: poll.question, options: poll.options.slice(0, 4) });
+          await streamAndSave({ type: "mention_response", text: `Poll ready: "${poll.question}"` }, roomName, prisma, io, emitTarget, [], channelId);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("[AI] Mention poll error:", e);
+    }
+  }
+
+  // Conversational response
+  const personaLine = aiPersona
+    ? `You are playing the role of: ${aiPersona}. Stay in character.`
+    : "You are @Claude, a helpful AI assistant participating in a chat room.";
+
+  const systemPrompt = [
+    personaLine,
+    "A user has directly @mentioned you. Respond helpfully and conversationally.",
+    "Be concise — 1–3 sentences unless the user explicitly asks for more detail.",
+    context.trim() ? `\nRecent conversation:\n${context}` : "",
+  ].filter(Boolean).join("\n");
+
+  try {
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 512,
+      system: systemPrompt,
+      messages: [{ role: "user", content: question }],
+    });
+    const text = response.content[0].type === "text" ? response.content[0].text.trim() : "I'm here! How can I help?";
+    await streamAndSave({ type: "mention_response", text }, roomName, prisma, io, emitTarget, [], channelId);
+  } catch (e) {
+    console.error("[AI] Mention response error:", e);
+  }
 }

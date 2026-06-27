@@ -43,7 +43,7 @@ export default function RoomPage() {
   const [onlineMembers, setOnlineMembers] = useState<{ userId: string; username: string }[]>([]);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
-  const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean }>>(new Map());
+  const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean; isMention?: boolean }>>(new Map());
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [channelRefresh, setChannelRefresh] = useState(0);
   const [roomGraphOpen, setRoomGraphOpen] = useState(false);
@@ -119,8 +119,8 @@ export default function RoomPage() {
     ));
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
-    socket.on("aiStreamStart", ({ tempId, sarcasm }: { tempId: string; sarcasm: boolean }) => {
-      setStreamingMsgs((prev) => new Map(prev).set(tempId, { text: "", sarcasm }));
+    socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
+      setStreamingMsgs((prev) => new Map(prev).set(tempId, { text: "", sarcasm, isMention }));
     });
     socket.on("aiStreamChunk", ({ tempId, chunk }: { tempId: string; chunk: string }) => {
       setStreamingMsgs((prev) => {

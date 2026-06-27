@@ -13,7 +13,9 @@ interface Props {
 export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) {
   const [value, setValue] = useState("");
   const [imageError, setImageError] = useState("");
+  const [showMention, setShowMention] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stopTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTyping = useRef(false);
 
@@ -26,6 +28,26 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
     }, 2000);
   }, [onTyping, onStopTyping]);
 
+  function checkMention(text: string, cursorPos: number) {
+    const before = text.slice(0, cursorPos);
+    setShowMention(/@\w*$/.test(before));
+  }
+
+  function insertMention() {
+    const cursorPos = textareaRef.current?.selectionStart ?? value.length;
+    const before = value.slice(0, cursorPos);
+    const after = value.slice(cursorPos);
+    const newBefore = before.replace(/@\w*$/, "@Claude ");
+    const newValue = newBefore + after;
+    setValue(newValue);
+    setShowMention(false);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      const pos = newBefore.length;
+      textareaRef.current?.setSelectionRange(pos, pos);
+    }, 0);
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = value.trim();
@@ -35,9 +57,20 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
     onStopTyping?.();
     onSend(trimmed);
     setValue("");
+    setShowMention(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showMention && (e.key === "Tab" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      insertMention();
+      return;
+    }
+    if (showMention && e.key === "Escape") {
+      e.preventDefault();
+      setShowMention(false);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const trimmed = value.trim();
@@ -47,8 +80,16 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
         onStopTyping?.();
         onSend(trimmed);
         setValue("");
+        setShowMention(false);
       }
     }
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const v = e.target.value;
+    setValue(v);
+    if (v) emitTyping();
+    checkMention(v, e.target.selectionStart ?? v.length);
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -79,7 +120,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
       {imageError && (
         <p className="px-4 pt-2 text-xs text-red-400">{imageError}</p>
       )}
-      <form onSubmit={submit} className="flex items-end gap-3 px-4 py-4">
+      <form onSubmit={submit} className="relative flex items-end gap-3 px-4 py-4">
         {/* Hidden file input */}
         <input
           ref={fileRef}
@@ -88,6 +129,20 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
           className="hidden"
           onChange={handleFileChange}
         />
+
+        {/* @Claude autocomplete dropdown */}
+        {showMention && (
+          <div className="absolute bottom-full left-16 mb-2 rounded-xl border border-violet-500/40 bg-gray-900 py-1 shadow-xl">
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); insertMention(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:bg-violet-950/60 transition-colors"
+            >
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">C</span>
+              <span><span className="font-medium text-violet-300">@Claude</span><span className="ml-1.5 text-xs text-gray-500">· AI assistant</span></span>
+            </button>
+          </div>
+        )}
 
         {/* Photo button */}
         <button
@@ -102,10 +157,11 @@ export default function MessageInput({ onSend, onTyping, onStopTyping }: Props) 
         </button>
 
         <textarea
+          ref={textareaRef}
           value={value}
-          onChange={(e) => { setValue(e.target.value); if (e.target.value) emitTyping(); }}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Message… (Enter to send, Shift+Enter for newline)"
+          placeholder="Message… (Enter to send, @ to mention)"
           rows={1}
           className="flex-1 resize-none rounded-xl bg-gray-800 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
           style={{ maxHeight: "8rem", overflowY: "auto" }}

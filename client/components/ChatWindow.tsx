@@ -10,7 +10,7 @@ interface Props {
   annotations: Record<string, Annotation>;
   highlightedId?: string | null;
   messageRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
-  streamingMsgs?: Map<string, { text: string; sarcasm: boolean }>;
+  streamingMsgs?: Map<string, { text: string; sarcasm: boolean; isMention?: boolean }>;
 }
 
 export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs }: Props) {
@@ -42,8 +42,8 @@ export default function ChatWindow({ messages, currentUsername, annotations, hig
           </div>
         );
       })}
-      {streamingMsgs && Array.from(streamingMsgs.entries()).map(([tempId, { text, sarcasm }]) => (
-        <AIStreamingCard key={tempId} text={text} sarcasm={sarcasm} />
+      {streamingMsgs && Array.from(streamingMsgs.entries()).map(([tempId, { text, sarcasm, isMention }]) => (
+        <AIStreamingCard key={tempId} text={text} sarcasm={sarcasm} isMention={isMention} />
       ))}
     </div>
   );

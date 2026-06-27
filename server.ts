@@ -5,7 +5,7 @@ import { PrismaClient, SenderType } from "@prisma/client";
 import { createClient } from "redis";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
-import { scheduleAI } from "./services/aiOrchestrator";
+import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import bcrypt from "bcryptjs";
@@ -240,7 +240,11 @@ io.on("connection", (socket) => {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
-          scheduleAI(channelId ?? roomId, { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name, channelId: channelId ?? null });
+          const aiDeps = { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name, channelId: channelId ?? null };
+          scheduleAI(channelId ?? roomId, aiDeps);
+          if (/@claude\b/i.test(content)) {
+            respondToMention(content, channelId ?? roomId, aiDeps);
+          }
         }
       } catch (err) {
         console.error("sendMessage error:", err);
