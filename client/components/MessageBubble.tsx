@@ -208,8 +208,8 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
             ? <ClaimBadge claim={claim} canChallenge={!isSelf} onChallenge={(id) => onChallengeClaim?.(id)} />
             : canStake && (
               <button
-                onClick={() => onStakeClaim(message.id)}
-                className="mt-1 flex items-center gap-1 rounded-full border border-gray-700/50 px-2 py-0.5 text-[10px] text-gray-600 opacity-0 group-hover:opacity-100 hover:border-gray-500 hover:text-gray-400 transition-all"
+                onClick={() => onStakeClaim!(message.id)}
+                className="mt-1 flex items-center gap-1 rounded-full border border-gray-700/40 px-2 py-0.5 text-[10px] text-gray-600 opacity-40 hover:opacity-100 hover:border-gray-500 hover:text-gray-300 transition-all"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                   <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />

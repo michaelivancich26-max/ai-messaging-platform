@@ -331,6 +331,11 @@ export default function RoomPage() {
   function stakeClaim(messageId: string) {
     const msg = messages.find(m => m.id === messageId);
     if (!msg) return;
+    // Optimistic: show pending badge immediately before server responds
+    setClaims(prev => ({
+      ...prev,
+      [messageId]: { id: `pending-${messageId}`, messageId, claimantId: userId, status: "PENDING", challengeCount: 0 },
+    }));
     getSocket({ id: userId, username }).emit("stakeClaim", {
       messageId, roomId, channelId: activeChannel?.id ?? null, text: msg.content,
     });
