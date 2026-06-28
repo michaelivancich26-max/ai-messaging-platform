@@ -9,6 +9,7 @@ export interface Channel {
   order: number;
   isSubDebate?: boolean;
   isSidebar?: boolean;
+  isOpinionated?: boolean;
   proposition?: string | null;
   parentMessagePreview?: string | null;
   parentChannelId?: string | null;
@@ -92,6 +93,14 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
     setRenaming(null); load();
   }
 
+  async function toggleChannelOpinionated(channelId: string, value: boolean) {
+    await fetch(`${SERVER}/api/rooms/${roomName}/channels/${channelId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, isOpinionated: value }),
+    });
+    load();
+  }
+
   async function deleteSection(id: string) {
     await fetch(`${SERVER}/api/rooms/${roomName}/sections/${id}`, {
       method: "DELETE", headers: { "Content-Type": "application/json" },
@@ -137,10 +146,19 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
               ${isActive ? "bg-gray-700 text-gray-100 font-medium" : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"}`}>
             <span className="text-gray-500">#</span>
             <span className="truncate">{ch.name}</span>
+            {ch.isOpinionated && <span className="ml-auto shrink-0 h-1.5 w-1.5 rounded-full bg-amber-400" title="Opinions mode" />}
           </button>
         )}
         {canEdit && !isRenaming && (
           <div className="hidden gap-0.5 pr-1 group-hover:flex">
+            <button
+              onClick={() => toggleChannelOpinionated(ch.id, !ch.isOpinionated)}
+              title={ch.isOpinionated ? "Disable opinions mode" : "Enable opinions mode (no Veritas impact)"}
+              className={`rounded p-0.5 transition-colors ${ch.isOpinionated ? "text-amber-400 hover:text-amber-300" : "text-gray-600 hover:text-amber-400"}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                <path fillRule="evenodd" d="M1 8.74c0 .983.713 1.825 1.69 1.943L3 10.698V13.5a.5.5 0 0 0 .724.447L8 11.82l4.276 2.127A.5.5 0 0 0 13 13.5v-2.802l.31-.016A2 2 0 0 0 15 8.74V5a3 3 0 0 0-3-3H4a3 3 0 0 0-3 3v3.74Z" clipRule="evenodd" />
+              </svg>
+            </button>
             <button onClick={() => setRenaming({ type: "channel", id: ch.id, name: ch.name })}
               className="rounded p-0.5 text-gray-600 hover:text-gray-300">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">

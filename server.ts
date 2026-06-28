@@ -318,12 +318,15 @@ io.on("connection", (socket) => {
 
         // Enforce structured debate turn order (sidebar channel is exempt)
         let isSidebarMsg = false;
+        let isChannelOpinionated = false;
         if (channelId) {
           try {
             const ch = await (prisma as any).channel.findUnique({ where: { id: channelId } });
             isSidebarMsg = !!(ch as any)?.isSidebar;
+            isChannelOpinionated = !!(ch as any)?.isOpinionated;
           } catch { /* ignore */ }
         }
+        const isOpinionated = isChannelOpinionated || !!(room as any).isOpinionated;
         if (!isImage && !isSidebarMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured") {
@@ -362,7 +365,7 @@ io.on("connection", (socket) => {
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
           const aiDeps = { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name, channelId: channelId ?? null };
-          scheduleAI(channelId ?? roomId, aiDeps);
+          if (!isOpinionated) scheduleAI(channelId ?? roomId, aiDeps);
           if (/@claude\b/i.test(content)) {
             respondToMention(content, channelId ?? roomId, aiDeps);
           }
@@ -450,6 +453,13 @@ io.on("connection", (socket) => {
     try {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
+      let isClaimOpinionated = !!(room as any).isOpinionated;
+      if (!isClaimOpinionated && channelId) {
+        try {
+          const ch = await (prisma as any).channel.findUnique({ where: { id: channelId } });
+          isClaimOpinionated = !!(ch as any)?.isOpinionated;
+        } catch { /* ignore */ }
+      }
 
       // Prevent duplicate claims on the same message
       const existing = await (prisma as any).claim.findFirst({ where: { messageId } });
@@ -470,9 +480,11 @@ io.on("connection", (socket) => {
           where: { id: claim.id },
           data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
         });
-        const cred = await computeCredibility(socketUser.id, prisma);
         io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId, status: verdict, reasoning, claimantId: socketUser.id, challengeCount: 0 });
-        io.to(emitTarget).emit("credibilityUpdate", cred);
+        if (!isClaimOpinionated) {
+          const cred = await computeCredibility(socketUser.id, prisma);
+          io.to(emitTarget).emit("credibilityUpdate", cred);
+        }
       } catch (e) {
         console.error("[stakeClaim] evaluation error:", e);
       }
@@ -1010,7 +1022,7 @@ app.post("/api/rooms/:name/channels", async (req, res) => {
 
 // PATCH /api/rooms/:name/channels/:id
 app.patch("/api/rooms/:name/channels/:id", async (req, res) => {
-  const { userId, name: newName, sectionId } = req.body as { userId: string; name?: string; sectionId?: string | null };
+  const { userId, name: newName, sectionId, isOpinionated: chOpinionated } = req.body as { userId: string; name?: string; sectionId?: string | null; isOpinionated?: boolean };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -1020,7 +1032,8 @@ app.patch("/api/rooms/:name/channels/:id", async (req, res) => {
     const data: any = {};
     if (newName) data.name = newName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
     if (sectionId !== undefined) data.sectionId = sectionId;
-    const channel = await prisma.channel.update({ where: { id: req.params.id }, data });
+    if (chOpinionated !== undefined) data.isOpinionated = chOpinionated;
+    const channel = await (prisma as any).channel.update({ where: { id: req.params.id }, data });
     io.to(req.params.name).emit("channelsUpdated");
     res.json(channel);
   } catch {
@@ -1087,7 +1100,7 @@ app.get("/api/rooms/:name", async (req, res) => {
 
 app.patch("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances } = req.body as {
+  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances, isOpinionated } = req.body as {
     userId: string;
     description?: string;
     proposition?: string;
@@ -1096,6 +1109,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
     password?: string;
     aiPersona?: string | null;
     stances?: string[];
+    isOpinionated?: boolean;
   };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
@@ -1115,6 +1129,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
     }
     if (newPassword) data.password = await bcrypt.hash(newPassword, 10);
     if (aiPersona !== undefined) data.aiPersona = aiPersona?.trim().slice(0, 500) || null;
+    if (isOpinionated !== undefined) data.isOpinionated = isOpinionated;
 
     const updated = await prisma.room.update({ where: { name }, data });
     const { password: _pw, ...rest } = updated as any;
@@ -1494,6 +1509,16 @@ async function start() {
     console.log("[DB] Channel parentChannelId column ready");
   } catch (e) {
     console.error("[DB] Channel parentChannelId column setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "isOpinionated" BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "isOpinionated" BOOLEAN NOT NULL DEFAULT false;
+    `);
+    console.log("[DB] isOpinionated columns ready");
+  } catch (e) {
+    console.error("[DB] isOpinionated column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

@@ -606,6 +606,7 @@ export default function RoomPage() {
     ? channelPositions[activeChannel.id]?.[userId]?.position ?? null
     : myPosition;
   const activeStances = activeChannel?.isSubDebate ? ["FOR", "AGAINST"] : (stances.length > 0 ? stances : ["FOR", "AGAINST"]);
+  const isOpinionated = !!(activeChannel?.isOpinionated || (roomMeta as any)?.isOpinionated);
 
   if (status === "loading") {
     return <div className="flex h-screen items-center justify-center text-gray-500">Loading…</div>;
@@ -762,9 +763,21 @@ export default function RoomPage() {
           debateTurn={debateTurn}
           isOwner={isOwner}
           isAdmin={isAdmin}
+          isOpinionated={isOpinionated}
           onSetPosition={setDebatePosition}
           onSetDebateMode={setDebateMode}
         />
+      )}
+
+      {/* Opinionated badge when there's no proposition/DebateHeader */}
+      {!roomId.startsWith("dm-") && isOpinionated && !activeChannel?.isSubDebate && !(roomMeta as any)?.proposition && (
+        <div className="shrink-0 flex items-center gap-1.5 border-b border-amber-900/30 bg-amber-950/20 px-4 py-1.5">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-amber-500">
+            <path fillRule="evenodd" d="M1 8.74c0 .983.713 1.825 1.69 1.943L3 10.698V13.5a.5.5 0 0 0 .724.447L8 11.82l4.276 2.127A.5.5 0 0 0 13 13.5v-2.802l.31-.016A2 2 0 0 0 15 8.74V5a3 3 0 0 0-3-3H4a3 3 0 0 0-3 3v3.74Z" clipRule="evenodd" />
+          </svg>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Opinionated chat</span>
+          <span className="text-[10px] text-amber-600">· messages don&apos;t affect your Veritas Score</span>
+        </div>
       )}
 
       <div className={`flex flex-1 overflow-hidden min-h-0 ${sidebarOpen && sidebarChannel ? "flex-row" : "flex-col"}`}>
@@ -789,7 +802,7 @@ export default function RoomPage() {
                   </div>
                 </div>
               )}
-              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} />
+              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={isOpinionated ? undefined : stakeClaim} onChallengeClaim={isOpinionated ? undefined : challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} />
               <div ref={bottomRef} />
             </>
           )}

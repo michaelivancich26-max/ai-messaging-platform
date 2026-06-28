@@ -7,6 +7,7 @@ interface Member { userId: string; username: string; avatarUrl?: string | null; 
 interface RoomMeta {
   id: string; name: string; description: string | null; proposition: string | null; isPrivate: boolean;
   maxMembers: number | null; creatorId: string | null; aiPersona: string | null; stances?: string[] | null;
+  isOpinionated?: boolean;
 }
 interface Settings { factualCorrection: boolean; ambiguityResolution: boolean; }
 
@@ -61,6 +62,7 @@ export default function RoomPanel({
   const [editPassword, setEditPassword] = useState("");
   const [editPersona, setEditPersona] = useState(meta?.aiPersona ?? "");
   const [editStances, setEditStances] = useState<string[]>(meta?.stances ?? []);
+  const [editOpinionated, setEditOpinionated] = useState(meta?.isOpinionated ?? false);
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
@@ -76,6 +78,7 @@ export default function RoomPanel({
     setEditPrivate(meta.isPrivate);
     setEditPersona(meta.aiPersona ?? "");
     setEditStances(meta.stances ?? []);
+    setEditOpinionated(meta.isOpinionated ?? false);
   }
 
   async function saveChanges() {
@@ -88,6 +91,7 @@ export default function RoomPanel({
         maxMembers: editMax ? parseInt(editMax) : null,
         isPrivate: editPrivate, aiPersona: editPersona.trim() || null,
         stances: editStances,
+        isOpinionated: editOpinionated,
       };
       if (editPrivate && editPassword) body.password = editPassword;
       const res = await fetch(`${SERVER}/api/rooms/${meta.name}`, {
@@ -258,6 +262,17 @@ export default function RoomPanel({
                 <input type="number" value={editMax} onChange={e => setEditMax(e.target.value)}
                   placeholder="Unlimited" min={2} max={500}
                   className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg bg-gray-800/60 px-3 py-2">
+                <div>
+                  <p className="text-sm text-gray-200">Opinionated chat</p>
+                  <p className="text-[10px] text-gray-500">Subjective discussion — no Veritas impact</p>
+                </div>
+                <button type="button" onClick={() => setEditOpinionated(v => !v)}
+                  className={`relative h-5 w-9 rounded-full transition-colors ${editOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${editOpinionated ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
               </div>
 
               <div className="flex items-center justify-between rounded-lg bg-gray-800/60 px-3 py-2">

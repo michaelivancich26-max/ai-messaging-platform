@@ -65,6 +65,7 @@ model Room {
   participant2Id String?
   aiPersona      String?
   proposition    String?
+  isOpinionated  Boolean   @default(false)
   messages       Message[]
   sections       Section[]
   channels       Channel[]
@@ -122,6 +123,7 @@ model Channel {
   parentMessageId      String?
   parentMessagePreview String?
   parentChannelId      String?
+  isOpinionated        Boolean   @default(false)
   messages             Message[]
   createdAt            DateTime  @default(now())
 }
