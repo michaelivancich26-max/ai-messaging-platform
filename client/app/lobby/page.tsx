@@ -47,6 +47,8 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
 function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClose: () => void; onCreate: (name: string) => void }) {
   const [name, setName] = useState("");
   const [proposition, setProposition] = useState("");
+  const [stances, setStances] = useState<string[]>([]);
+  const [isOpinionated, setIsOpinionated] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -60,9 +62,16 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
     if (!name.trim()) return;
     setCreating(true); setError("");
     try {
+      const cleanStances = stances.map(s => s.trim()).filter(Boolean);
       const res = await fetch(`${SERVER}/api/rooms`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), proposition: proposition.trim() || undefined, isPrivate, password: isPrivate ? password : undefined, maxMembers: maxMembers ? parseInt(maxMembers) : undefined, creatorId: userId, aiPersona: aiPersona.trim() || undefined }),
+        body: JSON.stringify({
+          name: name.trim(), proposition: proposition.trim() || undefined,
+          stances: cleanStances.length > 0 ? cleanStances : undefined,
+          isOpinionated, isPrivate, password: isPrivate ? password : undefined,
+          maxMembers: maxMembers ? parseInt(maxMembers) : undefined,
+          creatorId: userId, aiPersona: aiPersona.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Failed to create debate."); return; }
@@ -72,7 +81,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-indigo-400">
@@ -91,6 +100,34 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
               className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
             <p className="mt-1 text-[10px] text-gray-600">The statement being debated. Participants take FOR or AGAINST positions.</p>
           </div>
+
+          {/* Custom stances */}
+          <div className="rounded-xl border border-gray-700/60 bg-gray-800/40 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-medium text-gray-300">Custom stances <span className="text-gray-600">(optional)</span></p>
+              {stances.length < 6 && (
+                <button type="button" onClick={() => setStances(prev => [...prev, ""])}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">+ Add stance</button>
+              )}
+            </div>
+            {stances.length === 0 && (
+              <p className="text-[10px] text-gray-600">Leave empty for the default FOR / AGAINST.</p>
+            )}
+            {stances.map((s, i) => (
+              <div key={i} className="mb-1.5 flex gap-1.5">
+                <input value={s} onChange={e => setStances(prev => prev.map((x, j) => j === i ? e.target.value : x))}
+                  maxLength={40} placeholder={`Stance ${i + 1}`}
+                  className="flex-1 rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-100 outline-none ring-1 ring-gray-700 focus:ring-indigo-500/60" />
+                <button type="button" onClick={() => setStances(prev => prev.filter((_, j) => j !== i))}
+                  className="rounded-lg px-2 text-gray-600 hover:text-red-400 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                    <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+
           <div>
             <label className="mb-1.5 block text-xs font-medium text-gray-400">Debate name <span className="text-red-400">*</span></label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. ai-jobs-debate" maxLength={40}
@@ -101,6 +138,19 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
             <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} placeholder="Unlimited" min={2} max={500}
               className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
           </div>
+
+          {/* Opinionated toggle */}
+          <div className="flex items-center justify-between rounded-xl bg-amber-950/30 border border-amber-900/40 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-gray-200">Opinionated chat</p>
+              <p className="text-xs text-gray-500">Subjective discussion — no Veritas score impact</p>
+            </div>
+            <button type="button" onClick={() => setIsOpinionated(v => !v)}
+              className={`relative h-6 w-11 rounded-full transition-colors ${isOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isOpinionated ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+
           <div className="flex items-center justify-between rounded-xl bg-gray-800/60 px-4 py-3">
             <div><p className="text-sm font-medium text-gray-200">Private</p><p className="text-xs text-gray-500">Requires a password</p></div>
             <button type="button" onClick={() => { setIsPrivate(v => !v); setPassword(""); }}
