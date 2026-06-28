@@ -142,7 +142,13 @@ io.on("connection", (socket) => {
       const { password: _pw, ...roomMeta } = room as any;
       socket.emit("roomMeta", roomMeta);
 
-      // Emit current turn state if structured mode is active
+      // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
+      if (!debateTurns.has(roomId)) {
+        try {
+          const saved = await redis.get(`debate:turn:${roomId}`);
+          if (saved) debateTurns.set(roomId, JSON.parse(saved) as DebateTurnState);
+        } catch { /* redis unavailable */ }
+      }
       const currentTurn = debateTurns.get(roomId);
       if (currentTurn) socket.emit("debateTurnUpdate", currentTurn);
 
@@ -516,6 +522,7 @@ io.on("connection", (socket) => {
         ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
         : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
       debateTurns.set(roomId, turn);
+      redis.set(`debate:turn:${roomId}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
       io.to(roomId).emit("debateTurnUpdate", turn);
 
       // Ensure a sidebar channel exists (create on first structured activation)
@@ -546,6 +553,7 @@ io.on("connection", (socket) => {
       }
       const newTurn: DebateTurnState = { ...turn, currentSpeakerId: socketUser.id, currentSpeakerName: socketUser.username };
       debateTurns.set(roomId, newTurn);
+      redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
       io.to(roomId).emit("debateTurnUpdate", newTurn);
     } catch (err) {
       console.error("[claimFloor]", err);
@@ -563,6 +571,7 @@ io.on("connection", (socket) => {
       const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
       const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
       debateTurns.set(roomId, newTurn);
+      redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
       io.to(roomId).emit("debateTurnUpdate", newTurn);
     } catch (err) {
       console.error("[passTurn]", err);

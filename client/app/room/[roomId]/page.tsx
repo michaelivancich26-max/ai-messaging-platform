@@ -402,6 +402,11 @@ export default function RoomPage() {
   }
 
   function setDebateMode(mode: "open" | "structured") {
+    // Optimistic update so the UI responds instantly
+    setDebateTurn(mode === "structured"
+      ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
+      : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 }
+    );
     getSocket({ id: userId, username }).emit("setDebateMode", { roomId, mode });
   }
 
