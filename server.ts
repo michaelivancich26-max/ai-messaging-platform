@@ -245,6 +245,17 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Join a sidebar channel without leaving the main channel or emitting history
+  socket.on("joinSidebar", async ({ channelId }: { channelId: string }) => {
+    try {
+      const channel = await (prisma as any).channel.findUnique({ where: { id: channelId } });
+      if (!channel?.isSidebar) return;
+      socket.join(`channel:${channelId}`);
+    } catch (err) {
+      console.error("joinSidebar error:", err);
+    }
+  });
+
   socket.on("kick", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
     try {
       const room = await prisma.room.findUnique({ where: { name: roomId } });

@@ -179,7 +179,8 @@ export default function RoomPage() {
       }
       setSidebarChannel(ch);
       sidebarChannelRef.current = ch;
-      socket.emit("joinChannel", { channelId: ch.id });
+      // Use joinSidebar (not joinChannel) so we don't leave the main channel or overwrite messages via history
+      socket.emit("joinSidebar", { channelId: ch.id });
       fetch(`${SERVER}/api/channels/${ch.id}/messages`)
         .then(r => r.json())
         .then((msgs: ChatMessage[]) => setSidebarMessages(msgs.filter((m: ChatMessage) => m.type === "human")))
@@ -349,13 +350,11 @@ export default function RoomPage() {
     setActivePolls([]);
     setPollSuggestion(null);
     setClaims({});
-    // Clear sidebar state — joinChannel will emit the correct sidebar for the new channel
-    if (!channel.isSidebar) {
-      setSidebarChannel(null);
-      sidebarChannelRef.current = null;
-      setSidebarMessages([]);
-      setSidebarOpen(false);
-    }
+    // Always clear sidebar state on channel switch; joinChannel will restore it if a sidebar exists
+    setSidebarChannel(null);
+    sidebarChannelRef.current = null;
+    setSidebarMessages([]);
+    setSidebarOpen(false);
     fetch(`${SERVER}/api/channels/${channel.id}/claims`)
       .then(r => r.json())
       .then(({ claims: claimsArr, credScores }: { claims: (ClaimInfo & { verdict?: string })[]; credScores: Record<string, CredScore> }) => {
@@ -503,7 +502,7 @@ export default function RoomPage() {
         const sidebar = { id: ch.id, name: ch.name };
         setSidebarChannel(sidebar);
         sidebarChannelRef.current = sidebar;
-        getSocket({ id: userId, username }).emit("joinChannel", { channelId: ch.id });
+        getSocket({ id: userId, username }).emit("joinSidebar", { channelId: ch.id });
         fetch(`${SERVER}/api/channels/${ch.id}/messages`)
           .then(r => r.json())
           .then((msgs: ChatMessage[]) => setSidebarMessages(msgs))
@@ -862,7 +861,8 @@ export default function RoomPage() {
       )}
 
       {(roomId.startsWith("dm-") || activeChannel) && (() => {
-        const isStructured = debateTurn?.mode === "structured" && !roomId.startsWith("dm-");
+        const isSidebarChannel = activeChannel?.isSidebar === true;
+        const isStructured = debateTurn?.mode === "structured" && !roomId.startsWith("dm-") && !isSidebarChannel;
         const isMyTurn = debateTurn?.currentSpeakerId === userId;
         const floorClaimed = !!debateTurn?.currentSpeakerId;
         const isMySide = myPosition === debateTurn?.currentSide;
