@@ -16,6 +16,7 @@ export interface ChatMessage {
   createdAt: string;
   userId: string | null;
   roomId: string;
+  channelId?: string | null;
   user?: { username: string } | null;
 }
 

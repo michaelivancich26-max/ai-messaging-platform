@@ -21,6 +21,7 @@ import { parseAIContent } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
+import SidebarChat from "@/components/SidebarChat";
 import type { RoomMeta } from "@/components/RoomPanel";
 
 export type Annotation = { pronoun: string; referent: string };
@@ -59,6 +60,10 @@ export default function RoomPage() {
   const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
   const [debateTurn, setDebateTurn] = useState<DebateTurnState | null>(null);
   const [profileModal, setProfileModal] = useState<{ userId: string; username: string } | null>(null);
+  const [sidebarChannel, setSidebarChannel] = useState<{ id: string; name: string } | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarMessages, setSidebarMessages] = useState<ChatMessage[]>([]);
+  const sidebarChannelRef = useRef<{ id: string; name: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
     roomId.startsWith("dm-") ? "chat" : "channels"
@@ -146,6 +151,15 @@ export default function RoomPage() {
       if (mine) setMyPosition(mine.position);
     });
     socket.on("debateTurnUpdate", (turn: DebateTurnState) => setDebateTurn(turn));
+    socket.on("sidebarChannel", (ch: { id: string; name: string }) => {
+      setSidebarChannel(ch);
+      sidebarChannelRef.current = ch;
+      socket.emit("joinChannel", { channelId: ch.id });
+      fetch(`${SERVER}/api/channels/${ch.id}/messages`)
+        .then(r => r.json())
+        .then((msgs: ChatMessage[]) => setSidebarMessages(msgs.filter(m => m.type === "human")))
+        .catch(() => {});
+    });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
     socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
     socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
@@ -200,6 +214,15 @@ export default function RoomPage() {
     });
 
     socket.on("message", (msg: ChatMessage) => {
+      // Route sidebar messages to their own state
+      if (msg.channelId && msg.channelId === sidebarChannelRef.current?.id) {
+        setSidebarMessages(prev => {
+          const tempIdx = prev.findIndex(m => m.id.startsWith("temp-") && m.content === msg.content && m.userId === msg.userId);
+          if (tempIdx !== -1) { const next = [...prev]; next[tempIdx] = msg; return next; }
+          return [...prev, msg];
+        });
+        return;
+      }
       if (msg.type === "ai_interjection") {
         const payload = parseAIContent(msg.content);
         if (payload.type === "ambiguity") {
@@ -246,6 +269,7 @@ export default function RoomPage() {
       socket.off("positionUpdate");
       socket.off("debatePositions");
       socket.off("debateTurnUpdate");
+      socket.off("sidebarChannel");
       socket.off("roomMembers");
       socket.off("roomMeta");
       socket.off("aiStreamStart");
@@ -399,6 +423,22 @@ export default function RoomPage() {
     if (res.ok) router.push("/lobby");
   }
 
+  function sendSidebarMessage(content: string) {
+    if (!sidebarChannelRef.current) return;
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: tempId, content, type: "human", senderType: "HUMAN",
+      createdAt: new Date().toISOString(), roomId, userId,
+      channelId: sidebarChannelRef.current.id,
+      user: { username },
+    } as any;
+    setSidebarMessages(prev => [...prev, optimistic]);
+    getSocket({ id: userId, username }).emit("sendMessage", {
+      roomId, userId, username, content, settings,
+      channelId: sidebarChannelRef.current!.id,
+    });
+  }
+
   function sendMessage(content: string) {
     // Optimistic: show message immediately with a temp id
     const tempId = `temp-${Date.now()}`;
@@ -527,6 +567,24 @@ export default function RoomPage() {
         <span className="text-base md:text-lg font-semibold truncate">
           {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
         </span>
+        {/* Side chat toggle — visible whenever a sidebar channel exists */}
+        {sidebarChannel && !roomId.startsWith("dm-") && (
+          <button
+            onClick={() => setSidebarOpen(v => !v)}
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
+              sidebarOpen
+                ? "border-gray-500 bg-gray-700/60 text-gray-300"
+                : "border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400"
+            }`}
+            title={sidebarOpen ? "Hide side chat" : "Show side chat"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+              <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v7A1.5 1.5 0 0 0 2.5 13h3.879a1.5 1.5 0 0 0 1.06-.44l4.122-4.12a1.5 1.5 0 0 0 0-2.122L7.44 2.44A1.5 1.5 0 0 0 6.378 2H2.5Zm3.75 5.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" clipRule="evenodd" />
+              <path d="M10.22 4.72a.75.75 0 0 1 1.06 0l.97.97.97-.97a.75.75 0 1 1 1.06 1.06l-.97.97.97.97a.75.75 0 1 1-1.06 1.06l-.97-.97-.97.97a.75.75 0 0 1-1.06-1.06l.97-.97-.97-.97a.75.75 0 0 1 0-1.06Z" />
+            </svg>
+            Side chat
+          </button>
+        )}
         {/* Structure toggle — visible to owners/admins on non-DM rooms */}
         {(isOwner || isAdmin) && !roomId.startsWith("dm-") && (
           <button
@@ -584,14 +642,28 @@ export default function RoomPage() {
         />
       )}
 
-      {!roomId.startsWith("dm-") && !activeChannel ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
-      ) : (
-        <>
-          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} />
-          <div ref={bottomRef} />
-        </>
-      )}
+      <div className={`flex flex-1 overflow-hidden min-h-0 ${sidebarOpen && sidebarChannel ? "flex-row" : "flex-col"}`}>
+        {/* Main chat column */}
+        <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+          {!roomId.startsWith("dm-") && !activeChannel ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
+          ) : (
+            <>
+              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} />
+              <div ref={bottomRef} />
+            </>
+          )}
+        </div>
+        {/* Sidebar chat panel */}
+        {sidebarOpen && sidebarChannel && (
+          <SidebarChat
+            messages={sidebarMessages}
+            currentUsername={username}
+            onSend={sendSidebarMessage}
+            onClose={() => setSidebarOpen(false)}
+          />
+        )}
+      </div>
 
       {/* Poll suggestion banner */}
       {pollSuggestion && (

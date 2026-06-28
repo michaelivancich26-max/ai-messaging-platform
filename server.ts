@@ -86,6 +86,7 @@ interface DebateTurnState {
   turnNumber: number;
 }
 const debateTurns = new Map<string, DebateTurnState>();
+const sidebarChannels = new Map<string, string>(); // roomId → sidebar channelId
 
 function broadcastPresence(roomId: string) {
   const members = presence.get(roomId);
@@ -144,6 +145,16 @@ io.on("connection", (socket) => {
       // Emit current turn state if structured mode is active
       const currentTurn = debateTurns.get(roomId);
       if (currentTurn) socket.emit("debateTurnUpdate", currentTurn);
+
+      // Emit sidebar channel if one exists for this room
+      let sbId = sidebarChannels.get(roomId);
+      if (!sbId) {
+        try {
+          const sb = await (prisma as any).channel.findFirst({ where: { roomId: room.id, isSidebar: true } });
+          if (sb) { sidebarChannels.set(roomId, sb.id); sbId = sb.id; }
+        } catch { /* column may not exist yet */ }
+      }
+      if (sbId) socket.emit("sidebarChannel", { id: sbId, name: "side chat" });
 
       // Emit current debate positions for this room
       const roomPositions = debatePositions.get(roomId);
@@ -268,8 +279,9 @@ io.on("connection", (socket) => {
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) { socket.emit("roomDeleted"); return; }
 
-        // Enforce structured debate turn order
-        if (!isImage) {
+        // Enforce structured debate turn order (sidebar channel is exempt)
+        const isSidebarMsg = channelId ? sidebarChannels.get(roomId) === channelId : false;
+        if (!isImage && !isSidebarMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured") {
             if (!turn.currentSpeakerId) {
@@ -291,8 +303,8 @@ io.on("connection", (socket) => {
         const emitTarget = channelId ? `channel:${channelId}` : roomId;
         io.to(emitTarget).emit("message", { ...message, type: "human" });
 
-        // Auto-advance structured debate turn after speaking
-        if (!isImage) {
+        // Auto-advance structured debate turn after speaking (not for sidebar messages)
+        if (!isImage && !isSidebarMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured" && turn.currentSpeakerId === user.id) {
             const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
@@ -505,6 +517,17 @@ io.on("connection", (socket) => {
         : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
       debateTurns.set(roomId, turn);
       io.to(roomId).emit("debateTurnUpdate", turn);
+
+      // Ensure a sidebar channel exists (create on first structured activation)
+      if (!sidebarChannels.has(roomId)) {
+        try {
+          let sb = await (prisma as any).channel.findFirst({ where: { roomId: room.id, isSidebar: true } });
+          if (!sb) sb = await (prisma as any).channel.create({ data: { name: "side chat", roomId: room.id, isSidebar: true } });
+          sidebarChannels.set(roomId, sb.id);
+        } catch (e) { console.error("[setDebateMode] sidebar channel error:", e); }
+      }
+      const sbId = sidebarChannels.get(roomId);
+      if (sbId) io.to(roomId).emit("sidebarChannel", { id: sbId, name: "side chat" });
     } catch (err) {
       console.error("[setDebateMode]", err);
     }
@@ -783,7 +806,7 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
     if (!room) return res.status(404).json({ error: "Room not found" });
     const [sections, channels] = await Promise.all([
       prisma.section.findMany({ where: { roomId: room.id }, orderBy: { order: "asc" } }),
-      prisma.channel.findMany({ where: { roomId: room.id }, orderBy: { order: "asc" } }),
+      (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: false }, orderBy: { order: "asc" } }),
     ]);
     res.json({ sections, channels });
   } catch {
@@ -1302,6 +1325,15 @@ async function start() {
     console.log("[DB] Claim relevance column ready");
   } catch (e) {
     console.error("[DB] Claim relevance column setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "isSidebar" BOOLEAN NOT NULL DEFAULT false;
+    `);
+    console.log("[DB] Channel isSidebar column ready");
+  } catch (e) {
+    console.error("[DB] Channel isSidebar column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
