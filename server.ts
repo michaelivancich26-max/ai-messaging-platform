@@ -849,11 +849,12 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
-    const [sections, channels] = await Promise.all([
+    const [sections, channels, sidebarChannelList] = await Promise.all([
       prisma.section.findMany({ where: { roomId: room.id }, orderBy: { order: "asc" } }),
       (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: false }, orderBy: { order: "asc" } }),
+      (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: true } }),
     ]);
-    res.json({ sections, channels });
+    res.json({ sections, channels, sidebarChannels: sidebarChannelList });
   } catch {
     res.status(500).json({ error: "Server error" });
   }

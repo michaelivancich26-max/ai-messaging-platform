@@ -35,6 +35,7 @@ const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 export default function ChannelList({ roomName, activeChannelId, canEdit, userId, onSelectChannel, refreshTrigger, graphActive, onGraphClick }: Props) {
   const [sections, setSections] = useState<Section[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [sidebarChs, setSidebarChs] = useState<Channel[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // Inline edit state
@@ -50,6 +51,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
       const data = await res.json();
       setSections(data.sections ?? []);
       setChannels(data.channels ?? []);
+      setSidebarChs(data.sidebarChannels ?? []);
     }
   }
 
@@ -274,6 +276,38 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
           </div>
         );
       })}
+
+      {/* Sidebar / side-chat channels */}
+      {sidebarChs.length > 0 && (
+        <div className="mb-1 mt-2">
+          <div className="flex items-center px-2 py-0.5 gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5 shrink-0 text-gray-500">
+              <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v5A1.5 1.5 0 0 0 2.5 11H5v1.5a.5.5 0 0 0 .82.385l2.235-1.886H13.5A1.5 1.5 0 0 0 15 9.5v-5A1.5 1.5 0 0 0 13.5 3h-11Z" clipRule="evenodd" />
+            </svg>
+            <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">Side chat</span>
+          </div>
+          <div className="space-y-0.5 px-1">
+            {sidebarChs.map(ch => {
+              const isActive = ch.id === activeChannelId;
+              return (
+                <button
+                  key={ch.id}
+                  onClick={() => onSelectChannel(ch)}
+                  className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors ${
+                    isActive ? "bg-gray-700 text-gray-100 font-medium" : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-gray-500">
+                    <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v5A1.5 1.5 0 0 0 2.5 11H5v1.5a.5.5 0 0 0 .82.385l2.235-1.886H13.5A1.5 1.5 0 0 0 15 9.5v-5A1.5 1.5 0 0 0 13.5 3h-11Z" clipRule="evenodd" />
+                  </svg>
+                  <span className="truncate">{ch.name}</span>
+                  <span className="ml-auto shrink-0 text-[9px] text-gray-600">free chat</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Sub-debate channels (Contentions) */}
       {subDebateChannels.length > 0 && (

@@ -236,8 +236,10 @@ export default function RoomPage() {
     });
 
     socket.on("message", (msg: ChatMessage) => {
-      // Route sidebar messages to their own state
-      if (msg.channelId && msg.channelId === sidebarChannelRef.current?.id) {
+      // Route sidebar messages to split-pane state only when sidebar isn't the active main channel
+      const isSidebarMsg = msg.channelId && msg.channelId === sidebarChannelRef.current?.id;
+      const sidebarIsMainView = sidebarChannelRef.current?.id && sidebarChannelRef.current.id === activeChannelRef.current?.id;
+      if (isSidebarMsg && !sidebarIsMainView) {
         setSidebarMessages(prev => {
           const tempIdx = prev.findIndex(m => m.id.startsWith("temp-") && m.content === msg.content && m.userId === msg.userId);
           if (tempIdx !== -1) { const next = [...prev]; next[tempIdx] = msg; return next; }
