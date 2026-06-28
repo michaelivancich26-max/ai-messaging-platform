@@ -86,7 +86,7 @@ interface DebateTurnState {
   turnNumber: number;
 }
 const debateTurns = new Map<string, DebateTurnState>();
-const sidebarChannels = new Map<string, string>(); // roomId → sidebar channelId
+const channelSidebars = new Map<string, string>(); // parentChannelId → sidebar channelId
 const channelPositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
 function broadcastPresence(roomId: string) {
@@ -160,16 +160,6 @@ io.on("connection", (socket) => {
       const currentTurn = debateTurns.get(roomId);
       if (currentTurn) socket.emit("debateTurnUpdate", currentTurn);
 
-      // Emit sidebar channel if one exists for this room
-      let sbId = sidebarChannels.get(roomId);
-      if (!sbId) {
-        try {
-          const sb = await (prisma as any).channel.findFirst({ where: { roomId: room.id, isSidebar: true } });
-          if (sb) { sidebarChannels.set(roomId, sb.id); sbId = sb.id; }
-        } catch { /* column may not exist yet */ }
-      }
-      if (sbId) socket.emit("sidebarChannel", { id: sbId, name: "side chat" });
-
       // Emit current debate positions for this room
       const roomPositions = debatePositions.get(roomId);
       if (roomPositions) {
@@ -238,6 +228,18 @@ io.on("connection", (socket) => {
           }
         }
       } catch { /* ignore */ }
+
+      // Emit sidebar channel for this channel (null if none) — skip for sidebar channels themselves
+      if (!(channel as any).isSidebar) {
+        let sbId = channelSidebars.get(channelId);
+        if (!sbId) {
+          try {
+            const sb = await (prisma as any).channel.findFirst({ where: { parentChannelId: channelId, isSidebar: true } });
+            if (sb) { channelSidebars.set(channelId, sb.id); sbId = sb.id; }
+          } catch { /* parentChannelId column may not exist yet */ }
+        }
+        socket.emit("sidebarChannel", sbId ? { id: sbId, name: "side chat" } : null);
+      }
     } catch (err) {
       console.error("joinChannel error:", err);
     }
@@ -304,7 +306,13 @@ io.on("connection", (socket) => {
         if (!room) { socket.emit("roomDeleted"); return; }
 
         // Enforce structured debate turn order (sidebar channel is exempt)
-        const isSidebarMsg = channelId ? sidebarChannels.get(roomId) === channelId : false;
+        let isSidebarMsg = false;
+        if (channelId) {
+          try {
+            const ch = await (prisma as any).channel.findUnique({ where: { id: channelId } });
+            isSidebarMsg = !!(ch as any)?.isSidebar;
+          } catch { /* ignore */ }
+        }
         if (!isImage && !isSidebarMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured") {
@@ -543,17 +551,6 @@ io.on("connection", (socket) => {
       debateTurns.set(roomId, turn);
       redis.set(`debate:turn:${roomId}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
       io.to(roomId).emit("debateTurnUpdate", turn);
-
-      // Ensure a sidebar channel exists (create on first structured activation)
-      if (!sidebarChannels.has(roomId)) {
-        try {
-          let sb = await (prisma as any).channel.findFirst({ where: { roomId: room.id, isSidebar: true } });
-          if (!sb) sb = await (prisma as any).channel.create({ data: { name: "side chat", roomId: room.id, isSidebar: true } });
-          sidebarChannels.set(roomId, sb.id);
-        } catch (e) { console.error("[setDebateMode] sidebar channel error:", e); }
-      }
-      const sbId = sidebarChannels.get(roomId);
-      if (sbId) io.to(roomId).emit("sidebarChannel", { id: sbId, name: "side chat" });
     } catch (err) {
       console.error("[setDebateMode]", err);
     }
@@ -939,6 +936,35 @@ app.post("/api/rooms/:name/sub-debates", async (req, res) => {
     res.json(channel);
   } catch (e) {
     console.error("[sub-debates]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/rooms/:name/channels/:id/sidebar — create (or return) sidebar for a channel
+app.post("/api/rooms/:name/channels/:id/sidebar", async (req, res) => {
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const parentChannel = await prisma.channel.findUnique({ where: { id: req.params.id } });
+    if (!parentChannel || parentChannel.roomId !== room.id) return res.status(404).json({ error: "Channel not found" });
+
+    let sb = await (prisma as any).channel.findFirst({ where: { parentChannelId: req.params.id, isSidebar: true } });
+    if (!sb) {
+      const count = await prisma.channel.count({ where: { roomId: room.id } });
+      sb = await (prisma as any).channel.create({
+        data: { name: "side chat", roomId: room.id, isSidebar: true, parentChannelId: req.params.id, order: count },
+      });
+      channelSidebars.set(req.params.id, sb.id);
+      io.to(req.params.name).emit("channelsUpdated");
+      io.to(`channel:${req.params.id}`).emit("sidebarChannel", { id: sb.id, name: "side chat" });
+    } else {
+      channelSidebars.set(req.params.id, sb.id);
+    }
+    res.json(sb);
+  } catch (e) {
+    console.error("[sidebar create]", e);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -1440,6 +1466,15 @@ async function start() {
     console.log("[DB] Stances and position columns ready");
   } catch (e) {
     console.error("[DB] Stances/position column setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentChannelId" TEXT;
+    `);
+    console.log("[DB] Channel parentChannelId column ready");
+  } catch (e) {
+    console.error("[DB] Channel parentChannelId column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

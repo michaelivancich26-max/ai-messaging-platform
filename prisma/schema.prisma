@@ -121,6 +121,7 @@ model Channel {
   proposition          String?
   parentMessageId      String?
   parentMessagePreview String?
+  parentChannelId      String?
   messages             Message[]
   createdAt            DateTime  @default(now())
 }

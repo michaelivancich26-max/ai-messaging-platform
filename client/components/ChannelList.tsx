@@ -11,6 +11,7 @@ export interface Channel {
   isSidebar?: boolean;
   proposition?: string | null;
   parentMessagePreview?: string | null;
+  parentChannelId?: string | null;
 }
 
 export interface Section {
@@ -289,6 +290,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
           <div className="space-y-0.5 px-1">
             {sidebarChs.map(ch => {
               const isActive = ch.id === activeChannelId;
+              const parentCh = ch.parentChannelId ? channels.find(c => c.id === ch.parentChannelId) : null;
               return (
                 <button
                   key={ch.id}
@@ -300,8 +302,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-gray-500">
                     <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v5A1.5 1.5 0 0 0 2.5 11H5v1.5a.5.5 0 0 0 .82.385l2.235-1.886H13.5A1.5 1.5 0 0 0 15 9.5v-5A1.5 1.5 0 0 0 13.5 3h-11Z" clipRule="evenodd" />
                   </svg>
-                  <span className="truncate">{ch.name}</span>
-                  <span className="ml-auto shrink-0 text-[9px] text-gray-600">free chat</span>
+                  <span className="truncate">{parentCh ? `#${parentCh.name}` : ch.name}</span>
+                  <span className="ml-auto shrink-0 text-[9px] text-gray-600">side chat</span>
                 </button>
               );
             })}

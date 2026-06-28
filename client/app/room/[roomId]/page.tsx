@@ -170,13 +170,19 @@ export default function RoomPage() {
       entries.forEach(e => { map[e.userId] = e; });
       setChannelPositions(prev => ({ ...prev, [channelId]: map }));
     });
-    socket.on("sidebarChannel", (ch: { id: string; name: string }) => {
+    socket.on("sidebarChannel", (ch: { id: string; name: string } | null) => {
+      if (!ch) {
+        setSidebarChannel(null);
+        sidebarChannelRef.current = null;
+        setSidebarMessages([]);
+        return;
+      }
       setSidebarChannel(ch);
       sidebarChannelRef.current = ch;
       socket.emit("joinChannel", { channelId: ch.id });
       fetch(`${SERVER}/api/channels/${ch.id}/messages`)
         .then(r => r.json())
-        .then((msgs: ChatMessage[]) => setSidebarMessages(msgs.filter(m => m.type === "human")))
+        .then((msgs: ChatMessage[]) => setSidebarMessages(msgs.filter((m: ChatMessage) => m.type === "human")))
         .catch(() => {});
     });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
@@ -318,7 +324,7 @@ export default function RoomPage() {
     fetch(`${SERVER}/api/rooms/${roomId}/channels`)
       .then(r => r.json())
       .then(data => {
-        const channels: Channel[] = (data.channels ?? []).filter((c: Channel) => !c.isSubDebate);
+        const channels: Channel[] = (data.channels ?? []).filter((c: Channel) => !c.isSubDebate && !c.isSidebar);
         if (channels.length > 0 && !activeChannel) {
           selectChannel(channels[0]);
           setMobileView("chat"); // on mobile, go straight to the chat after auto-join
@@ -343,6 +349,13 @@ export default function RoomPage() {
     setActivePolls([]);
     setPollSuggestion(null);
     setClaims({});
+    // Clear sidebar state — joinChannel will emit the correct sidebar for the new channel
+    if (!channel.isSidebar) {
+      setSidebarChannel(null);
+      sidebarChannelRef.current = null;
+      setSidebarMessages([]);
+      setSidebarOpen(false);
+    }
     fetch(`${SERVER}/api/channels/${channel.id}/claims`)
       .then(r => r.json())
       .then(({ claims: claimsArr, credScores }: { claims: (ClaimInfo & { verdict?: string })[]; credScores: Record<string, CredScore> }) => {
@@ -476,6 +489,29 @@ export default function RoomPage() {
       roomId, userId, username, content, settings,
       channelId: sidebarChannelRef.current!.id,
     });
+  }
+
+  async function createSidebarForChannel(channelId: string) {
+    try {
+      const res = await fetch(`${SERVER}/api/rooms/${roomId}/channels/${channelId}/sidebar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (res.ok) {
+        const ch = await res.json();
+        const sidebar = { id: ch.id, name: ch.name };
+        setSidebarChannel(sidebar);
+        sidebarChannelRef.current = sidebar;
+        getSocket({ id: userId, username }).emit("joinChannel", { channelId: ch.id });
+        fetch(`${SERVER}/api/channels/${ch.id}/messages`)
+          .then(r => r.json())
+          .then((msgs: ChatMessage[]) => setSidebarMessages(msgs))
+          .catch(() => {});
+        setSidebarOpen(true);
+        setChannelRefresh(v => v + 1);
+      }
+    } catch { /* ignore */ }
   }
 
   async function createSubDebate(proposition: string) {
@@ -639,22 +675,28 @@ export default function RoomPage() {
         <span className="text-base md:text-lg font-semibold truncate">
           {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
         </span>
-        {/* Side chat toggle — visible whenever a sidebar channel exists */}
-        {sidebarChannel && !roomId.startsWith("dm-") && (
+        {/* Side chat toggle — visible for any non-sidebar, non-DM channel */}
+        {!roomId.startsWith("dm-") && activeChannel && !activeChannel.isSidebar && (
           <button
-            onClick={() => setSidebarOpen(v => !v)}
+            onClick={() => {
+              if (sidebarChannel) {
+                setSidebarOpen(v => !v);
+              } else {
+                createSidebarForChannel(activeChannel.id);
+              }
+            }}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
-              sidebarOpen
+              sidebarOpen && sidebarChannel
                 ? "border-gray-500 bg-gray-700/60 text-gray-300"
                 : "border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400"
             }`}
-            title={sidebarOpen ? "Hide side chat" : "Show side chat"}
+            title={sidebarChannel ? (sidebarOpen ? "Hide side chat" : "Show side chat") : "Add side chat"}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
               <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v7A1.5 1.5 0 0 0 2.5 13h3.879a1.5 1.5 0 0 0 1.06-.44l4.122-4.12a1.5 1.5 0 0 0 0-2.122L7.44 2.44A1.5 1.5 0 0 0 6.378 2H2.5Zm3.75 5.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" clipRule="evenodd" />
               <path d="M10.22 4.72a.75.75 0 0 1 1.06 0l.97.97.97-.97a.75.75 0 1 1 1.06 1.06l-.97.97.97.97a.75.75 0 1 1-1.06 1.06l-.97-.97-.97.97a.75.75 0 0 1-1.06-1.06l.97-.97-.97-.97a.75.75 0 0 1 0-1.06Z" />
             </svg>
-            Side chat
+            {sidebarChannel ? "Side chat" : "Add side chat"}
           </button>
         )}
         {/* Structure toggle — visible to owners/admins on non-DM rooms */}
