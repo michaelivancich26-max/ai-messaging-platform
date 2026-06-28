@@ -178,14 +178,58 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const imagePayload = parseImageContent(message.content);
   const isHuman = message.type === "human";
-  const canStake = isHuman && !message.id.startsWith("temp-") && onStakeClaim;
+  const isTemp = message.id.startsWith("temp-");
 
   const posConfig = senderPosition ? POSITION_BUBBLE[senderPosition] : null;
-  const selfBubble   = posConfig ? posConfig.self   : "bg-indigo-600 text-white";
-  const otherBubble  = posConfig ? posConfig.other  : "bg-gray-800 text-gray-100";
+  const selfBubble  = posConfig ? posConfig.self  : "bg-indigo-600 text-white";
+  const otherBubble = posConfig ? posConfig.other : "bg-gray-800 text-gray-100";
+
+  // Derive which actions are available for the unified toolbar
+  const canStakeThis  = isHuman && !isTemp && !claim && !!onStakeClaim;
+  const canChallenge  = isHuman && !isTemp && !!claim && claim.status !== "PENDING" && !isSelf && !!onChallengeClaim;
+  const canBranch     = isHuman && !isTemp && !!onSubDebate;
+  const hasActions    = canStakeThis || canChallenge || canBranch;
+
+  const actionBar = hasActions && (
+    <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+      {canStakeThis && (
+        <button
+          onClick={() => onStakeClaim!(message.id)}
+          title="Stake claim"
+          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-indigo-400 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
+      {canChallenge && (
+        <button
+          onClick={() => onChallengeClaim!(claim!.id)}
+          title={`Challenge${claim!.challengeCount > 0 ? ` · ${claim!.challengeCount}` : ""}`}
+          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-amber-400 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+            <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
+          </svg>
+        </button>
+      )}
+      {canBranch && (
+        <button
+          onClick={() => onSubDebate!(message.id, message.content)}
+          title="Branch into sub-debate"
+          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-amber-400 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className={`group flex items-end gap-2 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
+    <div className={`group flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
       {!isSelf && (
         <button
           onClick={() => message.userId && onUserClick?.(message.userId, username)}
@@ -195,6 +239,9 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
           <Avatar username={username} avatarUrl={avatarUrl} size={7} />
         </button>
       )}
+
+      {/* Action toolbar to the left for self, right for others */}
+      {isSelf && actionBar}
 
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
@@ -213,11 +260,7 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
           <div
             className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
               highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
-            } ${
-              isSelf
-                ? `rounded-tr-sm ${selfBubble}`
-                : `rounded-tl-sm ${otherBubble}`
-            }`}
+            } ${isSelf ? `rounded-tr-sm ${selfBubble}` : `rounded-tl-sm ${otherBubble}`}`}
           >
             {annotation
               ? <HighlightedContent content={message.content} annotation={annotation} />
@@ -226,36 +269,13 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
           </div>
         )}
 
-        {/* Claim badge or stake button */}
-        {isHuman && (
-          claim
-            ? <ClaimBadge claim={claim} canChallenge={!isSelf} onChallenge={(id) => onChallengeClaim?.(id)} />
-            : canStake && (
-              <button
-                onClick={() => onStakeClaim!(message.id)}
-                className="mt-1 flex items-center gap-1 rounded-full border border-gray-700/40 px-2 py-0.5 text-[10px] text-gray-600 opacity-40 hover:opacity-100 hover:border-gray-500 hover:text-gray-300 transition-all"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-                  <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
-                </svg>
-                Stake claim
-              </button>
-            )
-        )}
-        {/* Sub-debate branch button — appears on any human message */}
-        {isHuman && !message.id.startsWith("temp-") && onSubDebate && (
-          <button
-            onClick={() => onSubDebate(message.id, message.content)}
-            className="mt-0.5 flex items-center gap-1 rounded-full border border-gray-700/30 px-2 py-0.5 text-[10px] text-gray-700 opacity-0 group-hover:opacity-100 hover:border-amber-700/50 hover:text-amber-500 transition-all"
-            title="Branch into a sub-debate"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className="h-2.5 w-2.5">
-              <path fillRule="evenodd" d="M3 1a1 1 0 0 0-1 1v2.586l-.293-.293a1 1 0 0 0-1.414 1.414L2 7.414V10a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7.414l1.707-1.707a1 1 0 0 0-1.414-1.414L11 4.586V2a1 1 0 0 0-1-1H3Z" clipRule="evenodd" />
-            </svg>
-            sub-debate
-          </button>
+        {/* Claim status badge — purely informational, no action buttons here */}
+        {isHuman && claim && (
+          <ClaimBadge claim={claim} canChallenge={false} onChallenge={() => {}} />
         )}
       </div>
+
+      {!isSelf && actionBar}
     </div>
   );
 }
