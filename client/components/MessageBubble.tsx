@@ -16,6 +16,7 @@ interface Props {
   senderPosition?: DebatePosition;
   onStakeClaim?: (messageId: string) => void;
   onChallengeClaim?: (claimId: string) => void;
+  onUserClick?: (userId: string, username: string) => void;
 }
 
 const POSITION_BUBBLE: Record<DebatePosition, { self: string; other: string; tag: string; tagText: string }> = {
@@ -170,7 +171,7 @@ function Avatar({ username, avatarUrl, size = 7 }: { username: string; avatarUrl
 
 export { Avatar };
 
-export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, onStakeClaim, onChallengeClaim }: Props) {
+export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, onStakeClaim, onChallengeClaim, onUserClick }: Props) {
   const username = message.user?.username ?? "unknown";
   const avatarUrl = (message.user as any)?.avatarUrl ?? null;
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -184,7 +185,15 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
 
   return (
     <div className={`group flex items-end gap-2 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
-      {!isSelf && <Avatar username={username} avatarUrl={avatarUrl} size={7} />}
+      {!isSelf && (
+        <button
+          onClick={() => message.userId && onUserClick?.(message.userId, username)}
+          className={`shrink-0 rounded-full transition-opacity ${onUserClick && message.userId ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+          title={onUserClick && message.userId ? `View ${username}'s profile` : undefined}
+        >
+          <Avatar username={username} avatarUrl={avatarUrl} size={7} />
+        </button>
+      )}
 
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">

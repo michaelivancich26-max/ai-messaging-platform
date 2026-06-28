@@ -20,6 +20,7 @@ import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEnt
 import { parseAIContent } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
+import UserProfileModal from "@/components/UserProfileModal";
 import type { RoomMeta } from "@/components/RoomPanel";
 
 export type Annotation = { pronoun: string; referent: string };
@@ -57,6 +58,7 @@ export default function RoomPage() {
   const [positions, setPositions] = useState<Record<string, UserPositionEntry>>({});
   const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
   const [debateTurn, setDebateTurn] = useState<DebateTurnState | null>(null);
+  const [profileModal, setProfileModal] = useState<{ userId: string; username: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
     roomId.startsWith("dm-") ? "chat" : "channels"
@@ -586,7 +588,7 @@ export default function RoomPage() {
         <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
       ) : (
         <>
-          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} />
+          <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} />
           <div ref={bottomRef} />
         </>
       )}
@@ -672,6 +674,10 @@ export default function RoomPage() {
 
       {summarizeModalOpen && (
         <SummarizeModal onConfirm={summarize} onClose={() => setSummarizeModalOpen(false)} />
+      )}
+
+      {profileModal && (
+        <UserProfileModal userId={profileModal.userId} onClose={() => setProfileModal(null)} />
       )}
 
       <RoomPanel

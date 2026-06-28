@@ -661,8 +661,8 @@ app.get("/api/users/:id/profile", async (req, res) => {
       select: { id: true, username: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    const cred = await computeCredibility(req.params.id, prisma);
-    res.json({ ...user, cred });
+    const cred = await computeCredibility(req.params.id, prisma).catch(() => null);
+    res.json({ ...user, ...(cred ? { cred } : {}) });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
