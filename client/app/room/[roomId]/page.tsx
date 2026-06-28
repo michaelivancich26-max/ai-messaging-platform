@@ -325,6 +325,13 @@ export default function RoomPage() {
     fetch(`${SERVER}/api/rooms/${roomId}/channels`)
       .then(r => r.json())
       .then(data => {
+        // Apply room meta (proposition, stances) immediately from HTTP — no socket timing dep
+        if (data.roomMeta) {
+          setRoomMeta(data.roomMeta);
+          if (Array.isArray(data.roomMeta.stances) && data.roomMeta.stances.length > 0) {
+            setStances(data.roomMeta.stances);
+          }
+        }
         const channels: Channel[] = (data.channels ?? []).filter((c: Channel) => !c.isSubDebate && !c.isSidebar);
         if (channels.length > 0 && !activeChannel) {
           selectChannel(channels[0]);

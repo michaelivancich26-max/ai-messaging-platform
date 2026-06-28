@@ -862,7 +862,15 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
       (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: false }, orderBy: { order: "asc" } }),
       (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: true } }),
     ]);
-    res.json({ sections, channels, sidebarChannels: sidebarChannelList });
+    let stances: string[] = [];
+    try {
+      const stRow = await prisma.$queryRawUnsafe<{ stances: string | null }[]>(
+        `SELECT "stances" FROM "Room" WHERE "id" = $1`, room.id
+      );
+      if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
+    } catch { /* stances column may not exist yet */ }
+    const { password: _pw, ...roomMeta } = room as any;
+    res.json({ sections, channels, sidebarChannels: sidebarChannelList, roomMeta: { ...roomMeta, stances } });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
