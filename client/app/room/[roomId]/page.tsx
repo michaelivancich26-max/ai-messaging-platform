@@ -455,13 +455,14 @@ export default function RoomPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId,
           proposition,
-          parentMessageId: subDebateModal.messageId,
-          parentMessagePreview: subDebateModal.content.slice(0, 120),
+          messageId: subDebateModal.messageId,
+          messagePreview: subDebateModal.content.slice(0, 120),
         }),
       });
       if (res.ok) {
-        const { channel } = await res.json();
+        const channel = await res.json();
         setSubDebateModal(null);
         selectChannel(channel);
         setChannelRefresh(v => v + 1);
