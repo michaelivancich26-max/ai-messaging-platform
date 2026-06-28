@@ -22,6 +22,7 @@ import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
+import SubDebateModal from "@/components/SubDebateModal";
 import type { RoomMeta } from "@/components/RoomPanel";
 
 export type Annotation = { pronoun: string; referent: string };
@@ -60,6 +61,8 @@ export default function RoomPage() {
   const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
   const [debateTurn, setDebateTurn] = useState<DebateTurnState | null>(null);
   const [profileModal, setProfileModal] = useState<{ userId: string; username: string } | null>(null);
+  const [subDebateModal, setSubDebateModal] = useState<{ messageId: string; content: string } | null>(null);
+  const [subDebateCreating, setSubDebateCreating] = useState(false);
   const [sidebarChannel, setSidebarChannel] = useState<{ id: string; name: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarMessages, setSidebarMessages] = useState<ChatMessage[]>([]);
@@ -292,7 +295,7 @@ export default function RoomPage() {
     fetch(`${SERVER}/api/rooms/${roomId}/channels`)
       .then(r => r.json())
       .then(data => {
-        const channels: Channel[] = data.channels ?? [];
+        const channels: Channel[] = (data.channels ?? []).filter((c: Channel) => !c.isSubDebate);
         if (channels.length > 0 && !activeChannel) {
           selectChannel(channels[0]);
           setMobileView("chat"); // on mobile, go straight to the chat after auto-join
@@ -437,6 +440,30 @@ export default function RoomPage() {
       roomId, userId, username, content, settings,
       channelId: sidebarChannelRef.current!.id,
     });
+  }
+
+  async function createSubDebate(proposition: string) {
+    if (!subDebateModal) return;
+    setSubDebateCreating(true);
+    try {
+      const res = await fetch(`${SERVER}/api/rooms/${roomId}/sub-debates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposition,
+          parentMessageId: subDebateModal.messageId,
+          parentMessagePreview: subDebateModal.content.slice(0, 120),
+        }),
+      });
+      if (res.ok) {
+        const { channel } = await res.json();
+        setSubDebateModal(null);
+        selectChannel(channel);
+        setChannelRefresh(v => v + 1);
+      }
+    } finally {
+      setSubDebateCreating(false);
+    }
   }
 
   function sendMessage(content: string) {
@@ -649,7 +676,22 @@ export default function RoomPage() {
             <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
           ) : (
             <>
-              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} />
+              {activeChannel?.isSubDebate && activeChannel.proposition && (
+                <div className="shrink-0 border-b border-amber-900/40 bg-amber-950/20 px-4 py-2 flex items-start gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500">
+                    <path fillRule="evenodd" d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 0 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                    <path d="M3 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM3 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" />
+                  </svg>
+                  <div>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Sub-debate</span>
+                    <p className="text-xs text-amber-200/80 leading-relaxed">{activeChannel.proposition}</p>
+                    {activeChannel.parentMessagePreview && (
+                      <p className="mt-0.5 text-[10px] italic text-gray-600 line-clamp-1">"{activeChannel.parentMessagePreview}"</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} />
               <div ref={bottomRef} />
             </>
           )}
@@ -750,6 +792,15 @@ export default function RoomPage() {
 
       {profileModal && (
         <UserProfileModal userId={profileModal.userId} onClose={() => setProfileModal(null)} />
+      )}
+
+      {subDebateModal && (
+        <SubDebateModal
+          messageContent={subDebateModal.content}
+          loading={subDebateCreating}
+          onConfirm={createSubDebate}
+          onClose={() => setSubDebateModal(null)}
+        />
       )}
 
       <RoomPanel

@@ -17,9 +17,10 @@ interface Props {
   onStakeClaim?: (messageId: string) => void;
   onChallengeClaim?: (claimId: string) => void;
   onUserClick?: (userId: string, username: string) => void;
+  onSubDebate?: (messageId: string, content: string) => void;
 }
 
-export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, positions, onStakeClaim, onChallengeClaim, onUserClick }: Props) {
+export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, positions, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate }: Props) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
       {messages.map((msg) => {
@@ -50,6 +51,7 @@ export default function ChatWindow({ messages, currentUsername, annotations, hig
               onStakeClaim={onStakeClaim}
               onChallengeClaim={onChallengeClaim}
               onUserClick={onUserClick}
+              onSubDebate={onSubDebate}
             />
           </div>
         );

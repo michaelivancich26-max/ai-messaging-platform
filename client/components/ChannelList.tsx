@@ -7,6 +7,10 @@ export interface Channel {
   name: string;
   sectionId: string | null;
   order: number;
+  isSubDebate?: boolean;
+  isSidebar?: boolean;
+  proposition?: string | null;
+  parentMessagePreview?: string | null;
 }
 
 export interface Section {
@@ -109,7 +113,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
     });
   }
 
-  const unsectionedChannels = channels.filter(c => !c.sectionId);
+  const unsectionedChannels = channels.filter(c => !c.sectionId && !c.isSubDebate && !c.isSidebar);
+  const subDebateChannels = channels.filter(c => c.isSubDebate);
 
   function renderChannel(ch: Channel) {
     const isActive = ch.id === activeChannelId;
@@ -202,7 +207,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
 
       {/* Sections */}
       {sections.map(sec => {
-        const secChannels = channels.filter(c => c.sectionId === sec.id);
+        const secChannels = channels.filter(c => c.sectionId === sec.id && !c.isSubDebate);
         const isOpen = !collapsed.has(sec.id);
         const isRenamingSection = renaming?.type === "section" && renaming.id === sec.id;
 
@@ -269,6 +274,53 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
           </div>
         );
       })}
+
+      {/* Sub-debate channels (Contentions) */}
+      {subDebateChannels.length > 0 && (
+        <div className="mb-1 mt-2">
+          <div className="flex items-center px-2 py-0.5 gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5 shrink-0 text-amber-600">
+              <path d="M3 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM3 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" />
+            </svg>
+            <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-amber-700/80">Contentions</span>
+          </div>
+          <div className="space-y-0.5 px-1">
+            {subDebateChannels.map(ch => {
+              const isActive = ch.id === activeChannelId;
+              return (
+                <div key={ch.id} className="group flex items-start">
+                  <button
+                    onClick={() => onSelectChannel(ch)}
+                    className={`flex flex-1 flex-col rounded-md px-2 py-1.5 text-left transition-colors ${
+                      isActive ? "bg-amber-900/30 text-amber-200" : "text-gray-400 hover:bg-amber-950/20 hover:text-amber-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className={`h-2.5 w-2.5 shrink-0 ${isActive ? "text-amber-400" : "text-amber-700"}`}>
+                        <path fillRule="evenodd" d="M3 1a1 1 0 0 0-1 1v2.586l-.293-.293a1 1 0 1 0-1.414 1.414L2 7.414V10a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7.414l1.707-1.707a1 1 0 0 0-1.414-1.414L11 4.586V2a1 1 0 0 0-1-1H3Z" clipRule="evenodd" />
+                      </svg>
+                      <span className="truncate text-[11px] font-medium">{ch.proposition ?? ch.name}</span>
+                    </div>
+                    {ch.parentMessagePreview && (
+                      <p className="mt-0.5 pl-4 text-[10px] text-gray-600 line-clamp-1 italic">↑ "{ch.parentMessagePreview}"</p>
+                    )}
+                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => deleteChannel(ch.id)}
+                      className="mt-1.5 hidden rounded p-0.5 text-gray-700 hover:text-red-400 group-hover:block"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+                        <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Add section */}
       {canEdit && (

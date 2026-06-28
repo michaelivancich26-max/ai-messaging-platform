@@ -116,9 +116,13 @@ model Channel {
   room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   sectionId String?
   section   Section?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  isSidebar Boolean   @default(false)
-  messages  Message[]
-  createdAt DateTime  @default(now())
+  isSidebar            Boolean   @default(false)
+  isSubDebate          Boolean   @default(false)
+  proposition          String?
+  parentMessageId      String?
+  parentMessagePreview String?
+  messages             Message[]
+  createdAt            DateTime  @default(now())
 }
 
 model GraphNode {

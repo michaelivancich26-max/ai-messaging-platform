@@ -868,6 +868,35 @@ app.delete("/api/rooms/:name/sections/:id", async (req, res) => {
   }
 });
 
+// POST /api/rooms/:name/sub-debates — branch a message into a focused sub-debate channel
+app.post("/api/rooms/:name/sub-debates", async (req, res) => {
+  const { userId, proposition, messageId, messagePreview } = req.body as {
+    userId: string; proposition: string; messageId?: string; messagePreview?: string;
+  };
+  if (!userId || !proposition?.trim()) return res.status(400).json({ error: "userId and proposition required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const count = await (prisma as any).channel.count({ where: { roomId: room.id } });
+    const channel = await (prisma as any).channel.create({
+      data: {
+        name: proposition.trim().slice(0, 60),
+        roomId: room.id,
+        order: count,
+        isSubDebate: true,
+        proposition: proposition.trim().slice(0, 300),
+        parentMessageId: messageId ?? null,
+        parentMessagePreview: messagePreview?.trim().slice(0, 200) ?? null,
+      },
+    });
+    io.to(req.params.name).emit("channelsUpdated");
+    res.json(channel);
+  } catch (e) {
+    console.error("[sub-debates]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // POST /api/rooms/:name/channels
 app.post("/api/rooms/:name/channels", async (req, res) => {
   const { userId, name: channelName, sectionId } = req.body as { userId: string; name: string; sectionId?: string };
@@ -1334,6 +1363,18 @@ async function start() {
     console.log("[DB] Channel isSidebar column ready");
   } catch (e) {
     console.error("[DB] Channel isSidebar column setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "isSubDebate" BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "proposition" TEXT;
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentMessageId" TEXT;
+      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentMessagePreview" TEXT;
+    `);
+    console.log("[DB] Channel sub-debate columns ready");
+  } catch (e) {
+    console.error("[DB] Channel sub-debate columns setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

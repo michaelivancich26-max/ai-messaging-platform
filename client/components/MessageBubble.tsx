@@ -17,6 +17,7 @@ interface Props {
   onStakeClaim?: (messageId: string) => void;
   onChallengeClaim?: (claimId: string) => void;
   onUserClick?: (userId: string, username: string) => void;
+  onSubDebate?: (messageId: string, content: string) => void;
 }
 
 const POSITION_BUBBLE: Record<DebatePosition, { self: string; other: string; tag: string; tagText: string }> = {
@@ -171,7 +172,7 @@ function Avatar({ username, avatarUrl, size = 7 }: { username: string; avatarUrl
 
 export { Avatar };
 
-export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, onStakeClaim, onChallengeClaim, onUserClick }: Props) {
+export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate }: Props) {
   const username = message.user?.username ?? "unknown";
   const avatarUrl = (message.user as any)?.avatarUrl ?? null;
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -240,6 +241,19 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
                 Stake claim
               </button>
             )
+        )}
+        {/* Sub-debate branch button — appears on any human message */}
+        {isHuman && !message.id.startsWith("temp-") && onSubDebate && (
+          <button
+            onClick={() => onSubDebate(message.id, message.content)}
+            className="mt-0.5 flex items-center gap-1 rounded-full border border-gray-700/30 px-2 py-0.5 text-[10px] text-gray-700 opacity-0 group-hover:opacity-100 hover:border-amber-700/50 hover:text-amber-500 transition-all"
+            title="Branch into a sub-debate"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className="h-2.5 w-2.5">
+              <path fillRule="evenodd" d="M3 1a1 1 0 0 0-1 1v2.586l-.293-.293a1 1 0 0 0-1.414 1.414L2 7.414V10a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7.414l1.707-1.707a1 1 0 0 0-1.414-1.414L11 4.586V2a1 1 0 0 0-1-1H3Z" clipRule="evenodd" />
+            </svg>
+            sub-debate
+          </button>
         )}
       </div>
     </div>
