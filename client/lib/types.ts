@@ -1,6 +1,6 @@
 export type MessageType = "human" | "ai_interjection" | "summary";
 
-export type DebatePosition = "FOR" | "AGAINST" | "NEUTRAL";
+export type DebatePosition = string;
 
 export interface UserPositionEntry {
   userId: string;
@@ -48,7 +48,7 @@ export interface CredScore {
 
 export interface DebateTurnState {
   mode: "open" | "structured";
-  currentSide: "FOR" | "AGAINST";
+  currentSide: string;
   currentSpeakerId: string | null;
   currentSpeakerName: string | null;
   turnNumber: number;

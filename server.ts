@@ -87,6 +87,7 @@ interface DebateTurnState {
 }
 const debateTurns = new Map<string, DebateTurnState>();
 const sidebarChannels = new Map<string, string>(); // roomId → sidebar channelId
+const channelPositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
 function broadcastPresence(roomId: string) {
   const members = presence.get(roomId);
@@ -140,7 +141,14 @@ io.on("connection", (socket) => {
 
       // Send room meta (without password hash)
       const { password: _pw, ...roomMeta } = room as any;
-      socket.emit("roomMeta", roomMeta);
+      let stances: string[] = [];
+      try {
+        const stRow = await prisma.$queryRawUnsafe<{ stances: string | null }[]>(
+          `SELECT "stances" FROM "Room" WHERE "id" = $1`, room.id
+        );
+        if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
+      } catch { /* stances column not yet added */ }
+      socket.emit("roomMeta", { ...roomMeta, stances });
 
       // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
       if (!debateTurns.has(roomId)) {
@@ -220,6 +228,16 @@ io.on("connection", (socket) => {
         include: { user: true },
       });
       socket.emit("history", mapMessages(history));
+
+      // Emit channel-level positions for sub-debate channels
+      try {
+        if ((channel as any).isSubDebate) {
+          const chPos = channelPositions.get(channelId);
+          if (chPos) {
+            socket.emit("channelPositions", { channelId, positions: Array.from(chPos.values()) });
+          }
+        }
+      } catch { /* ignore */ }
     } catch (err) {
       console.error("joinChannel error:", err);
     }
@@ -482,28 +500,29 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("setPosition", async ({ roomId, position }: { roomId: string; position: string }) => {
-    const valid = ["FOR", "AGAINST", "NEUTRAL"];
-    if (!valid.includes(position)) return;
+  socket.on("setPosition", async ({ roomId, position, channelId }: { roomId: string; position: string; channelId?: string }) => {
+    if (!position?.trim()) return;
     try {
-      // Update in-memory map
-      if (!debatePositions.has(roomId)) debatePositions.set(roomId, new Map());
-      debatePositions.get(roomId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
-
-      // Persist to DB (best-effort)
-      try {
-        const room = await prisma.room.findUnique({ where: { name: roomId } });
-        if (room) {
-          await prisma.$executeRawUnsafe(
-            `INSERT INTO "UserPosition" ("id", "userId", "roomId", "position", "updatedAt", "createdAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3::"DebatePosition", NOW(), NOW())
-             ON CONFLICT ("userId", "roomId") DO UPDATE SET "position" = $3::"DebatePosition", "updatedAt" = NOW()`,
-            socketUser.id, room.id, position
-          );
-        }
-      } catch { /* ignore if table not yet migrated */ }
-
-      io.to(roomId).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position });
+      if (channelId) {
+        if (!channelPositions.has(channelId)) channelPositions.set(channelId, new Map());
+        channelPositions.get(channelId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
+        io.to(`channel:${channelId}`).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position, channelId });
+      } else {
+        if (!debatePositions.has(roomId)) debatePositions.set(roomId, new Map());
+        debatePositions.get(roomId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
+        try {
+          const room = await prisma.room.findUnique({ where: { name: roomId } });
+          if (room) {
+            await prisma.$executeRawUnsafe(
+              `INSERT INTO "UserPosition" ("id", "userId", "roomId", "position", "updatedAt", "createdAt")
+               VALUES (gen_random_uuid()::text, $1, $2, $3, NOW(), NOW())
+               ON CONFLICT ("userId", "roomId") DO UPDATE SET "position" = $3, "updatedAt" = NOW()`,
+              socketUser.id, room.id, position
+            );
+          }
+        } catch { /* ignore */ }
+        io.to(roomId).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position });
+      }
     } catch (err) {
       console.error("[setPosition]", err);
     }
@@ -537,6 +556,23 @@ io.on("connection", (socket) => {
       if (sbId) io.to(roomId).emit("sidebarChannel", { id: sbId, name: "side chat" });
     } catch (err) {
       console.error("[setDebateMode]", err);
+    }
+  });
+
+  socket.on("setStances", async ({ roomId, stances }: { roomId: string; stances: string[] }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) return;
+      const validStances = stances.map(s => s.trim()).filter(Boolean).slice(0, 6);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Room" SET "stances" = $1 WHERE "id" = $2`,
+        JSON.stringify(validStances), room.id
+      );
+      io.to(roomId).emit("stancesUpdated", validStances);
+    } catch (err) {
+      console.error("[setStances]", err);
     }
   });
 
@@ -1005,7 +1041,7 @@ app.get("/api/rooms/:name", async (req, res) => {
 
 app.patch("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona } = req.body as {
+  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances } = req.body as {
     userId: string;
     description?: string;
     proposition?: string;
@@ -1013,6 +1049,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
     isPrivate?: boolean;
     password?: string;
     aiPersona?: string | null;
+    stances?: string[];
   };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
@@ -1035,6 +1072,14 @@ app.patch("/api/rooms/:name", async (req, res) => {
 
     const updated = await prisma.room.update({ where: { name }, data });
     const { password: _pw, ...rest } = updated as any;
+    if (Array.isArray(stances)) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Room" SET "stances" = $1 WHERE "id" = $2`,
+        JSON.stringify(stances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6)),
+        updated.id
+      );
+      io.to(name).emit("stancesUpdated", stances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6));
+    }
     // Notify everyone in the room of updated meta
     io.to(name).emit("roomMeta", rest);
     res.json(rest);
@@ -1384,6 +1429,16 @@ async function start() {
     console.log("[DB] Channel sub-debate columns ready");
   } catch (e) {
     console.error("[DB] Channel sub-debate columns setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "stances" TEXT;
+      ALTER TABLE "UserPosition" ALTER COLUMN "position" TYPE TEXT USING "position"::text;
+    `);
+    console.log("[DB] Stances and position columns ready");
+  } catch (e) {
+    console.error("[DB] Stances/position column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

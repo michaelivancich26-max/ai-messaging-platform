@@ -1,19 +1,20 @@
 "use client";
 
-import type { DebateTurnState, DebatePosition } from "@/lib/types";
+import type { DebateTurnState } from "@/lib/types";
 
 interface Props {
   turn: DebateTurnState;
-  myPosition: DebatePosition | null;
+  myPosition: string | null;
   myUserId: string;
   isOwner: boolean;
   isAdmin: boolean;
   onClaimFloor: () => void;
   onPassTurn: () => void;
   onEndStructured: () => void;
+  stances?: string[];
 }
 
-export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmin, onClaimFloor, onPassTurn, onEndStructured }: Props) {
+export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmin, onClaimFloor, onPassTurn, onEndStructured, stances }: Props) {
   if (turn.mode !== "structured") return null;
 
   const isMySide = myPosition === turn.currentSide;
@@ -21,20 +22,22 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
   const floorClaimed = !!turn.currentSpeakerId;
   const canPass = isOwner || isAdmin || isMyTurn;
 
-  const sideIsFor = turn.currentSide === "FOR";
+  const stanceList = stances ?? ["FOR", "AGAINST"];
+  const sideIdx = stanceList.indexOf(turn.currentSide);
+  const sideIsFirst = sideIdx === 0 || sideIdx === -1;
 
   return (
     <div className={`shrink-0 border-t px-4 py-2.5 flex items-center gap-3 transition-colors ${
       isMyTurn
         ? "border-emerald-800/40 bg-emerald-950/30"
-        : sideIsFor
+        : sideIsFirst
         ? "border-gray-800 bg-gray-900/50"
         : "border-gray-800 bg-gray-900/50"
     }`}>
       {/* Pulse dot + status */}
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <span className={`h-2 w-2 rounded-full shrink-0 ${
-          sideIsFor ? "bg-emerald-400" : "bg-red-400"
+          sideIsFirst ? "bg-emerald-400" : "bg-red-400"
         } ${!floorClaimed ? "animate-pulse" : ""}`} />
         <span className="text-xs text-gray-400 truncate">
           {isMyTurn ? (
@@ -43,7 +46,7 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
             <><span className="font-semibold text-gray-200">{turn.currentSpeakerName}</span> has the floor</>
           ) : (
             <>
-              <span className={`font-semibold ${sideIsFor ? "text-emerald-400" : "text-red-400"}`}>
+              <span className={`font-semibold ${sideIsFirst ? "text-emerald-400" : "text-red-400"}`}>
                 {turn.currentSide}
               </span>
               {" "}side — waiting for someone to claim the floor
@@ -59,7 +62,7 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
           <button
             onClick={onClaimFloor}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              sideIsFor
+              sideIsFirst
                 ? "bg-emerald-600 text-white hover:bg-emerald-500"
                 : "bg-red-600 text-white hover:bg-red-500"
             }`}

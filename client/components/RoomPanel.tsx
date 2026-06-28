@@ -6,7 +6,7 @@ import ConfirmModal from "./ConfirmModal";
 interface Member { userId: string; username: string; avatarUrl?: string | null; }
 interface RoomMeta {
   id: string; name: string; description: string | null; proposition: string | null; isPrivate: boolean;
-  maxMembers: number | null; creatorId: string | null; aiPersona: string | null;
+  maxMembers: number | null; creatorId: string | null; aiPersona: string | null; stances?: string[] | null;
 }
 interface Settings { factualCorrection: boolean; ambiguityResolution: boolean; }
 
@@ -60,6 +60,7 @@ export default function RoomPanel({
   const [editPrivate, setEditPrivate] = useState(meta?.isPrivate ?? false);
   const [editPassword, setEditPassword] = useState("");
   const [editPersona, setEditPersona] = useState(meta?.aiPersona ?? "");
+  const [editStances, setEditStances] = useState<string[]>(meta?.stances ?? []);
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
@@ -74,6 +75,7 @@ export default function RoomPanel({
     setEditMax(meta.maxMembers?.toString() ?? "");
     setEditPrivate(meta.isPrivate);
     setEditPersona(meta.aiPersona ?? "");
+    setEditStances(meta.stances ?? []);
   }
 
   async function saveChanges() {
@@ -85,6 +87,7 @@ export default function RoomPanel({
         proposition: editProposition.trim() || null,
         maxMembers: editMax ? parseInt(editMax) : null,
         isPrivate: editPrivate, aiPersona: editPersona.trim() || null,
+        stances: editStances,
       };
       if (editPrivate && editPassword) body.password = editPassword;
       const res = await fetch(`${SERVER}/api/rooms/${meta.name}`, {
@@ -208,6 +211,41 @@ export default function RoomPanel({
                   maxLength={300} rows={2} placeholder="The statement being debated…"
                   className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
               </div>
+              {/* Stance editor */}
+              <div className="pt-2 border-t border-gray-800">
+                <p className="text-sm text-gray-200 mb-1">Debate stances</p>
+                <p className="text-xs text-gray-500 mb-3">Define up to 6 positions participants can take. Leave empty for the default FOR / AGAINST.</p>
+                <div className="space-y-1.5 mb-2">
+                  {editStances.map((s, i) => (
+                    <div key={i} className="flex gap-1.5">
+                      <input
+                        value={s}
+                        onChange={e => setEditStances(prev => prev.map((x, j) => j === i ? e.target.value : x))}
+                        maxLength={40}
+                        className="flex-1 rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-100 outline-none ring-1 ring-gray-700 focus:ring-indigo-500/60"
+                        placeholder={`Stance ${i + 1}`}
+                      />
+                      <button
+                        onClick={() => setEditStances(prev => prev.filter((_, j) => j !== i))}
+                        className="rounded-lg px-2 text-gray-600 hover:text-red-400 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                          <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {editStances.length < 6 && (
+                  <button
+                    onClick={() => setEditStances(prev => [...prev, ""])}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    + Add stance
+                  </button>
+                )}
+              </div>
+
               <div>
                 <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Description</label>
                 <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)}

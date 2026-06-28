@@ -1,88 +1,104 @@
 "use client";
 
-import type { DebatePosition, UserPositionEntry, CredScore, DebateTurnState } from "@/lib/types";
+import type { UserPositionEntry, CredScore, DebateTurnState } from "@/lib/types";
+import { STANCE_PALETTE, NEUTRAL_PALETTE, getStancePalette } from "@/lib/stances";
 
 interface Props {
   proposition: string;
+  stances: string[];          // e.g. ["FOR","AGAINST"] or custom
   positions: Record<string, UserPositionEntry>;
-  myPosition: DebatePosition | null;
+  myPosition: string | null;
   credibilityScores: Record<string, CredScore>;
   debateTurn?: DebateTurnState | null;
   isOwner?: boolean;
   isAdmin?: boolean;
-  onSetPosition: (pos: DebatePosition) => void;
+  onSetPosition: (pos: string) => void;
   onSetDebateMode?: (mode: "open" | "structured") => void;
 }
 
-function computeDebateScore(
-  positions: Record<string, UserPositionEntry>,
-  credibilityScores: Record<string, CredScore>
-): { forScore: number; againstScore: number } {
-  let forScore = 0;
-  let againstScore = 0;
+export default function DebateHeader({ proposition, stances, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, onSetPosition, onSetDebateMode }: Props) {
+  // Credibility-weighted score per stance
+  const stanceScores: Record<string, number> = {};
+  let total = 0;
   for (const entry of Object.values(positions)) {
     const cred = credibilityScores[entry.userId];
-    const pts = cred ? Math.max(0, cred.supported * 2 - cred.refuted * 3) : 0;
-    if (entry.position === "FOR") forScore += pts;
-    else if (entry.position === "AGAINST") againstScore += pts;
+    const pts = cred ? Math.max(0, cred.supported * 2 - cred.refuted * 3) : 1;
+    stanceScores[entry.position] = (stanceScores[entry.position] ?? 0) + pts;
+    total += pts;
   }
-  return { forScore, againstScore };
-}
 
-const POSITION_CONFIG: Record<DebatePosition, { label: string; active: string; inactive: string; dot: string }> = {
-  FOR:     { label: "For",     active: "bg-emerald-600 text-white border-emerald-500",   inactive: "border-emerald-700/40 text-emerald-500 hover:bg-emerald-900/20", dot: "bg-emerald-500" },
-  AGAINST: { label: "Against", active: "bg-red-600 text-white border-red-500",           inactive: "border-red-700/40 text-red-500 hover:bg-red-900/20",            dot: "bg-red-500"     },
-  NEUTRAL: { label: "Neutral", active: "bg-gray-600 text-white border-gray-500",         inactive: "border-gray-700/40 text-gray-500 hover:bg-gray-800",            dot: "bg-gray-500"    },
-};
-
-export default function DebateHeader({ proposition, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, onSetPosition, onSetDebateMode }: Props) {
-  const { forScore, againstScore } = computeDebateScore(positions, credibilityScores);
-  const total = forScore + againstScore;
-  const forPct  = total > 0 ? Math.round((forScore  / total) * 100) : 50;
-  const againstPct = 100 - forPct;
-
-  const forCount     = Object.values(positions).filter(p => p.position === "FOR").length;
-  const againstCount = Object.values(positions).filter(p => p.position === "AGAINST").length;
+  const stanceCounts: Record<string, number> = {};
+  for (const entry of Object.values(positions)) {
+    stanceCounts[entry.position] = (stanceCounts[entry.position] ?? 0) + 1;
+  }
 
   return (
     <div className="border-b border-gray-800 bg-gray-900/60 px-4 py-3 shrink-0">
-      {/* Proposition */}
       <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Proposition</p>
       <p className="text-sm font-medium text-gray-100 leading-snug mb-3 line-clamp-2">{proposition}</p>
 
-      {/* Score bar */}
+      {/* Multi-segment score bar */}
       {total > 0 && (
         <div className="mb-3">
-          <div className="flex justify-between text-[10px] text-gray-500 mb-1">
-            <span className="text-emerald-400 font-semibold">FOR {forPct}%</span>
-            <span className="text-red-400 font-semibold">{againstPct}% AGAINST</span>
-          </div>
           <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-800">
-            <div className="bg-emerald-500 transition-all duration-500" style={{ width: `${forPct}%` }} />
-            <div className="bg-red-500 transition-all duration-500" style={{ width: `${againstPct}%` }} />
+            {stances.map((stance, i) => {
+              const pct = total > 0 ? ((stanceScores[stance] ?? 0) / total) * 100 : 0;
+              if (pct === 0) return null;
+              const pal = STANCE_PALETTE[i % STANCE_PALETTE.length];
+              return <div key={stance} className={`${pal.bar} transition-all duration-500`} style={{ width: `${pct}%` }} />;
+            })}
+          </div>
+          <div className="flex gap-3 mt-1 flex-wrap">
+            {stances.map((stance, i) => {
+              const pct = total > 0 ? Math.round(((stanceScores[stance] ?? 0) / total) * 100) : 0;
+              if (pct === 0 && !stanceCounts[stance]) return null;
+              const pal = STANCE_PALETTE[i % STANCE_PALETTE.length];
+              return (
+                <span key={stance} className={`text-[10px] font-semibold`} >
+                  <span className={`inline-block h-1.5 w-1.5 rounded-full ${pal.dot} mr-1`} />
+                  <span className="text-gray-400">{stance} {pct}%</span>
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Position picker + structured mode toggle */}
+      {/* Position picker */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-gray-600 shrink-0">Your stance:</span>
-        {(["FOR", "AGAINST", "NEUTRAL"] as DebatePosition[]).map(pos => {
-          const cfg = POSITION_CONFIG[pos];
-          const isActive = myPosition === pos;
-          const count = pos === "FOR" ? forCount : pos === "AGAINST" ? againstCount : null;
+        {stances.map((stance, i) => {
+          const pal = STANCE_PALETTE[i % STANCE_PALETTE.length];
+          const isActive = myPosition === stance;
+          const count = stanceCounts[stance] ?? 0;
           return (
             <button
-              key={pos}
-              onClick={() => onSetPosition(pos)}
-              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${isActive ? cfg.active : cfg.inactive}`}
+              key={stance}
+              onClick={() => onSetPosition(stance)}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${isActive ? pal.btn_active : pal.btn_inactive}`}
             >
-              {isActive && <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot} opacity-80`} />}
-              {cfg.label}
-              {count !== null && <span className="opacity-60">·{count}</span>}
+              {isActive && <span className={`h-1.5 w-1.5 rounded-full ${pal.dot} opacity-80`} />}
+              {stance}
+              {count > 0 && <span className="opacity-60">·{count}</span>}
             </button>
           );
         })}
+        {/* Neutral is always available */}
+        {(() => {
+          const isActive = myPosition === "NEUTRAL";
+          const count = stanceCounts["NEUTRAL"] ?? 0;
+          return (
+            <button
+              onClick={() => onSetPosition("NEUTRAL")}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${isActive ? NEUTRAL_PALETTE.btn_active : NEUTRAL_PALETTE.btn_inactive}`}
+            >
+              {isActive && <span className={`h-1.5 w-1.5 rounded-full ${NEUTRAL_PALETTE.dot} opacity-80`} />}
+              Neutral
+              {count > 0 && <span className="opacity-60">·{count}</span>}
+            </button>
+          );
+        })()}
+
         {(isOwner || isAdmin) && onSetDebateMode && (
           <button
             onClick={() => onSetDebateMode(debateTurn?.mode === "structured" ? "open" : "structured")}
@@ -91,7 +107,6 @@ export default function DebateHeader({ proposition, positions, myPosition, credi
                 ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
                 : "border-gray-700 text-gray-500 hover:border-indigo-600/40 hover:text-indigo-400"
             }`}
-            title={debateTurn?.mode === "structured" ? "Switch to free chat" : "Enable structured turn-based debate"}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
               <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.232l-3.136 2.762a.75.75 0 0 1-1.12-.814l.853-3.576-2.79-2.39a.75.75 0 0 1 .427-1.316l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />

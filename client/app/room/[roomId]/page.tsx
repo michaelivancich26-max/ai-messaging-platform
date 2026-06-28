@@ -63,6 +63,8 @@ export default function RoomPage() {
   const [profileModal, setProfileModal] = useState<{ userId: string; username: string } | null>(null);
   const [subDebateModal, setSubDebateModal] = useState<{ messageId: string; content: string } | null>(null);
   const [subDebateCreating, setSubDebateCreating] = useState(false);
+  const [stances, setStances] = useState<string[]>([]);
+  const [channelPositions, setChannelPositions] = useState<Record<string, Record<string, UserPositionEntry>>>({});
   const [sidebarChannel, setSidebarChannel] = useState<{ id: string; name: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarMessages, setSidebarMessages] = useState<ChatMessage[]>([]);
@@ -143,8 +145,16 @@ export default function RoomPage() {
     socket.on("credibilityUpdate", (score: CredScore) => {
       setCredibilityScores(prev => ({ ...prev, [score.userId]: score }));
     });
-    socket.on("positionUpdate", (entry: UserPositionEntry) => {
-      setPositions(prev => ({ ...prev, [entry.userId]: entry }));
+    socket.on("positionUpdate", (entry: UserPositionEntry & { channelId?: string }) => {
+      if (entry.channelId) {
+        setChannelPositions(prev => ({
+          ...prev,
+          [entry.channelId!]: { ...(prev[entry.channelId!] ?? {}), [entry.userId]: entry },
+        }));
+      } else {
+        setPositions(prev => ({ ...prev, [entry.userId]: entry }));
+        if (entry.userId === userId) setMyPosition(entry.position);
+      }
     });
     socket.on("debatePositions", (entries: UserPositionEntry[]) => {
       const map: Record<string, UserPositionEntry> = {};
@@ -154,6 +164,12 @@ export default function RoomPage() {
       if (mine) setMyPosition(mine.position);
     });
     socket.on("debateTurnUpdate", (turn: DebateTurnState) => setDebateTurn(turn));
+    socket.on("stancesUpdated", (newStances: string[]) => setStances(newStances));
+    socket.on("channelPositions", ({ channelId, positions: entries }: { channelId: string; positions: UserPositionEntry[] }) => {
+      const map: Record<string, UserPositionEntry> = {};
+      entries.forEach(e => { map[e.userId] = e; });
+      setChannelPositions(prev => ({ ...prev, [channelId]: map }));
+    });
     socket.on("sidebarChannel", (ch: { id: string; name: string }) => {
       setSidebarChannel(ch);
       sidebarChannelRef.current = ch;
@@ -164,7 +180,10 @@ export default function RoomPage() {
         .catch(() => {});
     });
     socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
-    socket.on("roomMeta", (meta: RoomMeta) => setRoomMeta(meta));
+    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[] }) => {
+      setRoomMeta(meta);
+      if (meta.stances && meta.stances.length > 0) setStances(meta.stances);
+    });
     socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
       setStreamingMsgs((prev) => new Map(prev).set(tempId, { text: "", sarcasm, isMention }));
     });
@@ -272,6 +291,8 @@ export default function RoomPage() {
       socket.off("positionUpdate");
       socket.off("debatePositions");
       socket.off("debateTurnUpdate");
+      socket.off("stancesUpdated");
+      socket.off("channelPositions");
       socket.off("sidebarChannel");
       socket.off("roomMembers");
       socket.off("roomMeta");
@@ -395,10 +416,18 @@ export default function RoomPage() {
     });
   }
 
-  function setDebatePosition(pos: DebatePosition) {
-    setMyPosition(pos);
-    setPositions(prev => ({ ...prev, [userId]: { userId, username, position: pos } }));
-    getSocket({ id: userId, username }).emit("setPosition", { roomId, position: pos });
+  function setDebatePosition(pos: string) {
+    if (activeChannel?.isSubDebate) {
+      setChannelPositions(prev => ({
+        ...prev,
+        [activeChannel.id]: { ...(prev[activeChannel.id] ?? {}), [userId]: { userId, username, position: pos } },
+      }));
+      getSocket({ id: userId, username }).emit("setPosition", { roomId, channelId: activeChannel.id, position: pos });
+    } else {
+      setMyPosition(pos);
+      setPositions(prev => ({ ...prev, [userId]: { userId, username, position: pos } }));
+      getSocket({ id: userId, username }).emit("setPosition", { roomId, position: pos });
+    }
   }
 
   function setDebateMode(mode: "open" | "structured") {
@@ -525,6 +554,14 @@ export default function RoomPage() {
     s.emit("summarize", { roomId, since: since?.toISOString() ?? null, channelId: activeChannel?.id ?? null });
     s.once("summarizeDone", () => setSummarizing(false));
   }
+
+  const activePositions = activeChannel?.isSubDebate
+    ? (channelPositions[activeChannel.id] ?? {})
+    : positions;
+  const activeMyPosition = activeChannel?.isSubDebate
+    ? channelPositions[activeChannel.id]?.[userId]?.position ?? null
+    : myPosition;
+  const activeStances = activeChannel?.isSubDebate ? ["FOR", "AGAINST"] : (stances.length > 0 ? stances : ["FOR", "AGAINST"]);
 
   if (status === "loading") {
     return <div className="flex h-screen items-center justify-center text-gray-500">Loading…</div>;
@@ -661,11 +698,16 @@ export default function RoomPage() {
       )}
 
       {/* Debate proposition + position picker */}
-      {!roomId.startsWith("dm-") && roomMeta && (roomMeta as any).proposition && (
+      {!roomId.startsWith("dm-") && (activeChannel?.isSubDebate || ((roomMeta as any)?.proposition)) && (
         <DebateHeader
-          proposition={(roomMeta as any).proposition}
-          positions={positions}
-          myPosition={myPosition}
+          proposition={
+            activeChannel?.isSubDebate
+              ? ((activeChannel as any).proposition ?? "Sub-debate")
+              : (roomMeta as any).proposition
+          }
+          stances={activeStances}
+          positions={activePositions}
+          myPosition={activeMyPosition}
           credibilityScores={credibilityScores}
           debateTurn={debateTurn}
           isOwner={isOwner}
@@ -697,7 +739,7 @@ export default function RoomPage() {
                   </div>
                 </div>
               )}
-              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={positions} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} />
+              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={stakeClaim} onChallengeClaim={challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} />
               <div ref={bottomRef} />
             </>
           )}
@@ -764,13 +806,14 @@ export default function RoomPage() {
       {debateTurn?.mode === "structured" && !roomId.startsWith("dm-") && (
         <TurnBanner
           turn={debateTurn}
-          myPosition={myPosition}
+          myPosition={activeMyPosition}
           myUserId={userId}
           isOwner={isOwner}
           isAdmin={isAdmin}
           onClaimFloor={claimFloor}
           onPassTurn={passTurn}
           onEndStructured={() => setDebateMode("open")}
+          stances={activeStances}
         />
       )}
 
