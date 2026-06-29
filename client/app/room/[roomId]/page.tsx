@@ -808,8 +808,8 @@ export default function RoomPage() {
       )}
 
       <div className={`flex flex-1 overflow-hidden min-h-0 ${sidebarOpen && sidebarChannel ? "flex-row" : "flex-col"}`}>
-        {/* Main chat column */}
-        <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+        {/* Main chat column — hidden on mobile when sidebar is open (sidebar takes full screen instead) */}
+        <div className={`flex-col flex-1 overflow-hidden min-w-0 ${sidebarOpen && sidebarChannel ? "hidden md:flex" : "flex"}`}>
           {!roomId.startsWith("dm-") && !activeChannel ? (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
           ) : (
