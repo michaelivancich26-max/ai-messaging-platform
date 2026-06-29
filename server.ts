@@ -188,10 +188,11 @@ io.on("connection", (socket) => {
       if (room.isDM) {
         const history = await prisma.message.findMany({
           where: { roomId: room.id },
-          orderBy: { createdAt: "asc" },
-          take: 20,
+          orderBy: { createdAt: "desc" },
+          take: 50,
           include: { user: true },
         });
+        history.reverse();
         socket.emit("history", mapMessages(history));
       }
     } catch (err) {
@@ -215,10 +216,11 @@ io.on("connection", (socket) => {
 
       const history = await prisma.message.findMany({
         where: { channelId },
-        orderBy: { createdAt: "asc" },
-        take: 20,
+        orderBy: { createdAt: "desc" },
+        take: 50,
         include: { user: true },
       });
+      history.reverse();
       socket.emit("channelHistory", { channelId, messages: mapMessages(history) });
 
       // Emit channel-level positions for sub-debate channels
@@ -896,10 +898,11 @@ app.get("/api/channels/:id/messages", async (req, res) => {
   try {
     const messages = await prisma.message.findMany({
       where: { channelId: req.params.id },
-      orderBy: { createdAt: "asc" },
-      take: 20,
+      orderBy: { createdAt: "desc" },
+      take: 50,
       include: { user: true },
     });
+    messages.reverse();
     res.json(mapMessages(messages));
   } catch {
     res.status(500).json({ error: "Server error" });
