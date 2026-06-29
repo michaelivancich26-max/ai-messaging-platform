@@ -64,6 +64,7 @@ export default function RoomPage() {
   const [subDebateModal, setSubDebateModal] = useState<{ messageId: string; content: string } | null>(null);
   const [subDebateCreating, setSubDebateCreating] = useState(false);
   const [stances, setStances] = useState<string[]>([]);
+  const [myLastSwitchedAt, setMyLastSwitchedAt] = useState<number | null>(null);
   const [channelPositions, setChannelPositions] = useState<Record<string, Record<string, UserPositionEntry>>>({});
   const [sidebarChannel, setSidebarChannel] = useState<{ id: string; name: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -447,6 +448,7 @@ export default function RoomPage() {
     } else {
       setMyPosition(pos);
       setPositions(prev => ({ ...prev, [userId]: { userId, username, position: pos } }));
+      setMyLastSwitchedAt(Date.now());
       getSocket({ id: userId, username }).emit("setPosition", { roomId, position: pos });
     }
   }
@@ -764,6 +766,8 @@ export default function RoomPage() {
           isOwner={isOwner}
           isAdmin={isAdmin}
           isOpinionated={isOpinionated}
+          stanceCooldown={(roomMeta as any)?.stanceCooldown ?? 0}
+          myLastSwitchedAt={myLastSwitchedAt}
           onSetPosition={setDebatePosition}
           onSetDebateMode={setDebateMode}
         />

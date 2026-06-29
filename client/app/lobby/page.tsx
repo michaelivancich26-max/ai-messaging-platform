@@ -49,6 +49,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
   const [proposition, setProposition] = useState("");
   const [stances, setStances] = useState<string[]>([]);
   const [isOpinionated, setIsOpinionated] = useState(false);
+  const [stanceCooldown, setStanceCooldown] = useState(0);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -68,7 +69,8 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
         body: JSON.stringify({
           name: name.trim(), proposition: proposition.trim() || undefined,
           stances: cleanStances.length > 0 ? cleanStances : undefined,
-          isOpinionated, isPrivate, password: isPrivate ? password : undefined,
+          isOpinionated, stanceCooldown: stanceCooldown > 0 ? stanceCooldown : undefined,
+          isPrivate, password: isPrivate ? password : undefined,
           maxMembers: maxMembers ? parseInt(maxMembers) : undefined,
           creatorId: userId, aiPersona: aiPersona.trim() || undefined,
         }),
@@ -149,6 +151,20 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
               className={`relative h-6 w-11 rounded-full transition-colors ${isOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
               <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isOpinionated ? "translate-x-5" : "translate-x-0.5"}`} />
             </button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl bg-gray-800/60 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-gray-200">Stance cooldown <span className="text-gray-600">(seconds)</span></p>
+              <p className="text-xs text-gray-500">How long before participants can switch stances (0 = off)</p>
+            </div>
+            <input
+              type="number"
+              value={stanceCooldown}
+              onChange={e => setStanceCooldown(Math.max(0, Math.round(parseFloat(e.target.value) || 0)))}
+              min={0} max={3600}
+              className="w-16 rounded-lg bg-gray-700 px-2 py-1.5 text-sm text-center text-gray-100 outline-none ring-1 ring-gray-600 focus:ring-indigo-500"
+            />
           </div>
 
           <div className="flex items-center justify-between rounded-xl bg-gray-800/60 px-4 py-3">

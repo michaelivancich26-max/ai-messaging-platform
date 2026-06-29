@@ -66,6 +66,7 @@ model Room {
   aiPersona      String?
   proposition    String?
   isOpinionated  Boolean   @default(false)
+  stanceCooldown Int       @default(0)
   messages       Message[]
   sections       Section[]
   channels       Channel[]

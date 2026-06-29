@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { UserPositionEntry, CredScore, DebateTurnState } from "@/lib/types";
 import { STANCE_PALETTE, NEUTRAL_PALETTE, getStancePalette } from "@/lib/stances";
 
@@ -13,11 +14,13 @@ interface Props {
   isOwner?: boolean;
   isAdmin?: boolean;
   isOpinionated?: boolean;
+  stanceCooldown?: number;
+  myLastSwitchedAt?: number | null;
   onSetPosition: (pos: string) => void;
   onSetDebateMode?: (mode: "open" | "structured") => void;
 }
 
-export default function DebateHeader({ proposition, stances, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, isOpinionated, onSetPosition, onSetDebateMode }: Props) {
+export default function DebateHeader({ proposition, stances, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, isOpinionated, stanceCooldown, myLastSwitchedAt, onSetPosition, onSetDebateMode }: Props) {
   // Credibility-weighted score per stance
   const stanceScores: Record<string, number> = {};
   let total = 0;
@@ -32,6 +35,18 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
   for (const entry of Object.values(positions)) {
     stanceCounts[entry.position] = (stanceCounts[entry.position] ?? 0) + 1;
   }
+
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  useEffect(() => {
+    if (!stanceCooldown || !myLastSwitchedAt) { setCooldownRemaining(0); return; }
+    function tick() {
+      const rem = Math.max(0, stanceCooldown! - (Date.now() - myLastSwitchedAt!) / 1000);
+      setCooldownRemaining(Math.ceil(rem));
+    }
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [stanceCooldown, myLastSwitchedAt]);
 
   return (
     <div className="border-b border-gray-800 bg-gray-900/60 px-4 py-3 shrink-0">
@@ -78,15 +93,25 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
       {/* Position picker */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-gray-600 shrink-0">Your stance:</span>
+        {cooldownRemaining > 0 && (
+          <span className="flex items-center gap-1 rounded-full bg-gray-800 px-2 py-0.5 text-[9px] font-semibold text-gray-500">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5">
+              <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
+            </svg>
+            {cooldownRemaining}s
+          </span>
+        )}
         {stances.map((stance, i) => {
           const pal = STANCE_PALETTE[i % STANCE_PALETTE.length];
           const isActive = myPosition === stance;
           const count = stanceCounts[stance] ?? 0;
+          const locked = cooldownRemaining > 0 && !isActive;
           return (
             <button
               key={stance}
-              onClick={() => onSetPosition(stance)}
-              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${isActive ? pal.btn_active : pal.btn_inactive}`}
+              onClick={() => !locked && onSetPosition(stance)}
+              disabled={locked}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? pal.btn_active : pal.btn_inactive}`}
             >
               {isActive && <span className={`h-1.5 w-1.5 rounded-full ${pal.dot} opacity-80`} />}
               {stance}
@@ -98,10 +123,12 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
         {(() => {
           const isActive = myPosition === "NEUTRAL";
           const count = stanceCounts["NEUTRAL"] ?? 0;
+          const locked = cooldownRemaining > 0 && !isActive;
           return (
             <button
-              onClick={() => onSetPosition("NEUTRAL")}
-              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${isActive ? NEUTRAL_PALETTE.btn_active : NEUTRAL_PALETTE.btn_inactive}`}
+              onClick={() => !locked && onSetPosition("NEUTRAL")}
+              disabled={locked}
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? NEUTRAL_PALETTE.btn_active : NEUTRAL_PALETTE.btn_inactive}`}
             >
               {isActive && <span className={`h-1.5 w-1.5 rounded-full ${NEUTRAL_PALETTE.dot} opacity-80`} />}
               Neutral

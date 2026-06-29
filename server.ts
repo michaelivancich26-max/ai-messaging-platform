@@ -539,19 +539,38 @@ io.on("connection", (socket) => {
         channelPositions.get(channelId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
         io.to(`channel:${channelId}`).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position, channelId });
       } else {
+        // Look up room for cooldown check and DB upsert
+        let room: any = null;
+        try { room = await prisma.room.findUnique({ where: { name: roomId } }); } catch { /* ignore */ }
+        const cooldownSecs: number = room?.stanceCooldown ?? 0;
+        if (cooldownSecs > 0) {
+          try {
+            const lastSwitchRaw = await redis.get(`stance:cooldown:${roomId}:${socketUser.id}`);
+            if (lastSwitchRaw) {
+              const elapsed = (Date.now() - parseInt(lastSwitchRaw)) / 1000;
+              if (elapsed < cooldownSecs) {
+                const remaining = Math.ceil(cooldownSecs - elapsed);
+                socket.emit("error", { message: `You can't switch stances for another ${remaining}s.` });
+                return;
+              }
+            }
+          } catch { /* redis unavailable — skip cooldown check */ }
+        }
         if (!debatePositions.has(roomId)) debatePositions.set(roomId, new Map());
         debatePositions.get(roomId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
-        try {
-          const room = await prisma.room.findUnique({ where: { name: roomId } });
-          if (room) {
+        if (room) {
+          try {
             await prisma.$executeRawUnsafe(
               `INSERT INTO "UserPosition" ("id", "userId", "roomId", "position", "updatedAt", "createdAt")
                VALUES (gen_random_uuid()::text, $1, $2, $3, NOW(), NOW())
                ON CONFLICT ("userId", "roomId") DO UPDATE SET "position" = $3, "updatedAt" = NOW()`,
               socketUser.id, room.id, position
             );
-          }
-        } catch { /* ignore */ }
+          } catch { /* ignore */ }
+        }
+        if (cooldownSecs > 0) {
+          try { await redis.set(`stance:cooldown:${roomId}:${socketUser.id}`, Date.now().toString(), { EX: cooldownSecs + 60 }); } catch { /* ignore */ }
+        }
         io.to(roomId).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position });
       }
     } catch (err) {
@@ -825,6 +844,7 @@ app.post("/api/rooms", async (req, res) => {
   const maxMembers: number | null = req.body?.maxMembers ? parseInt(req.body.maxMembers) : null;
   const aiPersona: string | null = req.body?.aiPersona?.trim().slice(0, 500) || null;
   const isOpinionated: boolean = req.body?.isOpinionated === true;
+  const stanceCooldown: number = req.body?.stanceCooldown ? Math.max(0, Math.round(parseInt(req.body.stanceCooldown))) : 0;
   const rawStances: string[] | undefined = Array.isArray(req.body?.stances) ? req.body.stances : undefined;
 
   if (!name) return res.status(400).json({ error: "Invalid room name" });
@@ -837,7 +857,7 @@ app.post("/api/rooms", async (req, res) => {
     if (existing) return res.status(409).json({ error: "Room already exists" });
     const password = isPrivate && rawPassword ? await bcrypt.hash(rawPassword, 10) : null;
     const room = await prisma.room.create({
-      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona, isOpinionated },
+      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona, isOpinionated, stanceCooldown },
     } as any);
     if (rawStances && rawStances.length > 0) {
       const cleanStances = rawStances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6);
@@ -1108,7 +1128,7 @@ app.get("/api/rooms/:name", async (req, res) => {
 
 app.patch("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances, isOpinionated } = req.body as {
+  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances, isOpinionated, stanceCooldown } = req.body as {
     userId: string;
     description?: string;
     proposition?: string;
@@ -1118,6 +1138,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
     aiPersona?: string | null;
     stances?: string[];
     isOpinionated?: boolean;
+    stanceCooldown?: number;
   };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
@@ -1138,6 +1159,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
     if (newPassword) data.password = await bcrypt.hash(newPassword, 10);
     if (aiPersona !== undefined) data.aiPersona = aiPersona?.trim().slice(0, 500) || null;
     if (isOpinionated !== undefined) data.isOpinionated = isOpinionated;
+    if (stanceCooldown !== undefined) data.stanceCooldown = Math.max(0, Math.round(stanceCooldown));
 
     const updated = await prisma.room.update({ where: { name }, data });
     const { password: _pw, ...rest } = updated as any;
@@ -1530,6 +1552,12 @@ async function start() {
     console.log("[DB] Channel isOpinionated column ready");
   } catch (e) {
     console.error("[DB] Channel isOpinionated column setup failed:", e);
+  }
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "stanceCooldown" INTEGER NOT NULL DEFAULT 0;`);
+    console.log("[DB] Room stanceCooldown column ready");
+  } catch (e) {
+    console.error("[DB] Room stanceCooldown column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

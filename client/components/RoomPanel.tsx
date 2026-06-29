@@ -7,7 +7,7 @@ interface Member { userId: string; username: string; avatarUrl?: string | null; 
 interface RoomMeta {
   id: string; name: string; description: string | null; proposition: string | null; isPrivate: boolean;
   maxMembers: number | null; creatorId: string | null; aiPersona: string | null; stances?: string[] | null;
-  isOpinionated?: boolean;
+  isOpinionated?: boolean; stanceCooldown?: number;
 }
 interface Settings { factualCorrection: boolean; ambiguityResolution: boolean; }
 
@@ -63,6 +63,7 @@ export default function RoomPanel({
   const [editPersona, setEditPersona] = useState(meta?.aiPersona ?? "");
   const [editStances, setEditStances] = useState<string[]>(meta?.stances ?? []);
   const [editOpinionated, setEditOpinionated] = useState(meta?.isOpinionated ?? false);
+  const [editCooldown, setEditCooldown] = useState(meta?.stanceCooldown ?? 0);
   const [showPw, setShowPw] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
@@ -79,6 +80,7 @@ export default function RoomPanel({
     setEditPersona(meta.aiPersona ?? "");
     setEditStances(meta.stances ?? []);
     setEditOpinionated(meta.isOpinionated ?? false);
+    setEditCooldown(meta.stanceCooldown ?? 0);
   }
 
   async function saveChanges() {
@@ -92,6 +94,7 @@ export default function RoomPanel({
         isPrivate: editPrivate, aiPersona: editPersona.trim() || null,
         stances: editStances,
         isOpinionated: editOpinionated,
+        stanceCooldown: editCooldown,
       };
       if (editPrivate && editPassword) body.password = editPassword;
       const res = await fetch(`${SERVER}/api/rooms/${meta.name}`, {
@@ -273,6 +276,20 @@ export default function RoomPanel({
                   className={`relative h-5 w-9 rounded-full transition-colors ${editOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${editOpinionated ? "translate-x-4" : "translate-x-0.5"}`} />
                 </button>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg bg-gray-800/60 px-3 py-2">
+                <div>
+                  <p className="text-sm text-gray-200">Stance cooldown</p>
+                  <p className="text-[10px] text-gray-500">Seconds before a user can switch stances again (0 = off)</p>
+                </div>
+                <input
+                  type="number"
+                  value={editCooldown}
+                  onChange={e => setEditCooldown(Math.max(0, Math.round(parseFloat(e.target.value) || 0)))}
+                  min={0} max={3600}
+                  className="w-16 rounded-lg bg-gray-700 px-2 py-1 text-sm text-center text-gray-100 outline-none ring-1 ring-gray-600 focus:ring-indigo-500"
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-lg bg-gray-800/60 px-3 py-2">
