@@ -7,7 +7,10 @@ import { SenderType } from "@prisma/client";
 const client = new Anthropic();
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
-const SCAN_INTERVAL_MS = 5_000;
+const COOLDOWN_KEY = (roomId: string) => `chat:${roomId}:ai-cooldown`;
+const SCAN_INTERVAL_MS = 20_000;
+const SCAN_COOLDOWN_SEC = 30;
+const MIN_WINDOW_MESSAGES = 3;
 const STREAM_CHUNK_SIZE = 3;   // characters per emit
 const STREAM_DELAY_MS = 18;    // ms between chunks (~55 chars/sec — readable typing speed)
 
@@ -132,6 +135,9 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
   const wantAmbiguity = settings.ambiguityResolution;
   if (!wantFactual && !wantAmbiguity) return;
 
+  const messageCount = await (redis as any).lLen(WINDOW_KEY(roomId));
+  if (messageCount < MIN_WINDOW_MESSAGES) return;
+
   const context = await getChatContext(roomId, redis);
   if (!context.trim()) return;
 
@@ -169,10 +175,10 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
   try {
     const response = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system: systemPrompt,
+      max_tokens: 512,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `CONVERSATION:\n${context}` }],
-    });
+    } as any);
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
     console.log("[AI] Scan response:", raw);
@@ -185,8 +191,9 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
     return;
   }
 
-  // Clear the window so the next scan only sees new messages
+  // Clear the window and set per-room cooldown
   await (redis as any).del(WINDOW_KEY(roomId));
+  await (redis as any).set(COOLDOWN_KEY(roomId), "1", { EX: SCAN_COOLDOWN_SEC });
 
   console.log(`[AI] Found ${parsed.issues.length} issue(s) in room ${roomId}`);
 
@@ -276,8 +283,10 @@ async function persistGraph(
   }
 }
 
-export function scheduleAI(roomId: string, deps: Deps) {
+export async function scheduleAI(roomId: string, deps: Deps) {
   if (pendingTimers.has(roomId)) return;
+  const cooldown = await (deps.redis as any).get(COOLDOWN_KEY(roomId));
+  if (cooldown) return;
   const timer = setTimeout(() => runScan(roomId, deps), SCAN_INTERVAL_MS);
   pendingTimers.set(roomId, timer);
 }
