@@ -1,14 +1,23 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
 const APP_NAME = "Veritas";
-const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY);
+}
+
+function getFrom() {
+  return process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+}
+
+function getBaseUrl() {
+  return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+}
 
 export async function sendPasswordResetEmail(to: string, token: string) {
-  const url = `${BASE_URL}/reset-password?token=${token}`;
-  await resend.emails.send({
-    from: FROM,
+  const url = `${getBaseUrl()}/reset-password?token=${token}`;
+  await getResend().emails.send({
+    from: getFrom(),
     to,
     subject: `Reset your ${APP_NAME} password`,
     html: `
@@ -24,9 +33,9 @@ export async function sendPasswordResetEmail(to: string, token: string) {
 }
 
 export async function sendVerificationEmail(to: string, token: string) {
-  const url = `${BASE_URL}/api/auth/verify-email?token=${token}`;
-  await resend.emails.send({
-    from: FROM,
+  const url = `${getBaseUrl()}/api/auth/verify-email?token=${token}`;
+  await getResend().emails.send({
+    from: getFrom(),
     to,
     subject: `Verify your ${APP_NAME} email`,
     html: `
