@@ -103,7 +103,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
             type="text"
             placeholder="Side chat…"
             onKeyDown={handleKey}
-            className="flex-1 bg-transparent text-xs text-gray-100 placeholder-gray-600 outline-none"
+            className="flex-1 bg-transparent text-base md:text-xs text-gray-100 placeholder-gray-600 outline-none"
           />
           <button
             onClick={handleSendClick}

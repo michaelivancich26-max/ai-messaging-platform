@@ -178,7 +178,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
           onKeyDown={handleKeyDown}
           placeholder="Message… (Enter to send, @ to mention)"
           rows={1}
-          className="flex-1 resize-none rounded-xl bg-gray-800 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+          className="flex-1 resize-none rounded-xl bg-gray-800 px-4 py-2.5 text-base md:text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
           style={{ maxHeight: "8rem", overflowY: "auto" }}
         />
         <button

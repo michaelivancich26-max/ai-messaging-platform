@@ -138,7 +138,7 @@ export default function AuthPage() {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-8 shadow-xl">
-        <h1 className="mb-6 text-2xl font-bold tracking-tight">AI Messaging</h1>
+        <h1 className="mb-6 text-2xl font-bold tracking-tight">Veritas</h1>
 
         {/* Tabs */}
         <div className="mb-6 flex rounded-lg bg-gray-800 p-1">
