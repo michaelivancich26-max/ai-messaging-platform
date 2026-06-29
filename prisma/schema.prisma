@@ -26,17 +26,38 @@ enum DebatePosition {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  username     String    @unique
-  email        String    @unique
-  password     String
-  isAdmin      Boolean   @default(false)
-  bio          String?
-  avatarUrl    String?
-  createdAt    DateTime  @default(now())
-  messages     Message[]
-  roomsCreated Room[]
-  roomMembers  RoomMember[]
+  id                      String                   @id @default(cuid())
+  username                String                   @unique
+  email                   String                   @unique
+  password                String
+  isAdmin                 Boolean                  @default(false)
+  bio                     String?
+  avatarUrl               String?
+  emailVerified           DateTime?
+  createdAt               DateTime                 @default(now())
+  messages                Message[]
+  roomsCreated            Room[]
+  roomMembers             RoomMember[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RoomMember {
