@@ -32,3 +32,8 @@
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* iOS safe-area utility — use on any element that sits above the home indicator */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

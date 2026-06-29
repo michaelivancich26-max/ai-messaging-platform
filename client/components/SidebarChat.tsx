@@ -96,7 +96,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-gray-800 px-2 py-2">
+      <div className="pb-safe shrink-0 border-t border-gray-800 px-2 py-2">
         <div className="flex items-center gap-1.5 rounded-lg bg-gray-800 px-2.5 py-1.5 ring-1 ring-gray-700 focus-within:ring-indigo-500 transition-colors">
           <input
             ref={inputRef}

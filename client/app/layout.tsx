@@ -1,10 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "AI Messaging Platform",
-  description: "Real-time chat with AI-powered fact-checking",
+  title: "Veritas",
+  description: "AI fact-checked debate platform",
+};
+
+export const viewport: Viewport = {
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
