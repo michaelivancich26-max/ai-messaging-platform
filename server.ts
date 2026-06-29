@@ -29,7 +29,11 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
-app.use(rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
+// General limit — generous enough for rapid room navigation (each page load = ~6 GET requests)
+app.use(rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false }));
+// Tighter limit for write operations (POST/PATCH/DELETE)
+const writeLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+app.use((req, _res, next) => { if (req.method !== "GET") return writeLimiter(req, _res, next); next(); });
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {

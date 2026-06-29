@@ -63,13 +63,15 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
     fetch(`${SERVER}/api/lobby?userId=${userId}`)
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
       .then(data => {
         if (Array.isArray(data.rooms)) setRooms(data.rooms);
         if (Array.isArray(data.dms)) setDMs(data.dms);
         if (Array.isArray(data.users)) setUsers(data.users);
       })
-      .catch(() => {});
+      .catch(() => {
+        // On error (network, rate-limit, etc.) keep whatever data is already in state
+      });
     fetch(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json())
       .then(data => setMyAvatarUrl(data.avatarUrl ?? null))
