@@ -78,6 +78,15 @@ function mapMessages(messages: any[]) {
 // Presence: roomId → Map<socketId, { userId, username }>
 const presence = new Map<string, Map<string, { userId: string; username: string }>>();
 
+// Global socket index: userId → Set<socketId> for real-time notification delivery
+const userSockets = new Map<string, Set<string>>();
+
+function deliverNotification(userId: string, notif: object) {
+  const sids = userSockets.get(userId);
+  if (!sids) return;
+  for (const sid of sids) io.to(sid).emit("notification", notif);
+}
+
 // Debate positions: roomId → Map<userId, { userId, username, position }>
 const debatePositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
@@ -112,7 +121,18 @@ function leavePresence(socketId: string) {
 io.on("connection", (socket) => {
   const socketUser = (socket as any).user as { id: string; username: string };
 
-  socket.on("disconnect", () => leavePresence(socket.id));
+  // Register socket for notification delivery
+  if (!userSockets.has(socketUser.id)) userSockets.set(socketUser.id, new Set());
+  userSockets.get(socketUser.id)!.add(socket.id);
+
+  socket.on("disconnect", () => {
+    leavePresence(socket.id);
+    const sids = userSockets.get(socketUser.id);
+    if (sids) {
+      sids.delete(socket.id);
+      if (sids.size === 0) userSockets.delete(socketUser.id);
+    }
+  });
 
   socket.on("joinRoom", async (payload: { roomId: string; roomName: string; password?: string }) => {
     const { roomId, roomName, password } = payload;
@@ -377,6 +397,22 @@ io.on("connection", (socket) => {
           if (/@claude\b/i.test(content)) {
             respondToMention(content, channelId ?? roomId, aiDeps);
           }
+          // Notify @mentioned users (excluding @claude handled above)
+          const mentionMatches = content.match(/@(\w+)/gi);
+          if (mentionMatches) {
+            const names = [...new Set(mentionMatches.map((m: string) => m.slice(1).toLowerCase()))]
+              .filter((u: string) => u !== "claude" && u !== socketUser.username.toLowerCase());
+            for (const uname of names) {
+              try {
+                const target = await prisma.user.findFirst({ where: { username: { equals: uname, mode: "insensitive" } }, select: { id: true } });
+                if (!target) continue;
+                const notif = await (prisma as any).notification.create({
+                  data: { userId: target.id, type: "mention", roomId: room.id, roomName: room.name, channelId: channelId ?? null, fromUserId: socketUser.id, fromUsername: socketUser.username, content: content.slice(0, 120) },
+                });
+                deliverNotification(target.id, notif);
+              } catch { /* ignore per-user errors */ }
+            }
+          }
         }
       } catch (err) {
         console.error("sendMessage error:", err);
@@ -390,6 +426,49 @@ io.on("connection", (socket) => {
 
   socket.on("stopTyping", ({ roomId }: { roomId: string }) => {
     socket.to(roomId).emit("userStopTyping", { userId: socketUser.id });
+  });
+
+  // ── Invite another user to a room ──────────────────────────────────────────
+  socket.on("sendInvite", async ({ targetUsername, roomName }: { targetUsername: string; roomName: string }) => {
+    try {
+      const target = await prisma.user.findUnique({ where: { username: targetUsername }, select: { id: true } });
+      if (!target) { socket.emit("inviteError", { message: "User not found." }); return; }
+      if (target.id === socketUser.id) { socket.emit("inviteError", { message: "You can't invite yourself." }); return; }
+      const room = await prisma.room.findUnique({ where: { name: roomName } });
+      if (!room) return;
+      const alreadyMember = await prisma.roomMember.findUnique({ where: { userId_roomId: { userId: target.id, roomId: room.id } } });
+      if (alreadyMember) { socket.emit("inviteError", { message: "That user is already in this room." }); return; }
+      const pending = await (prisma as any).notification.findFirst({ where: { userId: target.id, type: "invite", roomId: room.id, resolved: false } });
+      if (pending) { socket.emit("inviteError", { message: "Invite already sent." }); return; }
+      const notif = await (prisma as any).notification.create({
+        data: { userId: target.id, type: "invite", roomId: room.id, roomName: room.name, fromUserId: socketUser.id, fromUsername: socketUser.username },
+      });
+      deliverNotification(target.id, notif);
+      socket.emit("inviteSent", { ok: true });
+    } catch (err) {
+      console.error("[sendInvite]", err);
+    }
+  });
+
+  // ── Accept or decline an invite ────────────────────────────────────────────
+  socket.on("respondInvite", async ({ notifId, accepted }: { notifId: string; accepted: boolean }) => {
+    try {
+      const notif = await (prisma as any).notification.findUnique({ where: { id: notifId } });
+      if (!notif || notif.userId !== socketUser.id) return;
+      await (prisma as any).notification.update({ where: { id: notifId }, data: { resolved: true, accepted, read: true } });
+      if (accepted && notif.roomId) {
+        const room = await prisma.room.findUnique({ where: { id: notif.roomId } });
+        if (room) {
+          await prisma.roomMember.upsert({
+            where: { userId_roomId: { userId: socketUser.id, roomId: room.id } },
+            update: {}, create: { userId: socketUser.id, roomId: room.id },
+          });
+          socket.emit("inviteAccepted", { roomName: room.name, isDM: room.isDM });
+        }
+      }
+    } catch (err) {
+      console.error("[respondInvite]", err);
+    }
   });
 
   socket.on("summarize", async ({ roomId, since, channelId }: { roomId: string; since: string | null; channelId: string | null }) => {
@@ -839,11 +918,17 @@ app.post("/api/dm", async (req, res) => {
   const [a, b] = [userId1, userId2].sort();
   const name = `dm-${a}-${b}`;
   try {
-    const room = await prisma.room.upsert({
-      where: { name },
-      create: { name, isDM: true, participant1Id: a, participant2Id: b },
-      update: {},
-    });
+    const existing = await prisma.room.findUnique({ where: { name } });
+    const room = existing ?? await prisma.room.create({ data: { name, isDM: true, participant1Id: a, participant2Id: b } });
+    // Notify the other participant only for brand-new DMs
+    if (!existing) {
+      const initiator = await prisma.user.findUnique({ where: { id: userId1 }, select: { username: true } });
+      const recipientId = userId1 === a ? b : a;
+      const notif = await (prisma as any).notification.create({
+        data: { userId: recipientId, type: "invite", roomId: room.id, roomName: `dm:${initiator?.username ?? userId1}`, fromUserId: userId1, fromUsername: initiator?.username ?? "Someone" },
+      });
+      deliverNotification(recipientId, notif);
+    }
     res.json(room);
   } catch {
     res.status(500).json({ error: "Failed to create DM" });
@@ -1266,6 +1351,51 @@ app.get("/api/channels/:id/claims", async (req, res) => {
   }
 });
 
+// GET /api/users/search?q=&excludeId=
+app.get("/api/users/search", async (req, res) => {
+  const q = ((req.query.q as string) ?? "").trim();
+  const excludeId = req.query.excludeId as string | undefined;
+  if (!q) return res.json([]);
+  try {
+    const users = await prisma.user.findMany({
+      where: { username: { contains: q, mode: "insensitive" }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true, username: true, avatarUrl: true },
+      take: 8,
+    });
+    res.json(users);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/notifications?userId=
+app.get("/api/notifications", async (req, res) => {
+  const userId = req.query.userId as string;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const notifs = await (prisma as any).notification.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    res.json(notifs);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// PATCH /api/notifications/read
+app.patch("/api/notifications/read", async (req, res) => {
+  const { userId } = req.body as { userId: string };
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    await (prisma as any).notification.updateMany({ where: { userId, read: false }, data: { read: true } });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/graph — knowledge graph (filtered to userId's joined rooms when provided; roomId scopes to one room)
 app.get("/api/graph", async (req, res) => {
   try {
@@ -1593,6 +1723,30 @@ async function start() {
     console.log("[DB] Room stanceCooldown column ready");
   } catch (e) {
     console.error("[DB] Room stanceCooldown column setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Notification" (
+        "id"           TEXT NOT NULL PRIMARY KEY,
+        "userId"       TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "type"         TEXT NOT NULL,
+        "roomId"       TEXT,
+        "roomName"     TEXT,
+        "channelId"    TEXT,
+        "fromUserId"   TEXT,
+        "fromUsername" TEXT,
+        "content"      TEXT,
+        "read"         BOOLEAN NOT NULL DEFAULT false,
+        "resolved"     BOOLEAN NOT NULL DEFAULT false,
+        "accepted"     BOOLEAN,
+        "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Notification_userId_idx" ON "Notification"("userId");`);
+    console.log("[DB] Notification table ready");
+  } catch (e) {
+    console.error("[DB] Notification table setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

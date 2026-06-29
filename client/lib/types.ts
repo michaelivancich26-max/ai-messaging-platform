@@ -54,6 +54,21 @@ export interface DebateTurnState {
   turnNumber: number;
 }
 
+export interface AppNotification {
+  id: string;
+  type: "invite" | "mention";
+  roomId?: string | null;
+  roomName?: string | null;
+  channelId?: string | null;
+  fromUserId?: string | null;
+  fromUsername?: string | null;
+  content?: string | null;
+  read: boolean;
+  resolved: boolean;
+  accepted?: boolean | null;
+  createdAt: string;
+}
+
 export function parseAIContent(content: string): AIPayload {
   try {
     return JSON.parse(content) as AIPayload;

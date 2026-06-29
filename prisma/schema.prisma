@@ -40,6 +40,7 @@ model User {
   roomMembers             RoomMember[]
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  notifications           Notification[]           @relation("UserNotifications")
 }
 
 model PasswordResetToken {
@@ -236,3 +237,23 @@ model UserPosition {
 
   @@unique([userId, roomId])
 }
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  type         String   // "invite" | "mention"
+  roomId       String?
+  roomName     String?
+  channelId    String?
+  fromUserId   String?
+  fromUsername String?
+  content      String?
+  read         Boolean  @default(false)
+  resolved     Boolean  @default(false)
+  accepted     Boolean?
+  createdAt    DateTime @default(now())
+  user         User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Keep User model relations in sync
+// (Add notifications relation to User below)

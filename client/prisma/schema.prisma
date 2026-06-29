@@ -24,6 +24,7 @@ model User {
   roomsCreated            Room[]
   passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  notifications           Notification[]           @relation("UserNotifications")
 }
 
 model PasswordResetToken {
@@ -42,6 +43,23 @@ model EmailVerificationToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  type         String
+  roomId       String?
+  roomName     String?
+  channelId    String?
+  fromUserId   String?
+  fromUsername String?
+  content      String?
+  read         Boolean  @default(false)
+  resolved     Boolean  @default(false)
+  accepted     Boolean?
+  createdAt    DateTime @default(now())
+  user         User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Room {

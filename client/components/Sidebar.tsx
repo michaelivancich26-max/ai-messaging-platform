@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import NotificationBell from "./NotificationBell";
 
 interface Room {
   id: string;
@@ -117,7 +118,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
     `}>
 
       {/* Header */}
-      <div className="flex h-14 items-center gap-3 border-b border-gray-800 px-3">
+      <div className="flex h-14 items-center gap-2 border-b border-gray-800 px-3">
         <button onClick={() => setCollapsed(v => !v)}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -126,9 +127,12 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
         </button>
         {!collapsed && (
           <button onClick={() => router.push("/lobby")}
-            className="truncate text-sm font-semibold text-gray-100 hover:text-indigo-400 transition-colors text-left">
+            className="flex-1 truncate text-sm font-semibold text-gray-100 hover:text-indigo-400 transition-colors text-left">
             Veritas
           </button>
+        )}
+        {userId && (
+          <NotificationBell userId={userId} username={username} collapsed={collapsed} />
         )}
       </div>
 

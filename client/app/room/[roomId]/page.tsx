@@ -69,6 +69,10 @@ export default function RoomPage() {
   const [sidebarChannel, setSidebarChannel] = useState<{ id: string; name: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarMessages, setSidebarMessages] = useState<ChatMessage[]>([]);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [inviteResults, setInviteResults] = useState<{ id: string; username: string }[]>([]);
+  const [inviteStatus, setInviteStatus] = useState<Record<string, "sending" | "sent" | "error">>({});
   const sidebarChannelRef = useRef<{ id: string; name: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
@@ -570,6 +574,28 @@ export default function RoomPage() {
     }
   }
 
+  useEffect(() => {
+    if (!inviteQuery.trim()) { setInviteResults([]); return; }
+    const t = setTimeout(() => {
+      fetch(`${SERVER}/api/users/search?q=${encodeURIComponent(inviteQuery)}&excludeId=${userId}`)
+        .then(r => r.json()).then(setInviteResults).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [inviteQuery, userId]);
+
+  function sendInvite(targetUsername: string) {
+    if (!roomId.startsWith("dm-")) {
+      setInviteStatus(p => ({ ...p, [targetUsername]: "sending" }));
+      const s = getSocket({ id: userId, username });
+      s.emit("sendInvite", { targetUsername, roomName: roomId });
+      s.once("inviteSent", () => setInviteStatus(p => ({ ...p, [targetUsername]: "sent" })));
+      s.once("inviteError", ({ message }: { message: string }) => {
+        setInviteStatus(p => ({ ...p, [targetUsername]: "error" }));
+        alert(message);
+      });
+    }
+  }
+
   function sendMessage(content: string) {
     // Optimistic: show message immediately with a temp id
     const tempId = `temp-${Date.now()}`;
@@ -748,10 +774,23 @@ export default function RoomPage() {
             {debateTurn?.mode === "structured" ? "Structured on" : "Structure"}
           </button>
         )}
+        {/* Invite button — only for non-DM rooms */}
+        {!roomId.startsWith("dm-") && (
+          <button
+            onClick={() => { setInviteOpen(v => !v); setInviteQuery(""); setInviteResults([]); setInviteStatus({}); }}
+            className={`${(isOwner || isAdmin) ? "" : "ml-auto"} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors`}
+            title="Invite user"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path d="M11 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM2.046 15.253c-.18.736.411 1.497 1.163 1.497H12.79c.752 0 1.343-.761 1.163-1.497C13.357 12.585 11.205 11 8 11s-5.357 1.585-5.954 3.253ZM15.5 7a.75.75 0 0 1 .75.75v1.5h1.5a.75.75 0 0 1 0 1.5h-1.5v1.5a.75.75 0 0 1-1.5 0v-1.5h-1.5a.75.75 0 0 1 0-1.5h1.5v-1.5A.75.75 0 0 1 15.5 7Z" />
+            </svg>
+          </button>
+        )}
+
         {/* Single panel button — opens unified Room/Settings/AI panel */}
         <button
           onClick={() => { setPanelTab("room"); setPanelOpen(v => !v); }}
-          className={`${(isOwner || isAdmin) && !roomId.startsWith("dm-") ? "ml-2" : "ml-auto"} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors`}
+          className={`${(isOwner || isAdmin) && !roomId.startsWith("dm-") ? "ml-2" : (roomId.startsWith("dm-") ? "ml-auto" : "")} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors`}
           title="Room panel">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
             <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
@@ -763,6 +802,58 @@ export default function RoomPage() {
           )}
         </button>
       </header>
+
+      {/* Invite modal */}
+      {inviteOpen && !roomId.startsWith("dm-") && (
+        <div className="border-b border-gray-800 bg-gray-900/80 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={inviteQuery}
+                onChange={e => setInviteQuery(e.target.value)}
+                placeholder="Search by username…"
+                autoFocus
+                className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+              />
+              {inviteResults.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-xl">
+                  {inviteResults.map(u => {
+                    const st = inviteStatus[u.username];
+                    return (
+                      <div key={u.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-800 transition-colors">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300">
+                          {u.username[0].toUpperCase()}
+                        </span>
+                        <span className="flex-1 text-sm text-gray-200">{u.username}</span>
+                        <button
+                          onClick={() => sendInvite(u.username)}
+                          disabled={!!st}
+                          className={`rounded-full px-3 py-0.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+                            st === "sent" ? "bg-emerald-600/20 text-emerald-400" :
+                            st === "error" ? "bg-red-600/20 text-red-400" :
+                            "bg-indigo-600 text-white hover:bg-indigo-500"
+                          }`}
+                        >
+                          {st === "sent" ? "Sent!" : st === "error" ? "Error" : st === "sending" ? "…" : "Invite"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setInviteOpen(false)}
+              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-gray-400 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
+                <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {vibeSearchOpen && (
         <VibeSearch
