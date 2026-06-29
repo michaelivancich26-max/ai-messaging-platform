@@ -243,6 +243,28 @@ export default function RoomPage() {
       setAnnotations(restoredAnnotations);
     });
 
+    // Channel-specific history: only apply if still viewing that channel (prevents stale overwrites on fast navigation)
+    socket.on("channelHistory", ({ channelId, messages: history }: { channelId: string; messages: ChatMessage[] }) => {
+      if (activeChannelRef.current?.id !== channelId) return;
+      const restoredAnnotations: Record<string, { pronoun: string; referent: string }> = {};
+      const visibleMessages: ChatMessage[] = [];
+      for (const msg of history) {
+        if (msg.type === "ai_interjection") {
+          const payload = parseAIContent(msg.content);
+          if (payload.type === "ambiguity") {
+            const target = [...visibleMessages].reverse().find(
+              (m) => m.type === "human" && m.content.toLowerCase().includes(payload.pronoun.toLowerCase())
+            );
+            if (target) restoredAnnotations[target.id] = { pronoun: payload.pronoun, referent: payload.referent };
+            continue;
+          }
+        }
+        visibleMessages.push(msg);
+      }
+      setMessages(visibleMessages);
+      setAnnotations(restoredAnnotations);
+    });
+
     socket.on("message", (msg: ChatMessage) => {
       // Route sidebar messages to split-pane state only when sidebar isn't the active main channel
       const isSidebarMsg = msg.channelId && msg.channelId === sidebarChannelRef.current?.id;
@@ -287,6 +309,7 @@ export default function RoomPage() {
     return () => {
       socket.off("connect", rejoin);
       socket.off("history");
+      socket.off("channelHistory");
       socket.off("message");
       socket.off("connect_error");
       socket.off("error");

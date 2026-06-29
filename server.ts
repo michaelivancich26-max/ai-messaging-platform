@@ -142,13 +142,15 @@ io.on("connection", (socket) => {
       // Send room meta (without password hash)
       const { password: _pw, ...roomMeta } = room as any;
       let stances: string[] = [];
+      let stanceCooldown = 0;
       try {
-        const stRow = await prisma.$queryRawUnsafe<{ stances: string | null }[]>(
-          `SELECT "stances" FROM "Room" WHERE "id" = $1`, room.id
+        const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null }[]>(
+          `SELECT "stances", "stanceCooldown" FROM "Room" WHERE "id" = $1`, room.id
         );
         if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
-      } catch { /* stances column not yet added */ }
-      socket.emit("roomMeta", { ...roomMeta, stances });
+        if (stRow[0]?.stanceCooldown) stanceCooldown = stRow[0].stanceCooldown;
+      } catch { /* stances/stanceCooldown columns not yet added */ }
+      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown });
 
       // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
       if (!debateTurns.has(roomId)) {
@@ -217,7 +219,7 @@ io.on("connection", (socket) => {
         take: 20,
         include: { user: true },
       });
-      socket.emit("history", mapMessages(history));
+      socket.emit("channelHistory", { channelId, messages: mapMessages(history) });
 
       // Emit channel-level positions for sub-debate channels
       try {
@@ -542,7 +544,15 @@ io.on("connection", (socket) => {
         // Look up room for cooldown check and DB upsert
         let room: any = null;
         try { room = await prisma.room.findUnique({ where: { name: roomId } }); } catch { /* ignore */ }
-        const cooldownSecs: number = room?.stanceCooldown ?? 0;
+        let cooldownSecs = 0;
+        if (room) {
+          try {
+            const coolRow = await prisma.$queryRawUnsafe<{ stanceCooldown: number | null }[]>(
+              `SELECT "stanceCooldown" FROM "Room" WHERE "id" = $1`, room.id
+            );
+            cooldownSecs = coolRow[0]?.stanceCooldown ?? 0;
+          } catch { /* stanceCooldown column may not exist yet */ }
+        }
         if (cooldownSecs > 0) {
           try {
             const lastSwitchRaw = await redis.get(`stance:cooldown:${roomId}:${socketUser.id}`);
@@ -857,8 +867,11 @@ app.post("/api/rooms", async (req, res) => {
     if (existing) return res.status(409).json({ error: "Room already exists" });
     const password = isPrivate && rawPassword ? await bcrypt.hash(rawPassword, 10) : null;
     const room = await prisma.room.create({
-      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona, isOpinionated, stanceCooldown },
+      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona, isOpinionated },
     } as any);
+    if (stanceCooldown > 0) {
+      try { await prisma.$executeRawUnsafe(`UPDATE "Room" SET "stanceCooldown" = $1 WHERE "id" = $2`, stanceCooldown, room.id); } catch { /* ignore */ }
+    }
     if (rawStances && rawStances.length > 0) {
       const cleanStances = rawStances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6);
       if (cleanStances.length > 0) {
@@ -903,14 +916,16 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
       (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: true } }),
     ]);
     let stances: string[] = [];
+    let stanceCooldown = 0;
     try {
-      const stRow = await prisma.$queryRawUnsafe<{ stances: string | null }[]>(
-        `SELECT "stances" FROM "Room" WHERE "id" = $1`, room.id
+      const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null }[]>(
+        `SELECT "stances", "stanceCooldown" FROM "Room" WHERE "id" = $1`, room.id
       );
       if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
-    } catch { /* stances column may not exist yet */ }
+      if (stRow[0]?.stanceCooldown) stanceCooldown = stRow[0].stanceCooldown;
+    } catch { /* stances/stanceCooldown columns may not exist yet */ }
     const { password: _pw, ...roomMeta } = room as any;
-    res.json({ sections, channels, sidebarChannels: sidebarChannelList, roomMeta: { ...roomMeta, stances } });
+    res.json({ sections, channels, sidebarChannels: sidebarChannelList, roomMeta: { ...roomMeta, stances, stanceCooldown } });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
@@ -1159,10 +1174,23 @@ app.patch("/api/rooms/:name", async (req, res) => {
     if (newPassword) data.password = await bcrypt.hash(newPassword, 10);
     if (aiPersona !== undefined) data.aiPersona = aiPersona?.trim().slice(0, 500) || null;
     if (isOpinionated !== undefined) data.isOpinionated = isOpinionated;
-    if (stanceCooldown !== undefined) data.stanceCooldown = Math.max(0, Math.round(stanceCooldown));
 
     const updated = await prisma.room.update({ where: { name }, data });
     const { password: _pw, ...rest } = updated as any;
+    // Handle stanceCooldown via raw SQL (not in Prisma schema)
+    let stanceCooldownVal = 0;
+    try {
+      if (stanceCooldown !== undefined) {
+        const cooldownNum = Math.max(0, Math.round(stanceCooldown));
+        await prisma.$executeRawUnsafe(`UPDATE "Room" SET "stanceCooldown" = $1 WHERE "id" = $2`, cooldownNum, updated.id);
+        stanceCooldownVal = cooldownNum;
+      } else {
+        const coolRow = await prisma.$queryRawUnsafe<{ stanceCooldown: number | null }[]>(
+          `SELECT "stanceCooldown" FROM "Room" WHERE "id" = $1`, updated.id
+        );
+        stanceCooldownVal = coolRow[0]?.stanceCooldown ?? 0;
+      }
+    } catch { /* stanceCooldown column may not exist yet */ }
     if (Array.isArray(stances)) {
       await prisma.$executeRawUnsafe(
         `UPDATE "Room" SET "stances" = $1 WHERE "id" = $2`,
@@ -1172,8 +1200,8 @@ app.patch("/api/rooms/:name", async (req, res) => {
       io.to(name).emit("stancesUpdated", stances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6));
     }
     // Notify everyone in the room of updated meta
-    io.to(name).emit("roomMeta", rest);
-    res.json(rest);
+    io.to(name).emit("roomMeta", { ...rest, stanceCooldown: stanceCooldownVal });
+    res.json({ ...rest, stanceCooldown: stanceCooldownVal });
   } catch {
     res.status(500).json({ error: "Failed to update room" });
   }
