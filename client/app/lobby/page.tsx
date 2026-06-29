@@ -371,11 +371,11 @@ export default function LobbyPage() {
   const userId: string = (session?.user as any)?.id ?? "";
 
   if (status === "loading") return (
-    <main className="flex h-screen items-center justify-center bg-gray-950"><span className="text-gray-500">Loading…</span></main>
+    <main className="flex h-full items-center justify-center bg-gray-950"><span className="text-gray-500">Loading…</span></main>
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-950 text-gray-100">
+    <div className="flex h-full overflow-hidden bg-gray-950 text-gray-100">
       <Sidebar key={sidebarKey} onBrowseClick={() => setView("browse")} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
       {view === "browse" ? (

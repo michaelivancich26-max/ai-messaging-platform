@@ -224,11 +224,11 @@ export default function GraphPage() {
   function onMouseUp() { dragRef.current = null; }
 
   if (status === "loading") return (
-    <div className="flex h-screen items-center justify-center bg-gray-950 text-gray-500">Loading…</div>
+    <div className="flex h-full items-center justify-center bg-gray-950 text-gray-500">Loading…</div>
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-950 text-gray-100">
+    <div className="flex h-full overflow-hidden bg-gray-950 text-gray-100">
       <Sidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
       <div className="flex flex-1 flex-col min-w-0">

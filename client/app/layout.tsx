@@ -14,7 +14,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="fixed inset-0 overflow-hidden bg-gray-950 text-gray-100 antialiased">
+      <body className="fixed inset-x-0 top-0 h-dvh overflow-hidden bg-gray-950 text-gray-100 antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

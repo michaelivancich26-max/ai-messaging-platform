@@ -634,11 +634,11 @@ export default function RoomPage() {
   const isOpinionated = !!(activeChannel?.isOpinionated || (roomMeta as any)?.isOpinionated);
 
   if (status === "loading") {
-    return <div className="flex h-screen items-center justify-center text-gray-500">Loading…</div>;
+    return <div className="flex h-full items-center justify-center text-gray-500">Loading…</div>;
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       <Sidebar activeRoomName={roomId} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
       {/* Channel list — only for non-DM rooms */}

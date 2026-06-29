@@ -23,7 +23,6 @@ interface Props {
 export default function DebateHeader({ proposition, stances, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, isOpinionated, stanceCooldown, myLastSwitchedAt, onSetPosition, onSetDebateMode }: Props) {
   const [collapsed, setCollapsed] = useState(true);
 
-  // Credibility-weighted scores
   const stanceScores: Record<string, number> = {};
   const stanceCounts: Record<string, number> = {};
   let total = 0;
@@ -47,23 +46,29 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
     return () => clearInterval(id);
   }, [stanceCooldown, myLastSwitchedAt]);
 
-  // Score bar — shared between collapsed and expanded views
-  const ScoreBar = () => total > 0 ? (
+  // Always render the bar — gray track when no positions yet, colored when there are
+  const scoreBar = (
     <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-800">
-      {stances.map((stance, i) => {
+      {total > 0 && stances.map((stance, i) => {
         const pct = ((stanceScores[stance] ?? 0) / total) * 100;
         if (pct === 0) return null;
-        return <div key={stance} className={`${STANCE_PALETTE[i % STANCE_PALETTE.length].bar} transition-all duration-500`} style={{ width: `${pct}%` }} />;
+        return (
+          <div
+            key={stance}
+            className={`${STANCE_PALETTE[i % STANCE_PALETTE.length].bar} transition-all duration-500`}
+            style={{ width: `${pct}%` }}
+          />
+        );
       })}
     </div>
-  ) : null;
+  );
 
   return (
     <div className="border-b border-gray-800 bg-gray-900/60 shrink-0">
 
       {/* ── Collapsed strip (mobile only) ── */}
-      <div className={`md:hidden ${collapsed ? "block" : "hidden"} px-4 py-2`}>
-        <div className="flex items-center gap-2 mb-1.5">
+      <div className={`md:hidden ${collapsed ? "block" : "hidden"} px-4 py-2 space-y-1.5`}>
+        <div className="flex items-center gap-2">
           <p className="flex-1 truncate text-xs text-gray-300">{proposition}</p>
           <button
             onClick={() => setCollapsed(false)}
@@ -75,12 +80,11 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
             </svg>
           </button>
         </div>
-        <ScoreBar />
+        {scoreBar}
       </div>
 
-      {/* ── Expanded view (always visible on desktop, toggleable on mobile) ── */}
+      {/* ── Expanded view (always on desktop, toggled on mobile) ── */}
       <div className={`${collapsed ? "hidden md:block" : "block"} px-4 py-3`}>
-        {/* Header row */}
         <div className="flex items-center gap-2 mb-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Proposition</p>
           {isOpinionated && (
@@ -91,7 +95,6 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
               Opinions · No Veritas Impact
             </span>
           )}
-          {/* Collapse button — mobile only */}
           <button
             onClick={() => setCollapsed(true)}
             className="md:hidden ml-auto shrink-0 rounded-full p-1 text-gray-500 hover:text-gray-300 transition-colors"
@@ -105,10 +108,10 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
 
         <p className="text-sm font-medium text-gray-100 leading-snug mb-3 line-clamp-2">{proposition}</p>
 
-        {/* Score bar + legend */}
-        {total > 0 && (
-          <div className="mb-3">
-            <ScoreBar />
+        {/* Score bar — always visible, gray when no data */}
+        <div className="mb-3">
+          {scoreBar}
+          {total > 0 && (
             <div className="flex gap-3 mt-1 flex-wrap">
               {stances.map((stance, i) => {
                 const pct = total > 0 ? Math.round(((stanceScores[stance] ?? 0) / total) * 100) : 0;
@@ -122,8 +125,8 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Position picker */}
         <div className="flex items-center gap-2 flex-wrap">

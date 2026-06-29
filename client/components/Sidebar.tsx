@@ -109,7 +109,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
         <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onMobileClose} />
       )}
     <aside className={`
-      flex flex-col border-r border-gray-800 bg-gray-900 shrink-0 h-screen
+      flex flex-col border-r border-gray-800 bg-gray-900 shrink-0 h-full
       fixed inset-y-0 left-0 z-40 transition-transform duration-300
       ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
       md:relative md:translate-x-0 md:z-auto
@@ -280,7 +280,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       </nav>
 
       {/* Profile + Sign out */}
-      <div className="border-t border-gray-800 p-2 space-y-0.5">
+      <div className="border-t border-gray-800 px-2 pt-2 pb-safe space-y-0.5">
         <button onClick={() => router.push("/profile")}
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors ${collapsed ? "justify-center" : ""}`}>
           {myAvatarUrl
