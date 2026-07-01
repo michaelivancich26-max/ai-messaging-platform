@@ -233,7 +233,7 @@ export default function GraphPage() {
 
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-800 px-3 md:px-5">
+        <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-gray-800 px-3 md:px-5 pt-safe">
           <button className="md:hidden rounded p-1.5 text-gray-400 hover:bg-gray-800"
             onClick={() => setMobileSidebarOpen(true)}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">

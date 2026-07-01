@@ -118,7 +118,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
     `}>
 
       {/* Header */}
-      <div className="flex h-14 items-center gap-2 border-b border-gray-800 px-3">
+      <div className="flex min-h-14 items-center gap-2 border-b border-gray-800 px-3 pt-safe">
         <button onClick={() => setCollapsed(v => !v)}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">

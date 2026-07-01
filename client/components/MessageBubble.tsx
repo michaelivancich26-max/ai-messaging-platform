@@ -221,7 +221,9 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
   const [editMode, setEditMode] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   const stanceList = stances ?? ["FOR", "AGAINST"];
   const posConfig = senderPosition ? getStancePalette(senderPosition, stanceList) : null;
@@ -245,89 +247,175 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
   const hasActions    = canStakeThis || canChallenge || canBranch || canEdit || canDelete || (!!onReact && !isDeleted);
 
   const actionBar = hasActions && (
-    <div className="relative flex shrink-0 items-center gap-0.5 self-center opacity-0 group-hover:opacity-100 transition-opacity">
-      {onReact && !isDeleted && (
-        <div className="relative" ref={pickerRef}>
+    <>
+      {/* ─ Desktop: all buttons inline, appear on hover ─ */}
+      <div className="relative hidden md:flex shrink-0 items-center gap-0.5 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+        {onReact && !isDeleted && (
+          <div className="relative" ref={pickerRef}>
+            <button
+              onClick={() => setShowReactPicker(v => !v)}
+              title="React"
+              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-yellow-400 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7-1a1 1 0 1 0-2 0 1 1 0 0 0 2 0ZM5.5 10a.5.5 0 0 0-.5.5C5 11.4 6.343 12.5 8 12.5s3-1.1 3-2a.5.5 0 0 0-.5-.5h-5Z" />
+              </svg>
+            </button>
+            {showReactPicker && (
+              <div className={`absolute z-20 flex gap-0.5 rounded-xl border border-gray-700 bg-gray-900 p-1.5 shadow-xl ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
+                {REACTION_EMOJIS.map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => { onReact(message.id, emoji); setShowReactPicker(false); }}
+                    className="rounded-lg p-1.5 text-base leading-none hover:bg-gray-800 transition-colors"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {canStakeThis && (
           <button
-            onClick={() => setShowReactPicker(v => !v)}
-            title="React"
-            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-yellow-400 transition-colors"
+            onClick={() => onStakeClaim!(message.id)}
+            title="Stake claim"
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-indigo-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-              <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7-1a1 1 0 1 0-2 0 1 1 0 0 0 2 0ZM5.5 10a.5.5 0 0 0-.5.5C5 11.4 6.343 12.5 8 12.5s3-1.1 3-2a.5.5 0 0 0-.5-.5h-5Z" />
+              <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
             </svg>
           </button>
-          {showReactPicker && (
-            <div className={`absolute z-20 flex gap-0.5 rounded-xl border border-gray-700 bg-gray-900 p-1.5 shadow-xl ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
-              {REACTION_EMOJIS.map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => { onReact(message.id, emoji); setShowReactPicker(false); }}
-                  className="rounded-lg p-1.5 text-base leading-none hover:bg-gray-800 transition-colors"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {canStakeThis && (
+        )}
+        {canChallenge && (
+          <button
+            onClick={() => onChallengeClaim!(claim!.id)}
+            title={`Challenge${claim!.challengeCount > 0 ? ` · ${claim!.challengeCount}` : ""}`}
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-amber-400 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
+            </svg>
+          </button>
+        )}
+        {canBranch && (
+          <button
+            onClick={() => onSubDebate!(message.id, message.content)}
+            title="Branch into sub-debate"
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-amber-400 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
+        {canEdit && (
+          <button
+            onClick={() => { setEditValue(message.content); setEditMode(true); }}
+            title="Edit"
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474ZM4.75 14a.75.75 0 0 0 0-1.5h-1a.75.75 0 0 0-.75.75v.75h-.75A.75.75 0 0 0 2 14.75V15h-.75A.75.75 0 0 0 .5 15.75v1c0 .414.336.75.75.75H4.5a.25.25 0 0 0 .25-.25V14Z" />
+            </svg>
+          </button>
+        )}
+        {canDelete && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            title="Delete"
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-red-400 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.712Z" clipRule="evenodd" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* ─ Mobile: single ⋯ button → compact popup ─ */}
+      <div className="relative md:hidden shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity" ref={moreMenuRef}>
         <button
-          onClick={() => onStakeClaim!(message.id)}
-          title="Stake claim"
-          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-indigo-400 transition-colors"
+          onClick={() => setShowMoreMenu(v => !v)}
+          className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+          title="More options"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-            <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
+            <path d="M8 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM8 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM9.5 12.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
           </svg>
         </button>
-      )}
-      {canChallenge && (
-        <button
-          onClick={() => onChallengeClaim!(claim!.id)}
-          title={`Challenge${claim!.challengeCount > 0 ? ` · ${claim!.challengeCount}` : ""}`}
-          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-amber-400 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-            <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
-          </svg>
-        </button>
-      )}
-      {canBranch && (
-        <button
-          onClick={() => onSubDebate!(message.id, message.content)}
-          title="Branch into sub-debate"
-          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-amber-400 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-            <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-          </svg>
-        </button>
-      )}
-      {canEdit && (
-        <button
-          onClick={() => { setEditValue(message.content); setEditMode(true); }}
-          title="Edit"
-          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-gray-300 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-            <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474ZM4.75 14a.75.75 0 0 0 0-1.5h-1a.75.75 0 0 0-.75.75v.75h-.75A.75.75 0 0 0 2 14.75V15h-.75A.75.75 0 0 0 .5 15.75v1c0 .414.336.75.75.75H4.5a.25.25 0 0 0 .25-.25V14Z" />
-          </svg>
-        </button>
-      )}
-      {canDelete && (
-        <button
-          onClick={() => setShowDeleteConfirm(true)}
-          title="Delete"
-          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-red-400 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-            <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.712Z" clipRule="evenodd" />
-          </svg>
-        </button>
-      )}
-    </div>
+        {showMoreMenu && (
+          <div className={`absolute z-30 w-44 rounded-xl border border-gray-700 bg-gray-900 py-1 shadow-xl ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
+            {onReact && !isDeleted && (
+              <div className="flex items-center justify-around border-b border-gray-800 px-2 py-1.5">
+                {REACTION_EMOJIS.map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => { onReact(message.id, emoji); setShowMoreMenu(false); }}
+                    className="rounded-lg p-1 text-base hover:bg-gray-800 transition-colors"
+                  >{emoji}</button>
+                ))}
+              </div>
+            )}
+            {canStakeThis && (
+              <button
+                onClick={() => { onStakeClaim!(message.id); setShowMoreMenu(false); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-indigo-400">
+                  <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
+                </svg>
+                Stake claim
+              </button>
+            )}
+            {canChallenge && (
+              <button
+                onClick={() => { onChallengeClaim!(claim!.id); setShowMoreMenu(false); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-400">
+                  <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
+                </svg>
+                Challenge
+              </button>
+            )}
+            {canBranch && (
+              <button
+                onClick={() => { onSubDebate!(message.id, message.content); setShowMoreMenu(false); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-400">
+                  <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                </svg>
+                Branch
+              </button>
+            )}
+            {canEdit && (
+              <button
+                onClick={() => { setEditValue(message.content); setEditMode(true); setShowMoreMenu(false); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
+                  <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474ZM4.75 14a.75.75 0 0 0 0-1.5h-1a.75.75 0 0 0-.75.75v.75h-.75A.75.75 0 0 0 2 14.75V15h-.75A.75.75 0 0 0 .5 15.75v1c0 .414.336.75.75.75H4.5a.25.25 0 0 0 .25-.25V14Z" />
+                </svg>
+                Edit
+              </button>
+            )}
+            {canDelete && (
+              <button
+                onClick={() => { setShowDeleteConfirm(true); setShowMoreMenu(false); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-400 hover:bg-gray-800 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
+                  <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.712Z" clipRule="evenodd" />
+                </svg>
+                Delete
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 
   if (isDeleted) {

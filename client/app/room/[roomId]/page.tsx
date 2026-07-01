@@ -707,7 +707,7 @@ export default function RoomPage() {
           ${mobileView === "channels" ? "flex" : "hidden"}
           w-full md:w-44 md:flex md:shrink-0
         `}>
-          <div className="flex h-14 items-center border-b border-gray-800 px-3 gap-2">
+          <div className="flex min-h-14 items-center border-b border-gray-800 px-3 gap-2 pt-safe">
             {/* Mobile: hamburger to open sidebar */}
             <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
               onClick={() => setMobileSidebarOpen(true)}>
@@ -746,7 +746,7 @@ export default function RoomPage() {
         ${mobileView === "chat" || roomId.startsWith("dm-") ? "flex" : "hidden"}
         flex-1 md:flex
       `}>
-      <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 py-2.5">
+      <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 pb-2.5 pt-safe">
         {/* Mobile: back to channels (non-DM) or hamburger (DM) */}
         {!roomId.startsWith("dm-") ? (
           <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"

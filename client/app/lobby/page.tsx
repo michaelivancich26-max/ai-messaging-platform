@@ -281,7 +281,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
   return (
     <div className="flex flex-1 flex-col min-w-0">
       {/* Header */}
-      <div className="flex h-14 items-center gap-2 border-b border-gray-800 px-3 md:px-6">
+      <div className="flex min-h-14 items-center gap-2 border-b border-gray-800 px-3 md:px-6 pt-safe">
         <button className="md:hidden rounded p-1.5 text-gray-400 hover:bg-gray-800" onClick={onMenuClick}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
             <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
