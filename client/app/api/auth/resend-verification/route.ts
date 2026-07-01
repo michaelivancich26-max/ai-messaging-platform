@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 import { generateToken, expiresAt } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
 
 const prisma = new PrismaClient();
 
 export async function POST() {
-  const session = await getServerSession();
+  const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
@@ -21,7 +22,16 @@ export async function POST() {
   await prisma.emailVerificationToken.create({
     data: { userId: user.id, token, expiresAt: expiresAt(24 * 60) },
   });
-  await sendVerificationEmail(user.email, token);
+
+  try {
+    await sendVerificationEmail(user.email, token);
+  } catch (err: any) {
+    console.error("[resend-verification] Resend error:", err);
+    return NextResponse.json(
+      { error: "Failed to send email. Check that RESEND_API_KEY and RESEND_FROM_EMAIL are set correctly." },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
