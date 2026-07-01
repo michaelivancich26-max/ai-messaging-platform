@@ -79,14 +79,24 @@ export default function GraphPage() {
   const forcesRef = useRef(forces);
   useEffect(() => { forcesRef.current = forces; }, [forces]);
 
+  // Re-render (and thus recompute W/H) when the window is resized
+  useEffect(() => {
+    function onResize() { forceRender(v => v + 1); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const svgRef = useRef<SVGSVGElement>(null);
   const nodesRef = useRef<GNode[]>([]);
   const animRef = useRef<number>(0);
   const dragRef = useRef<{ id: string; ox: number; oy: number } | null>(null);
   const [, forceRender] = useState(0);
 
-  const W = typeof window !== "undefined" ? window.innerWidth - 256 - 2 : 1000;
-  const H = typeof window !== "undefined" ? window.innerHeight : 700;
+  // On mobile the sidebar is an overlay (no layout space); on desktop subtract sidebar + border
+  const W = typeof window !== "undefined"
+    ? (window.innerWidth < 768 ? window.innerWidth : window.innerWidth - 258)
+    : 1000;
+  const H = typeof window !== "undefined" ? Math.max(window.innerHeight - 60, 400) : 700;
 
   const fetchGraph = useCallback(() => {
     if (!userId) return;
@@ -243,7 +253,7 @@ export default function GraphPage() {
           <span className="text-sm font-semibold text-gray-100">Knowledge Graph</span>
           <span className="text-xs text-gray-600 hidden sm:block">{visibleNodes.length} nodes · {visibleEdges.length} edges</span>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto hidden md:flex items-center gap-2">
             {/* Room multi-select */}
             <div className="relative">
               <button
@@ -317,15 +327,25 @@ export default function GraphPage() {
               )}
             </div>
 
-            {/* Type filter */}
-            <select value={filterType ?? ""} onChange={e => setFilterType(e.target.value || null)}
-              className="rounded-lg bg-gray-800 px-2 py-1 text-xs text-gray-300 outline-none ring-1 ring-gray-700">
-              <option value="">All types</option>
-              <option value="person">People</option>
-              <option value="place">Places</option>
-              <option value="topic">Topics</option>
-              <option value="concept">Concepts</option>
-            </select>
+            {/* Type filter pills */}
+            <div className="flex items-center gap-1">
+              {([
+                { v: null, label: "All" },
+                { v: "person", label: "People" },
+                { v: "place", label: "Places" },
+                { v: "topic", label: "Topics" },
+                { v: "concept", label: "Concepts" },
+              ] as const).map(({ v, label }) => (
+                <button key={label} onClick={() => setFilterType(v)}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    filterType === v
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-800 text-gray-400 hover:text-gray-200 ring-1 ring-gray-700"
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
 
             {/* Force controls */}
             <div className="relative">
@@ -374,6 +394,122 @@ export default function GraphPage() {
               </button>
             )}
           </div>
+        </div>
+
+        {/* ─ Mobile filter bar (hidden on desktop) ─ */}
+        <div className="relative flex md:hidden shrink-0 border-b border-gray-800">
+          <div className="flex items-center gap-2 overflow-x-auto px-3 py-2" style={{ scrollbarWidth: "none" }}>
+            {/* Room picker trigger */}
+            <button
+              onClick={() => setRoomPickerOpen(v => !v)}
+              className={`shrink-0 flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs ring-1 transition-colors ${
+                roomPickerOpen ? "bg-indigo-700/60 ring-indigo-500 text-indigo-300" : "bg-gray-800 ring-gray-700 text-gray-300"
+              }`}>
+              <span>
+                {selectedRoomIds.size === 0 ? "All rooms" : selectedRoomIds.size === 1
+                  ? `#${rooms.find(r => selectedRoomIds.has(r.id))?.name}`
+                  : `${selectedRoomIds.size} rooms`}
+              </span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
+                className={`h-3 w-3 text-gray-500 transition-transform ${roomPickerOpen ? "rotate-180" : ""}`}>
+                <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </button>
+            {/* Type filter pills */}
+            {([
+              { v: null, label: "All" },
+              { v: "person", label: "People" },
+              { v: "place", label: "Places" },
+              { v: "topic", label: "Topics" },
+              { v: "concept", label: "Concepts" },
+            ] as const).map(({ v, label }) => (
+              <button key={label} onClick={() => setFilterType(v)}
+                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  filterType === v ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 ring-1 ring-gray-700"
+                }`}>
+                {label}
+              </button>
+            ))}
+            {/* Forces */}
+            <button onClick={() => setForcesOpen(v => !v)} title="Forces"
+              className={`shrink-0 flex items-center gap-1 rounded-lg px-2 py-1 text-xs ring-1 transition-colors ${
+                forcesOpen ? "bg-indigo-700 ring-indigo-500 text-white" : "bg-gray-800 ring-gray-700 text-gray-400"
+              }`}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M6.5 2.25a.75.75 0 0 0-1.5 0v1.34a2.751 2.751 0 0 0 0 5.32v4.84a.75.75 0 0 0 1.5 0V8.91a2.751 2.751 0 0 0 0-5.32V2.25Zm4 4.5a.75.75 0 0 0-1.5 0v.09a2.751 2.751 0 0 0 0 5.32v1.59a.75.75 0 0 0 1.5 0v-1.59a2.751 2.751 0 0 0 0-5.32v-.09Z" />
+              </svg>
+              <span>Forces</span>
+            </button>
+            {selected && (
+              <button onClick={() => { setSelected(null); setCorrections([]); setCorrectionsExpanded(false); }}
+                className="shrink-0 rounded-lg bg-gray-800 px-2.5 py-1 text-xs text-gray-400 ring-1 ring-gray-700">
+                Clear
+              </button>
+            )}
+          </div>
+          {/* Room picker dropdown — outside scroll container so it isn't clipped */}
+          {roomPickerOpen && (
+            <div className="absolute left-3 top-full z-50 mt-1 w-52 rounded-xl border border-gray-700 bg-gray-900 shadow-xl py-1">
+              <div className="flex items-center justify-between border-b border-gray-800 px-3 py-1.5 mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Rooms</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setSelectedRoomIds(new Set())} className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">All</button>
+                  <button onClick={() => setSelectedRoomIds(new Set(rooms.map(r => r.id)))} className="text-[10px] text-gray-500 hover:text-gray-300 transition-colors">None</button>
+                </div>
+              </div>
+              <ul className="max-h-52 overflow-y-auto px-1">
+                {rooms.map(r => {
+                  const checked = selectedRoomIds.size === 0 || selectedRoomIds.has(r.id);
+                  const color = roomColorMap.get(r.id);
+                  return (
+                    <li key={r.id}>
+                      <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-gray-800 transition-colors">
+                        <input type="checkbox" checked={checked}
+                          onChange={() => {
+                            setSelectedRoomIds(prev => {
+                              if (prev.size === 0) return new Set(rooms.filter(x => x.id !== r.id).map(x => x.id));
+                              const next = new Set(prev);
+                              if (next.has(r.id)) { next.delete(r.id); if (next.size === 0) return new Set(); }
+                              else { next.add(r.id); if (next.size === rooms.length) return new Set(); }
+                              return next;
+                            });
+                          }}
+                          className="h-3.5 w-3.5 shrink-0 accent-indigo-500 cursor-pointer" />
+                        <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
+                        <span className="truncate text-xs text-gray-200">#{r.name}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {/* Forces panel */}
+          {forcesOpen && (
+            <div className="absolute right-3 top-full z-50 mt-1 w-64 rounded-xl border border-gray-700 bg-gray-900 shadow-xl p-3 space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-gray-800">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Force controls</span>
+                <button onClick={() => setForces({ repel: 3500, attract: 0.04, gravity: 0.015, damping: 0.8 })}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300">Reset</button>
+              </div>
+              {([
+                { key: "repel",   label: "Repulsion",  min: 500,   max: 12000, step: 100,   fmt: (v: number) => v.toFixed(0) },
+                { key: "attract", label: "Attraction", min: 0.005, max: 0.15,  step: 0.005, fmt: (v: number) => v.toFixed(3) },
+                { key: "gravity", label: "Gravity",    min: 0,     max: 0.06,  step: 0.001, fmt: (v: number) => v.toFixed(3) },
+                { key: "damping", label: "Damping",    min: 0.5,   max: 0.98,  step: 0.01,  fmt: (v: number) => v.toFixed(2) },
+              ] as const).map(({ key, label, min, max, step, fmt }) => (
+                <div key={key}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs text-gray-400">{label}</span>
+                    <span className="text-xs text-gray-500 tabular-nums">{fmt(forces[key])}</span>
+                  </div>
+                  <input type="range" min={min} max={max} step={step} value={forces[key]}
+                    onChange={e => setForces(f => ({ ...f, [key]: parseFloat(e.target.value) }))}
+                    className="w-full h-1.5 appearance-none rounded-full bg-gray-700 accent-indigo-500 cursor-pointer" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {loading ? (
