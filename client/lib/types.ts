@@ -1,4 +1,4 @@
-export type MessageType = "human" | "ai_interjection" | "summary";
+export type MessageType = "human" | "ai_interjection" | "summary" | "deleted";
 
 export type DebatePosition = string;
 
@@ -6,6 +6,13 @@ export interface UserPositionEntry {
   userId: string;
   username: string;
   position: DebatePosition;
+}
+
+export interface Reaction {
+  id: string;
+  userId: string;
+  username: string;
+  emoji: string;
 }
 
 export interface ChatMessage {
@@ -18,6 +25,9 @@ export interface ChatMessage {
   roomId: string;
   channelId?: string | null;
   user?: { username: string } | null;
+  reactions?: Reaction[];
+  editedAt?: string | null;
+  deletedAt?: string | null;
 }
 
 export type AIPayload =

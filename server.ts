@@ -59,6 +59,7 @@ const WINDOW_SIZE = 6;
 
 function mapMessages(messages: any[]) {
   return messages.map((m) => {
+    if (m.deletedAt) return { ...m, content: "", type: "deleted" };
     let type: string = "human";
     let content = m.content;
     if (m.senderType === "AI") {
@@ -73,6 +74,26 @@ function mapMessages(messages: any[]) {
     }
     return { ...m, content, type };
   });
+}
+
+async function loadWithReactions(messages: any[]) {
+  const mapped = mapMessages(messages);
+  if (mapped.length === 0) return mapped;
+  try {
+    const ids = mapped.map((m: any) => m.id);
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "id","messageId","userId","username","emoji" FROM "Reaction" WHERE "messageId" = ANY($1::text[])`,
+      ids
+    );
+    const byMsg: Record<string, any[]> = {};
+    for (const r of rows) {
+      if (!byMsg[r.messageId]) byMsg[r.messageId] = [];
+      byMsg[r.messageId].push({ id: r.id, userId: r.userId, username: r.username, emoji: r.emoji });
+    }
+    return mapped.map((m: any) => ({ ...m, reactions: byMsg[m.id] ?? [] }));
+  } catch {
+    return mapped.map((m: any) => ({ ...m, reactions: [] }));
+  }
 }
 
 // Presence: roomId → Map<socketId, { userId, username }>
@@ -217,7 +238,7 @@ io.on("connection", (socket) => {
           include: { user: true },
         });
         history.reverse();
-        socket.emit("history", mapMessages(history));
+        socket.emit("history", await loadWithReactions(history));
       }
     } catch (err) {
       console.error("joinRoom error:", err);
@@ -245,7 +266,7 @@ io.on("connection", (socket) => {
         include: { user: true },
       });
       history.reverse();
-      socket.emit("channelHistory", { channelId, messages: mapMessages(history) });
+      socket.emit("channelHistory", { channelId, messages: await loadWithReactions(history) });
 
       // Emit channel-level positions for sub-debate channels
       try {
@@ -468,6 +489,72 @@ io.on("connection", (socket) => {
       }
     } catch (err) {
       console.error("[respondInvite]", err);
+    }
+  });
+
+  // ── Reactions ──────────────────────────────────────────────────────────────
+  socket.on("addReaction", async ({ messageId, emoji, roomName, channelId }: { messageId: string; emoji: string; roomName: string; channelId?: string | null }) => {
+    const ALLOWED = ["👍","👎","❤️","😂","🔥","🤔"];
+    if (!ALLOWED.includes(emoji)) return;
+    try {
+      const existing = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT id FROM "Reaction" WHERE "messageId" = $1 AND "userId" = $2 AND "emoji" = $3`,
+        messageId, socketUser.id, emoji
+      );
+      if (existing.length > 0) {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM "Reaction" WHERE "messageId" = $1 AND "userId" = $2 AND "emoji" = $3`,
+          messageId, socketUser.id, emoji
+        );
+      } else {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "Reaction" ("id","messageId","userId","username","emoji","createdAt") VALUES (gen_random_uuid()::text,$1,$2,$3,$4,NOW()) ON CONFLICT ("messageId","userId","emoji") DO NOTHING`,
+          messageId, socketUser.id, socketUser.username, emoji
+        );
+      }
+      const reactions = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT "id","userId","username","emoji" FROM "Reaction" WHERE "messageId" = $1`,
+        messageId
+      );
+      const target = channelId ? `channel:${channelId}` : roomName;
+      io.to(target).emit("reactionsUpdate", { messageId, reactions });
+    } catch (err) {
+      console.error("[addReaction]", err);
+    }
+  });
+
+  // ── Edit message ───────────────────────────────────────────────────────────
+  socket.on("editMessage", async ({ messageId, content, roomName, channelId }: { messageId: string; content: string; roomName: string; channelId?: string | null }) => {
+    const trimmed = content?.trim().slice(0, 2000);
+    if (!trimmed) return;
+    try {
+      const msg = await prisma.message.findUnique({ where: { id: messageId } });
+      if (!msg || msg.userId !== socketUser.id) return;
+      if ((msg as any).deletedAt) return;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Message" SET "content" = $1, "editedAt" = NOW() WHERE "id" = $2`,
+        trimmed, messageId
+      );
+      const target = channelId ? `channel:${channelId}` : roomName;
+      io.to(target).emit("messageEdited", { messageId, content: trimmed, editedAt: new Date().toISOString() });
+    } catch (err) {
+      console.error("[editMessage]", err);
+    }
+  });
+
+  // ── Delete message ─────────────────────────────────────────────────────────
+  socket.on("deleteMessage", async ({ messageId, roomName, channelId }: { messageId: string; roomName: string; channelId?: string | null }) => {
+    try {
+      const msg = await prisma.message.findUnique({ where: { id: messageId } });
+      if (!msg) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      const isAdmin = requestingUser?.isAdmin ?? false;
+      if (msg.userId !== socketUser.id && !isAdmin) return;
+      await prisma.$executeRawUnsafe(`UPDATE "Message" SET "deletedAt" = NOW() WHERE "id" = $1`, messageId);
+      const target = channelId ? `channel:${channelId}` : roomName;
+      io.to(target).emit("messageDeleted", { messageId });
+    } catch (err) {
+      console.error("[deleteMessage]", err);
     }
   });
 
@@ -992,7 +1079,7 @@ app.get("/api/channels/:id/messages", async (req, res) => {
       include: { user: true },
     });
     messages.reverse();
-    res.json(mapMessages(messages));
+    res.json(await loadWithReactions(messages));
   } catch {
     res.status(500).json({ error: "Server error" });
   }
@@ -1747,6 +1834,34 @@ async function start() {
     console.log("[DB] Notification table ready");
   } catch (e) {
     console.error("[DB] Notification table setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "editedAt" TIMESTAMP(3);
+      ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
+    `);
+    console.log("[DB] Message edit/delete columns ready");
+  } catch (e) {
+    console.error("[DB] Message edit/delete columns setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Reaction" (
+        "id"        TEXT NOT NULL PRIMARY KEY,
+        "messageId" TEXT NOT NULL REFERENCES "Message"("id") ON DELETE CASCADE,
+        "userId"    TEXT NOT NULL,
+        "username"  TEXT NOT NULL,
+        "emoji"     TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Reaction_messageId_userId_emoji_key" ON "Reaction"("messageId","userId","emoji");`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Reaction_messageId_idx" ON "Reaction"("messageId");`);
+    console.log("[DB] Reaction table ready");
+  } catch (e) {
+    console.error("[DB] Reaction table setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

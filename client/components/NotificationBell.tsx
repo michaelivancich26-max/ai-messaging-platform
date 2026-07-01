@@ -21,6 +21,11 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
 
   const unread = notifs.filter(n => !n.read && !n.resolved).length;
 
+  // Update browser tab title with unread count
+  useEffect(() => {
+    document.title = unread > 0 ? `(${unread}) Veritas` : "Veritas";
+  }, [unread]);
+
   // Fetch on mount
   useEffect(() => {
     if (!userId) return;

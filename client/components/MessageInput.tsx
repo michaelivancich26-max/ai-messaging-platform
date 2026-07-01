@@ -1,8 +1,13 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useMemo } from "react";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+interface Member {
+  id: string;
+  username: string;
+}
 
 interface Props {
   onSend: (content: string) => void;
@@ -10,12 +15,14 @@ interface Props {
   onStopTyping?: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  members?: Member[];
 }
 
-export default function MessageInput({ onSend, onTyping, onStopTyping, disabled, disabledReason }: Props) {
+export default function MessageInput({ onSend, onTyping, onStopTyping, disabled, disabledReason, members = [] }: Props) {
   const [value, setValue] = useState("");
   const [imageError, setImageError] = useState("");
-  const [showMention, setShowMention] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed, string = partial username
+  const [mentionIndex, setMentionIndex] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stopTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -30,19 +37,40 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
     }, 2000);
   }, [onTyping, onStopTyping]);
 
+  const mentionSuggestions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    const results: { id: string; username: string; isAI: boolean }[] = [];
+    // @Claude always first if query matches
+    if ("claude".startsWith(q)) results.push({ id: "claude", username: "Claude", isAI: true });
+    // Then room members
+    for (const m of members) {
+      if (m.username.toLowerCase().startsWith(q) && results.length < 6) {
+        results.push({ id: m.id, username: m.username, isAI: false });
+      }
+    }
+    return results;
+  }, [mentionQuery, members]);
+
   function checkMention(text: string, cursorPos: number) {
     const before = text.slice(0, cursorPos);
-    setShowMention(/@\w*$/.test(before));
+    const match = before.match(/@(\w*)$/);
+    if (match) {
+      setMentionQuery(match[1]);
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+    }
   }
 
-  function insertMention() {
+  function insertMention(suggestion: { username: string; isAI: boolean }) {
     const cursorPos = textareaRef.current?.selectionStart ?? value.length;
     const before = value.slice(0, cursorPos);
     const after = value.slice(cursorPos);
-    const newBefore = before.replace(/@\w*$/, "@Claude ");
+    const newBefore = before.replace(/@\w*$/, `@${suggestion.username} `);
     const newValue = newBefore + after;
     setValue(newValue);
-    setShowMention(false);
+    setMentionQuery(null);
     setTimeout(() => {
       textareaRef.current?.focus();
       const pos = newBefore.length;
@@ -59,19 +87,19 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
     onStopTyping?.();
     onSend(trimmed);
     setValue("");
-    setShowMention(false);
+    setMentionQuery(null);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (showMention && (e.key === "Tab" || e.key === "ArrowDown")) {
-      e.preventDefault();
-      insertMention();
-      return;
-    }
-    if (showMention && e.key === "Escape") {
-      e.preventDefault();
-      setShowMention(false);
-      return;
+    if (mentionQuery !== null && mentionSuggestions.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionSuggestions.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length); return; }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        insertMention(mentionSuggestions[mentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); setMentionQuery(null); return; }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -82,7 +110,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
         onStopTyping?.();
         onSend(trimmed);
         setValue("");
-        setShowMention(false);
+        setMentionQuery(null);
       }
     }
   }
@@ -145,17 +173,29 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
           onChange={handleFileChange}
         />
 
-        {/* @Claude autocomplete dropdown */}
-        {showMention && (
-          <div className="absolute bottom-full left-16 mb-2 rounded-xl border border-violet-500/40 bg-gray-900 py-1 shadow-xl">
-            <button
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); insertMention(); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-200 hover:bg-violet-950/60 transition-colors"
-            >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">C</span>
-              <span><span className="font-medium text-violet-300">@Claude</span><span className="ml-1.5 text-xs text-gray-500">· AI assistant</span></span>
-            </button>
+        {/* @mention autocomplete dropdown */}
+        {mentionQuery !== null && mentionSuggestions.length > 0 && (
+          <div className="absolute bottom-full left-16 mb-2 w-56 rounded-xl border border-gray-700 bg-gray-900 py-1 shadow-xl">
+            {mentionSuggestions.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); insertMention(s); }}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-200 transition-colors ${i === mentionIndex ? "bg-violet-950/60" : "hover:bg-gray-800"}`}
+              >
+                {s.isAI ? (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">C</span>
+                ) : (
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-700 text-[11px] font-bold text-gray-300">
+                    {s.username[0]?.toUpperCase()}
+                  </span>
+                )}
+                <span>
+                  <span className={`font-medium ${s.isAI ? "text-violet-300" : "text-gray-200"}`}>@{s.username}</span>
+                  {s.isAI && <span className="ml-1.5 text-xs text-gray-500">· AI assistant</span>}
+                </span>
+              </button>
+            ))}
           </div>
         )}
 

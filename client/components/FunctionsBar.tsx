@@ -17,6 +17,7 @@ interface Props {
 
 export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }: Props) {
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,6 +27,14 @@ export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }:
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  function handleShareLink() {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+    setOpen(false);
+  }
 
   const functions: FunctionItem[] = [
     {
@@ -52,10 +61,19 @@ export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }:
         </svg>
       ),
     },
+    {
+      label: "Share Link",
+      onClick: handleShareLink,
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+          <path d="M13 4.5a2.5 2.5 0 1 1 .702 1.737L6.97 9.604a2.518 2.518 0 0 1 0 .792l6.733 3.367a2.5 2.5 0 1 1-.671 1.341l-6.733-3.367a2.5 2.5 0 1 1 0-3.475l6.733-3.366A2.52 2.52 0 0 1 13 4.5Z" />
+        </svg>
+      ),
+    },
   ];
 
   return (
-    <div className="relative flex items-center border-t border-gray-800 bg-gray-950 px-4 py-2" ref={ref}>
+    <div className="relative flex items-center gap-2 border-t border-gray-800 bg-gray-950 px-4 py-2" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 rounded-full border border-gray-700 bg-gray-900 px-4 py-1.5 text-xs font-medium text-gray-300 hover:border-gray-600 hover:text-gray-100 transition-colors"
@@ -84,6 +102,11 @@ export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }:
             </button>
           ))}
         </div>
+      )}
+      {copied && (
+        <span className="rounded-full bg-gray-800 px-3 py-1 text-xs text-green-400 ring-1 ring-green-500/30">
+          Link copied!
+        </span>
       )}
     </div>
   );

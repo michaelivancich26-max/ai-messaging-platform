@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import type { ChatMessage, ClaimInfo, CredScore } from "@/lib/types";
+import { useState, useRef } from "react";
+import type { ChatMessage, ClaimInfo, CredScore, Reaction } from "@/lib/types";
 import { getStancePalette, NEUTRAL_PALETTE } from "@/lib/stances";
 import type { Annotation } from "@/app/room/[roomId]/page";
 import CredibilityBadge from "./CredibilityBadge";
 import ClaimBadge from "./ClaimBadge";
+
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "🔥", "👎", "🤔"];
 
 interface Props {
   message: ChatMessage;
@@ -20,8 +22,12 @@ interface Props {
   onChallengeClaim?: (claimId: string) => void;
   onUserClick?: (userId: string, username: string) => void;
   onSubDebate?: (messageId: string, content: string) => void;
+  onReact?: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
+  onDelete?: (messageId: string) => void;
+  currentUserId?: string;
+  isAdmin?: boolean;
 }
-
 
 interface ImagePayload {
   type: "image";
@@ -169,27 +175,103 @@ function Avatar({ username, avatarUrl, size = 7 }: { username: string; avatarUrl
 
 export { Avatar };
 
-export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, stances, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate }: Props) {
+function ReactionPills({ reactions, messageId, currentUserId, onReact }: {
+  reactions: Reaction[];
+  messageId: string;
+  currentUserId?: string;
+  onReact?: (messageId: string, emoji: string) => void;
+}) {
+  const grouped: Record<string, { count: number; iMine: boolean }> = {};
+  for (const r of reactions) {
+    if (!grouped[r.emoji]) grouped[r.emoji] = { count: 0, iMine: false };
+    grouped[r.emoji].count++;
+    if (r.userId === currentUserId) grouped[r.emoji].iMine = true;
+  }
+  const entries = Object.entries(grouped);
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {entries.map(([emoji, { count, iMine }]) => (
+        <button
+          key={emoji}
+          onClick={() => onReact?.(messageId, emoji)}
+          className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors ${
+            iMine
+              ? "bg-indigo-900/60 text-indigo-300 ring-1 ring-indigo-500/50 hover:bg-indigo-800/60"
+              : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+          }`}
+        >
+          <span>{emoji}</span>
+          <span>{count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function MessageBubble({ message, isSelf, annotation, highlighted, claim, credScore, senderPosition, stances, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate, onReact, onEdit, onDelete, currentUserId, isAdmin }: Props) {
   const username = message.user?.username ?? "unknown";
   const avatarUrl = (message.user as any)?.avatarUrl ?? null;
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const imagePayload = parseImageContent(message.content);
+  const imagePayload = message.type !== "deleted" ? parseImageContent(message.content) : null;
   const isHuman = message.type === "human";
+  const isDeleted = message.type === "deleted";
   const isTemp = message.id.startsWith("temp-");
+  const [showReactPicker, setShowReactPicker] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editValue, setEditValue] = useState(message.content);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   const stanceList = stances ?? ["FOR", "AGAINST"];
   const posConfig = senderPosition ? getStancePalette(senderPosition, stanceList) : null;
   const selfBubble  = posConfig ? posConfig.self  : "bg-indigo-600 text-white";
   const otherBubble = posConfig ? posConfig.other : "bg-gray-800 text-gray-100";
 
+  const canEdit = isHuman && !isTemp && isSelf && !isDeleted && !!onEdit;
+  const canDelete = isHuman && !isTemp && (isSelf || isAdmin) && !isDeleted && !!onDelete;
+
+  function submitEdit() {
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === message.content) { setEditMode(false); return; }
+    onEdit!(message.id, trimmed);
+    setEditMode(false);
+  }
+
   // Derive which actions are available for the unified toolbar
   const canStakeThis  = isHuman && !isTemp && !claim && !!onStakeClaim;
   const canChallenge  = isHuman && !isTemp && !!claim && claim.status !== "PENDING" && !isSelf && !!onChallengeClaim;
-  const canBranch     = isHuman && !isTemp && !!onSubDebate;
-  const hasActions    = canStakeThis || canChallenge || canBranch;
+  const canBranch     = isHuman && !isTemp && !!onSubDebate && !isDeleted;
+  const hasActions    = canStakeThis || canChallenge || canBranch || canEdit || canDelete || (!!onReact && !isDeleted);
 
   const actionBar = hasActions && (
-    <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="relative flex shrink-0 items-center gap-0.5 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+      {onReact && !isDeleted && (
+        <div className="relative" ref={pickerRef}>
+          <button
+            onClick={() => setShowReactPicker(v => !v)}
+            title="React"
+            className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-yellow-400 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7-1a1 1 0 1 0-2 0 1 1 0 0 0 2 0ZM5.5 10a.5.5 0 0 0-.5.5C5 11.4 6.343 12.5 8 12.5s3-1.1 3-2a.5.5 0 0 0-.5-.5h-5Z" />
+            </svg>
+          </button>
+          {showReactPicker && (
+            <div className={`absolute z-20 flex gap-0.5 rounded-xl border border-gray-700 bg-gray-900 p-1.5 shadow-xl ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
+              {REACTION_EMOJIS.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => { onReact(message.id, emoji); setShowReactPicker(false); }}
+                  className="rounded-lg p-1.5 text-base leading-none hover:bg-gray-800 transition-colors"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {canStakeThis && (
         <button
           onClick={() => onStakeClaim!(message.id)}
@@ -223,8 +305,41 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
           </svg>
         </button>
       )}
+      {canEdit && (
+        <button
+          onClick={() => { setEditValue(message.content); setEditMode(true); }}
+          title="Edit"
+          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+            <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474ZM4.75 14a.75.75 0 0 0 0-1.5h-1a.75.75 0 0 0-.75.75v.75h-.75A.75.75 0 0 0 2 14.75V15h-.75A.75.75 0 0 0 .5 15.75v1c0 .414.336.75.75.75H4.5a.25.25 0 0 0 .25-.25V14Z" />
+          </svg>
+        </button>
+      )}
+      {canDelete && (
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          title="Delete"
+          className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-red-400 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.712Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      )}
     </div>
   );
+
+  if (isDeleted) {
+    return (
+      <div className={`flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}>
+        {!isSelf && <span className="h-7 w-7 shrink-0" />}
+        <span className="rounded-2xl px-4 py-2 text-sm italic text-gray-600 ring-1 ring-gray-800">
+          Message deleted
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={`group flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
@@ -244,13 +359,34 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
           {isSelf ? "You" : username} · {time}
+          {message.editedAt && <span className="text-[10px] text-gray-600 italic">edited</span>}
           {posConfig && senderPosition !== "NEUTRAL" && (
             <span className={`rounded-full px-1.5 py-0 text-[9px] font-bold ${posConfig.tag}`}>{senderPosition}</span>
           )}
           {credScore && <CredibilityBadge score={credScore} />}
         </span>
 
-        {imagePayload ? (
+        {editMode ? (
+          <div className="flex flex-col gap-2 w-full max-w-prose">
+            <textarea
+              value={editValue}
+              onChange={e => setEditValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitEdit(); }
+                if (e.key === "Escape") { setEditMode(false); }
+              }}
+              rows={2}
+              autoFocus
+              className="rounded-xl bg-gray-800 px-4 py-2 text-sm text-gray-100 outline-none ring-1 ring-indigo-500 resize-none"
+              style={{ maxHeight: "8rem", overflowY: "auto" }}
+            />
+            <div className="flex gap-2 text-xs">
+              <button onClick={submitEdit} className="rounded-lg bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500">Save</button>
+              <button onClick={() => setEditMode(false)} className="rounded-lg bg-gray-800 px-3 py-1 text-gray-400 hover:bg-gray-700">Cancel</button>
+              <span className="text-gray-600 self-center">Esc to cancel · Enter to save</span>
+            </div>
+          </div>
+        ) : imagePayload ? (
           <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
             <ImageMessage payload={imagePayload} isSelf={isSelf} />
           </div>
@@ -267,13 +403,46 @@ export default function MessageBubble({ message, isSelf, annotation, highlighted
           </div>
         )}
 
-        {/* Claim status badge — purely informational, no action buttons here */}
+        {/* Reactions */}
+        {message.reactions && message.reactions.length > 0 && (
+          <ReactionPills
+            reactions={message.reactions}
+            messageId={message.id}
+            currentUserId={currentUserId}
+            onReact={onReact}
+          />
+        )}
+
+        {/* Claim status badge — purely informational */}
         {isHuman && claim && (
           <ClaimBadge claim={claim} canChallenge={false} onChallenge={() => {}} />
         )}
       </div>
 
       {!isSelf && actionBar}
+
+      {/* Delete confirmation overlay */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="rounded-2xl bg-gray-900 p-6 shadow-xl ring-1 ring-gray-700 w-72" onClick={e => e.stopPropagation()}>
+            <p className="text-sm text-gray-200 mb-4">Delete this message? This can&apos;t be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { onDelete!(message.id); setShowDeleteConfirm(false); }}
+                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-500"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 rounded-lg bg-gray-800 py-2 text-sm text-gray-300 hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

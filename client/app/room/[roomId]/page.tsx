@@ -310,11 +310,26 @@ export default function RoomPage() {
       });
     });
 
+    socket.on("reactionsUpdate", ({ messageId, reactions }: { messageId: string; reactions: import("@/lib/types").Reaction[] }) => {
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, reactions } : m));
+    });
+
+    socket.on("messageEdited", ({ messageId, content, editedAt }: { messageId: string; content: string; editedAt: string }) => {
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content, editedAt } : m));
+    });
+
+    socket.on("messageDeleted", ({ messageId }: { messageId: string }) => {
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, type: "deleted" as const, content: "", deletedAt: new Date().toISOString() } : m));
+    });
+
     return () => {
       socket.off("connect", rejoin);
       socket.off("history");
       socket.off("channelHistory");
       socket.off("message");
+      socket.off("reactionsUpdate");
+      socket.off("messageEdited");
+      socket.off("messageDeleted");
       socket.off("connect_error");
       socket.off("error");
       socket.off("roomDeleted");
@@ -613,6 +628,24 @@ export default function RoomPage() {
 
     const s = getSocket({ id: userId, username });
     s.emit("sendMessage", { roomId, userId, username, content, settings, channelId: activeChannel?.id });
+  }
+
+  function handleReact(messageId: string, emoji: string) {
+    getSocket({ id: userId, username }).emit("addReaction", {
+      messageId, emoji, roomName: roomId, channelId: activeChannel?.id ?? null,
+    });
+  }
+
+  function handleEditMessage(messageId: string, content: string) {
+    getSocket({ id: userId, username }).emit("editMessage", {
+      messageId, content, roomName: roomId, channelId: activeChannel?.id ?? null,
+    });
+  }
+
+  function handleDeleteMessage(messageId: string) {
+    getSocket({ id: userId, username }).emit("deleteMessage", {
+      messageId, roomName: roomId, channelId: activeChannel?.id ?? null,
+    });
   }
 
   async function vibeSearch(query: string) {
@@ -920,7 +953,7 @@ export default function RoomPage() {
                   </div>
                 </div>
               )}
-              <ChatWindow messages={messages} currentUsername={username} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={isOpinionated ? undefined : stakeClaim} onChallengeClaim={isOpinionated ? undefined : challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} />
+              <ChatWindow messages={messages} currentUsername={username} currentUserId={userId} isAdmin={isAdmin} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={isOpinionated ? undefined : stakeClaim} onChallengeClaim={isOpinionated ? undefined : challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} onReact={handleReact} onEdit={handleEditMessage} onDelete={handleDeleteMessage} />
               <div ref={bottomRef} />
             </>
           )}
@@ -1014,7 +1047,7 @@ export default function RoomPage() {
             ? `${debateTurn?.currentSpeakerName} has the floor`
             : "Claim the floor above to speak"
           : undefined;
-        return <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} disabled={locked} disabledReason={reason} />;
+        return <MessageInput onSend={sendMessage} onTyping={emitTyping} onStopTyping={emitStopTyping} disabled={locked} disabledReason={reason} members={onlineMembers.map(m => ({ id: m.userId, username: m.username }))} />;
       })()}
 
       {summarizeModalOpen && (

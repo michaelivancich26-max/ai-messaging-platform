@@ -7,6 +7,8 @@ import SummaryCard from "./SummaryCard";
 interface Props {
   messages: ChatMessage[];
   currentUsername: string;
+  currentUserId?: string;
+  isAdmin?: boolean;
   annotations: Record<string, Annotation>;
   highlightedId?: string | null;
   messageRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
@@ -18,10 +20,13 @@ interface Props {
   onChallengeClaim?: (claimId: string) => void;
   onUserClick?: (userId: string, username: string) => void;
   onSubDebate?: (messageId: string, content: string) => void;
+  onReact?: (messageId: string, emoji: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
+  onDelete?: (messageId: string) => void;
   stances?: string[];
 }
 
-export default function ChatWindow({ messages, currentUsername, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, positions, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate, stances }: Props) {
+export default function ChatWindow({ messages, currentUsername, currentUserId, isAdmin, annotations, highlightedId, messageRefs, streamingMsgs, claims, credibilityScores, positions, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate, onReact, onEdit, onDelete, stances }: Props) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
       {messages.map((msg) => {
@@ -54,6 +59,11 @@ export default function ChatWindow({ messages, currentUsername, annotations, hig
               onChallengeClaim={onChallengeClaim}
               onUserClick={onUserClick}
               onSubDebate={onSubDebate}
+              onReact={onReact}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              currentUserId={currentUserId}
+              isAdmin={isAdmin}
             />
           </div>
         );
