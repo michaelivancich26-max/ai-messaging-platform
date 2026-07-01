@@ -26,11 +26,9 @@ export async function POST() {
   try {
     await sendVerificationEmail(user.email, token);
   } catch (err: any) {
-    console.error("[resend-verification] Resend error:", err);
-    return NextResponse.json(
-      { error: "Failed to send email. Check that RESEND_API_KEY and RESEND_FROM_EMAIL are set correctly." },
-      { status: 500 }
-    );
+    const detail = err?.message ?? String(err);
+    console.error("[resend-verification] Resend error:", detail);
+    return NextResponse.json({ error: `Email failed: ${detail}` }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });
