@@ -11,7 +11,9 @@ function getFrom() {
 }
 
 function getBaseUrl() {
-  return process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
 }
 
 export async function sendPasswordResetEmail(to: string, token: string) {
