@@ -45,7 +45,9 @@ export default function RoomPage() {
   const [vibeSearching, setVibeSearching] = useState(false);
   const [vibeResultStatus, setVibeResultStatus] = useState<"idle" | "found" | "not_found">("idle");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const [onlineMembers, setOnlineMembers] = useState<{ userId: string; username: string }[]>([]);
+  const [onlineMembers, setOnlineMembers] = useState<{ userId: string; username: string; role?: string }[]>([]);
+  const [myFishbowlRole, setMyFishbowlRole] = useState<"PARTICIPANT" | "SPECTATOR" | null>(null);
+  const [seatRequests, setSeatRequests] = useState<{ userId: string; username: string }[]>([]);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [typingUsers, setTypingUsers] = useState<Map<string, string>>(new Map());
   const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean; isMention?: boolean }>>(new Map());
@@ -191,9 +193,13 @@ export default function RoomPage() {
         .then((msgs: ChatMessage[]) => setSidebarMessages(msgs.filter((m: ChatMessage) => m.type === "human")))
         .catch(() => {});
     });
-    socket.on("roomMembers", (members: { userId: string; username: string }[]) => setOnlineMembers(members));
-    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[] }) => {
-      setRoomMeta(meta);
+    socket.on("roomMembers", (members: { userId: string; username: string; role?: string }[]) => setOnlineMembers(members));
+    socket.on("fishbowlRole", (role: "PARTICIPANT" | "SPECTATOR") => setMyFishbowlRole(role));
+    socket.on("seatRequest", ({ userId: reqUserId, username: reqUsername }: { userId: string; username: string }) => {
+      setSeatRequests(prev => prev.some(r => r.userId === reqUserId) ? prev : [...prev, { userId: reqUserId, username: reqUsername }]);
+    });
+    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[]; isFishbowl?: boolean; fishbowlSeats?: number | null }) => {
+      setRoomMeta(meta as any);
       if (meta.stances && meta.stances.length > 0) setStances(meta.stances);
     });
     socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
@@ -347,6 +353,8 @@ export default function RoomPage() {
       socket.off("channelPositions");
       socket.off("sidebarChannel");
       socket.off("roomMembers");
+      socket.off("fishbowlRole");
+      socket.off("seatRequest");
       socket.off("roomMeta");
       socket.off("aiStreamStart");
       socket.off("aiStreamChunk");
@@ -515,6 +523,19 @@ export default function RoomPage() {
   function kickUser(targetUserId: string) {
     const s = getSocket({ id: userId, username });
     s.emit("kick", { roomId, targetUserId });
+  }
+
+  function grantSeat(targetUserId: string) {
+    getSocket({ id: userId, username }).emit("grantSeat", { roomId, targetUserId });
+    setSeatRequests(prev => prev.filter(r => r.userId !== targetUserId));
+  }
+
+  function revokeSeat(targetUserId: string) {
+    getSocket({ id: userId, username }).emit("revokeSeat", { roomId, targetUserId });
+  }
+
+  function requestSeat() {
+    getSocket({ id: userId, username }).emit("requestSeat", { roomId });
   }
 
   async function deleteRoom() {
@@ -766,6 +787,15 @@ export default function RoomPage() {
         <span className="text-base md:text-lg font-semibold truncate">
           {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
         </span>
+        {/* Fishbowl seat counter */}
+        {(roomMeta as any)?.isFishbowl && (roomMeta as any)?.fishbowlSeats && (
+          <span className="hidden sm:flex shrink-0 items-center gap-1 rounded-full bg-cyan-900/40 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-400">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+              <path d="M8 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM5 9.5a3 3 0 0 0-3 3 .5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5 3 3 0 0 0-3-3H5Z" />
+            </svg>
+            {onlineMembers.filter(m => m.role !== "SPECTATOR").length}/{(roomMeta as any).fishbowlSeats} seats
+          </span>
+        )}
         {/* Side chat toggle — visible for any non-sidebar, non-DM channel */}
         {!roomId.startsWith("dm-") && activeChannel && !activeChannel.isSidebar && (
           <button
@@ -931,6 +961,41 @@ export default function RoomPage() {
         </div>
       )}
 
+      {/* Fishbowl spectator banner */}
+      {(roomMeta as any)?.isFishbowl && myFishbowlRole === "SPECTATOR" && (
+        <div className="shrink-0 flex items-center gap-3 border-b border-cyan-900/40 bg-cyan-950/20 px-4 py-2">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-cyan-400">
+            <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+            <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clipRule="evenodd" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400">Spectating</span>
+            <span className="ml-2 text-xs text-cyan-600">You can watch but not send messages</span>
+          </div>
+          <button
+            onClick={requestSeat}
+            className="shrink-0 rounded-full bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500 transition-colors"
+          >
+            Request a seat
+          </button>
+        </div>
+      )}
+
+      {/* Seat request notifications (owner only) */}
+      {isOwner && seatRequests.length > 0 && (
+        <div className="shrink-0 space-y-1 border-b border-cyan-900/40 bg-cyan-950/10 px-4 py-2">
+          {seatRequests.map(req => (
+            <div key={req.userId} className="flex items-center gap-3">
+              <span className="flex-1 text-xs text-cyan-300">
+                <span className="font-semibold">{req.username}</span> is requesting a debate seat
+              </span>
+              <button onClick={() => grantSeat(req.userId)} className="rounded-full bg-cyan-600 px-3 py-0.5 text-xs font-semibold text-white hover:bg-cyan-500 transition-colors">Grant</button>
+              <button onClick={() => setSeatRequests(prev => prev.filter(r => r.userId !== req.userId))} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Dismiss</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className={`flex flex-1 overflow-hidden min-h-0 ${sidebarOpen && sidebarChannel ? "flex-row" : "flex-col"}`}>
         {/* Main chat column — hidden on mobile when sidebar is open (sidebar takes full screen instead) */}
         <div className={`flex-col flex-1 overflow-hidden min-w-0 ${sidebarOpen && sidebarChannel ? "hidden md:flex" : "flex"}`}>
@@ -1033,12 +1098,15 @@ export default function RoomPage() {
 
       {(roomId.startsWith("dm-") || activeChannel) && (() => {
         const isSidebarChannel = activeChannel?.isSidebar === true;
+        const isSpectating = (roomMeta as any)?.isFishbowl && myFishbowlRole === "SPECTATOR";
         const isStructured = debateTurn?.mode === "structured" && !roomId.startsWith("dm-") && !isSidebarChannel;
         const isMyTurn = debateTurn?.currentSpeakerId === userId;
         const floorClaimed = !!debateTurn?.currentSpeakerId;
         const isMySide = myPosition === debateTurn?.currentSide;
-        const locked = isStructured && !isMyTurn;
-        const reason = isStructured
+        const locked = isSpectating || (isStructured && !isMyTurn);
+        const reason = isSpectating
+          ? "You're spectating — request a seat above to participate"
+          : isStructured
           ? !myPosition || myPosition === "NEUTRAL"
             ? "Set a FOR or AGAINST position to participate in structured debate"
             : !isMySide
@@ -1078,6 +1146,8 @@ export default function RoomPage() {
         isOwner={isOwner}
         isAdmin={isAdmin}
         onKick={kickUser}
+        onGrantSeat={grantSeat}
+        onRevokeSeat={revokeSeat}
         onMetaUpdate={(meta) => setRoomMeta(meta)}
         onDelete={(isOwner || isAdmin) ? deleteRoom : undefined}
         settings={settings}

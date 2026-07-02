@@ -3,11 +3,11 @@
 import { useState } from "react";
 import ConfirmModal from "./ConfirmModal";
 
-interface Member { userId: string; username: string; avatarUrl?: string | null; }
+interface Member { userId: string; username: string; avatarUrl?: string | null; role?: string; }
 interface RoomMeta {
   id: string; name: string; description: string | null; proposition: string | null; isPrivate: boolean;
   maxMembers: number | null; creatorId: string | null; aiPersona: string | null; stances?: string[] | null;
-  isOpinionated?: boolean; stanceCooldown?: number;
+  isOpinionated?: boolean; stanceCooldown?: number; isFishbowl?: boolean; fishbowlSeats?: number | null;
 }
 interface Settings { factualCorrection: boolean; ambiguityResolution: boolean; }
 
@@ -26,6 +26,8 @@ interface Props {
   onDelete?: () => void;
   settings: Settings;
   onSettingsChange: (s: Settings) => void;
+  onGrantSeat?: (userId: string) => void;
+  onRevokeSeat?: (userId: string) => void;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -50,7 +52,7 @@ function Toggle({ enabled, onChange, label, description }: {
 export default function RoomPanel({
   open, onClose, tab: initialTab = "room",
   roomId, meta, onlineMembers, currentUserId, isOwner, isAdmin,
-  onKick, onMetaUpdate, onDelete, settings, onSettingsChange,
+  onKick, onMetaUpdate, onDelete, settings, onSettingsChange, onGrantSeat, onRevokeSeat,
 }: Props) {
   const canEdit = isOwner || isAdmin;
   const [tab, setTab] = useState<"room" | "settings" | "ai">(initialTab);
@@ -176,36 +178,71 @@ export default function RoomPanel({
               </div>
 
               {/* Online members */}
-              <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
-                  Online · {onlineMembers.length}
-                </p>
-                {onlineMembers.length === 0 ? (
-                  <p className="text-xs text-gray-600">Nobody online</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {onlineMembers.map(m => (
-                      <li key={m.userId} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
-                          {m.avatarUrl
-                            ? <img src={m.avatarUrl} alt={m.username} className="h-6 w-6 rounded-full object-cover shrink-0" />
-                            : <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-[10px] font-bold text-gray-300 shrink-0">{m.username[0].toUpperCase()}</span>
-                          }
-                          <span className="text-xs text-gray-200 truncate">{m.username}</span>
-                          {m.userId === currentUserId && <span className="text-[10px] text-gray-600 shrink-0">(you)</span>}
-                        </div>
-                        {canEdit && m.userId !== currentUserId && (
-                          <button onClick={() => setConfirmKick(m)}
-                            className="ml-2 shrink-0 rounded px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-red-500/10 hover:text-red-400 transition-colors">
-                            kick
+              {(() => {
+                const isFishbowl = meta?.isFishbowl;
+                const participants = isFishbowl ? onlineMembers.filter(m => m.role !== "SPECTATOR") : onlineMembers;
+                const spectators = isFishbowl ? onlineMembers.filter(m => m.role === "SPECTATOR") : [];
+                const MemberRow = ({ m }: { m: Member }) => (
+                  <li key={m.userId} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                      {m.avatarUrl
+                        ? <img src={m.avatarUrl} alt={m.username} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                        : <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-800 text-[10px] font-bold text-gray-300 shrink-0">{m.username[0].toUpperCase()}</span>
+                      }
+                      <span className="text-xs text-gray-200 truncate">{m.username}</span>
+                      {m.userId === currentUserId && <span className="text-[10px] text-gray-600 shrink-0">(you)</span>}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      {isFishbowl && canEdit && m.userId !== currentUserId && (
+                        m.role === "SPECTATOR" ? (
+                          <button onClick={() => onGrantSeat?.(m.userId)}
+                            className="rounded px-1.5 py-0.5 text-[10px] text-cyan-500 hover:bg-cyan-500/10 transition-colors">
+                            grant seat
                           </button>
+                        ) : (
+                          <button onClick={() => onRevokeSeat?.(m.userId)}
+                            className="rounded px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-gray-700 hover:text-gray-400 transition-colors">
+                            spectate
+                          </button>
+                        )
+                      )}
+                      {canEdit && m.userId !== currentUserId && (
+                        <button onClick={() => setConfirmKick(m)}
+                          className="rounded px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-red-500/10 hover:text-red-400 transition-colors">
+                          kick
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+                return (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+                        {isFishbowl ? `Debaters · ${participants.length}${meta?.fishbowlSeats ? `/${meta.fishbowlSeats}` : ""}` : `Online · ${onlineMembers.length}`}
+                      </p>
+                      {participants.length === 0 ? (
+                        <p className="text-xs text-gray-600">Nobody online</p>
+                      ) : (
+                        <ul className="space-y-1">{participants.map(m => <MemberRow key={m.userId} m={m} />)}</ul>
+                      )}
+                    </div>
+                    {isFishbowl && (
+                      <div>
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+                          Spectators · {spectators.length}
+                        </p>
+                        {spectators.length === 0 ? (
+                          <p className="text-xs text-gray-600">No spectators</p>
+                        ) : (
+                          <ul className="space-y-1">{spectators.map(m => <MemberRow key={m.userId} m={m} />)}</ul>
                         )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

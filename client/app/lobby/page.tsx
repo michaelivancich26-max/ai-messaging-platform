@@ -55,6 +55,8 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
   const [showPw, setShowPw] = useState(false);
   const [maxMembers, setMaxMembers] = useState("");
   const [aiPersona, setAiPersona] = useState("");
+  const [isFishbowl, setIsFishbowl] = useState(false);
+  const [fishbowlSeats, setFishbowlSeats] = useState(4);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -73,6 +75,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
           isPrivate, password: isPrivate ? password : undefined,
           maxMembers: maxMembers ? parseInt(maxMembers) : undefined,
           creatorId: userId, aiPersona: aiPersona.trim() || undefined,
+          isFishbowl, fishbowlSeats: isFishbowl ? fishbowlSeats : undefined,
         }),
       });
       const data = await res.json();
@@ -135,11 +138,40 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
             <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. ai-jobs-debate" maxLength={40}
               className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-400">Max participants <span className="text-gray-600">(optional)</span></label>
-            <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} placeholder="Unlimited" min={2} max={500}
-              className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+          {!isFishbowl && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-gray-400">Max participants <span className="text-gray-600">(optional)</span></label>
+              <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} placeholder="Unlimited" min={2} max={500}
+                className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+            </div>
+          )}
+
+          {/* Fishbowl toggle */}
+          <div className="flex items-center justify-between rounded-xl bg-cyan-950/30 border border-cyan-900/40 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-gray-200">Fishbowl debate</p>
+              <p className="text-xs text-gray-500">Limited debate seats — everyone else watches as a spectator</p>
+            </div>
+            <button type="button" onClick={() => setIsFishbowl(v => !v)}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${isFishbowl ? "bg-cyan-500" : "bg-gray-700"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isFishbowl ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
           </div>
+          {isFishbowl && (
+            <div className="flex items-center gap-3 rounded-xl bg-gray-800/60 px-4 py-3">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-200">Debate seats</p>
+                <p className="text-xs text-gray-500">How many people can actively participate (2–20)</p>
+              </div>
+              <input
+                type="number"
+                value={fishbowlSeats}
+                onChange={e => setFishbowlSeats(Math.min(20, Math.max(2, parseInt(e.target.value) || 2)))}
+                min={2} max={20}
+                className="w-16 rounded-lg bg-gray-700 px-2 py-1.5 text-sm text-center text-gray-100 outline-none ring-1 ring-gray-600 focus:ring-cyan-500"
+              />
+            </div>
+          )}
 
           {/* Opinionated toggle */}
           <div className="flex items-center justify-between rounded-xl bg-amber-950/30 border border-amber-900/40 px-4 py-3">
@@ -223,6 +255,9 @@ interface BrowseRoom {
   isPrivate: boolean;
   creatorId: string | null;
   joined: boolean;
+  isFishbowl: boolean;
+  fishbowlSeats: number | null;
+  participantCount: number;
   _count: { messages: number; members: number };
 }
 
@@ -309,8 +344,12 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
             {filtered.map(room => (
               <div key={room.id} className="flex flex-col gap-3 rounded-2xl border border-gray-800 bg-gray-900 p-4 hover:border-gray-700 transition-colors">
                 <div className="flex items-start gap-2">
-                  <span className={`mt-0.5 shrink-0 ${room.isPrivate ? "text-amber-500" : "text-indigo-500"}`}>
-                    {room.isPrivate ? (
+                  <span className={`mt-0.5 shrink-0 ${room.isFishbowl ? "text-cyan-400" : room.isPrivate ? "text-amber-500" : "text-indigo-500"}`}>
+                    {room.isFishbowl ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+                      </svg>
+                    ) : room.isPrivate ? (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                         <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
                       </svg>
@@ -330,8 +369,13 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-gray-600">
-                  <span>{room._count.members} participant{room._count.members !== 1 ? "s" : ""}</span>
+                  {room.isFishbowl && room.fishbowlSeats ? (
+                    <span className="text-cyan-500/80">{room.participantCount}/{room.fishbowlSeats} seats</span>
+                  ) : (
+                    <span>{room._count.members} participant{room._count.members !== 1 ? "s" : ""}</span>
+                  )}
                   <span>{room._count.messages} message{room._count.messages !== 1 ? "s" : ""}</span>
+                  {room.isFishbowl && <span className="rounded-full bg-cyan-900/40 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-400">Fishbowl</span>}
                 </div>
                 <button
                   onClick={() => room.joined ? router.push(`/room/${room.name}`) : joinRoom(room)}
@@ -339,9 +383,14 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                   className={`w-full rounded-xl py-1.5 text-xs font-semibold transition-colors ${
                     room.joined
                       ? "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                      : room.isFishbowl && room.fishbowlSeats && room.participantCount >= room.fishbowlSeats
+                      ? "bg-cyan-900/60 text-cyan-300 hover:bg-cyan-900"
                       : "bg-indigo-600 text-white hover:bg-indigo-500"
                   } disabled:opacity-40`}>
-                  {joining === room.id ? "Joining…" : room.joined ? "Enter debate" : room.isPrivate ? "Join (private)" : "Join debate"}
+                  {joining === room.id ? "Joining…" : room.joined ? "Enter debate"
+                    : room.isFishbowl && room.fishbowlSeats && room.participantCount >= room.fishbowlSeats
+                    ? "Watch debate"
+                    : room.isPrivate ? "Join (private)" : "Join debate"}
                 </button>
               </div>
             ))}

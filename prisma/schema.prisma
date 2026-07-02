@@ -65,6 +65,7 @@ model RoomMember {
   id        String   @id @default(cuid())
   userId    String
   roomId    String
+  role      String   @default("PARTICIPANT")
   joinedAt  DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -88,6 +89,8 @@ model Room {
   aiPersona      String?
   proposition    String?
   isOpinionated  Boolean   @default(false)
+  isFishbowl     Boolean   @default(false)
+  fishbowlSeats  Int?
   messages       Message[]
   sections       Section[]
   channels       Channel[]

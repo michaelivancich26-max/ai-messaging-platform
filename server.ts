@@ -98,7 +98,7 @@ async function loadWithReactions(messages: any[]) {
 }
 
 // Presence: roomId → Map<socketId, { userId, username }>
-const presence = new Map<string, Map<string, { userId: string; username: string }>>();
+const presence = new Map<string, Map<string, { userId: string; username: string; role?: string }>>();
 
 // Global socket index: userId → Set<socketId> for real-time notification delivery
 const userSockets = new Map<string, Set<string>>();
@@ -128,6 +128,15 @@ function broadcastPresence(roomId: string) {
   const members = presence.get(roomId);
   const list = members ? Array.from(members.values()) : [];
   io.to(roomId).emit("roomMembers", list);
+}
+
+async function getFishbowlRole(userId: string, roomId: string): Promise<string> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ role: string }[]>(
+      `SELECT "role" FROM "RoomMember" WHERE "userId" = $1 AND "roomId" = $2`, userId, roomId
+    );
+    return rows[0]?.role ?? "SPECTATOR";
+  } catch { return "PARTICIPANT"; }
 }
 
 function leavePresence(socketId: string) {
@@ -180,23 +189,34 @@ io.on("connection", (socket) => {
 
       socket.join(roomId);
 
-      // Presence
+      // Presence — include fishbowl role if applicable
+      const isFishbowl = !!(room as any).isFishbowl;
+      let fishbowlRole = "PARTICIPANT";
+      if (isFishbowl) fishbowlRole = await getFishbowlRole(socketUser.id, room.id);
       if (!presence.has(roomId)) presence.set(roomId, new Map());
-      presence.get(roomId)!.set(socket.id, { userId: socketUser.id, username: socketUser.username });
+      presence.get(roomId)!.set(socket.id, {
+        userId: socketUser.id, username: socketUser.username,
+        ...(isFishbowl ? { role: fishbowlRole } : {}),
+      });
       broadcastPresence(roomId);
+      if (isFishbowl) socket.emit("fishbowlRole", fishbowlRole);
 
       // Send room meta (without password hash)
       const { password: _pw, ...roomMeta } = room as any;
       let stances: string[] = [];
       let stanceCooldown = 0;
+      let metaIsFishbowl = false;
+      let metaFishbowlSeats: number | null = null;
       try {
-        const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null }[]>(
-          `SELECT "stances", "stanceCooldown" FROM "Room" WHERE "id" = $1`, room.id
+        const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null; isFishbowl: boolean; fishbowlSeats: number | null }[]>(
+          `SELECT "stances", "stanceCooldown", "isFishbowl", "fishbowlSeats" FROM "Room" WHERE "id" = $1`, room.id
         );
         if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
         if (stRow[0]?.stanceCooldown) stanceCooldown = stRow[0].stanceCooldown;
-      } catch { /* stances/stanceCooldown columns not yet added */ }
-      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown });
+        metaIsFishbowl = stRow[0]?.isFishbowl ?? false;
+        metaFishbowlSeats = stRow[0]?.fishbowlSeats ?? null;
+      } catch { /* columns may not exist yet */ }
+      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats });
 
       // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
       if (!debateTurns.has(roomId)) {
@@ -335,6 +355,78 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("requestSeat", async ({ roomId }: { roomId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room?.creatorId) return;
+      const ownerSockets = userSockets.get(room.creatorId);
+      if (ownerSockets) {
+        for (const sid of ownerSockets) {
+          io.to(sid).emit("seatRequest", { userId: socketUser.id, username: socketUser.username, roomId });
+        }
+      }
+    } catch (err) { console.error("requestSeat error:", err); }
+  });
+
+  socket.on("grantSeat", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
+        socket.emit("error", { message: "Only the room owner can grant seats." }); return;
+      }
+      const fishbowlSeats = (room as any).fishbowlSeats ?? 4;
+      const countRows = await prisma.$queryRawUnsafe<{ count: string }[]>(
+        `SELECT COUNT(*)::text as count FROM "RoomMember" WHERE "roomId" = $1 AND "role" = 'PARTICIPANT'`, room.id
+      );
+      if (parseInt(countRows[0]?.count ?? "0") >= fishbowlSeats) {
+        socket.emit("error", { message: "No seats available." }); return;
+      }
+      await prisma.$executeRawUnsafe(
+        `UPDATE "RoomMember" SET "role" = 'PARTICIPANT' WHERE "userId" = $1 AND "roomId" = $2`,
+        targetUserId, room.id
+      );
+      const members = presence.get(roomId);
+      if (members) {
+        for (const [sid, info] of members.entries()) {
+          if (info.userId === targetUserId) members.set(sid, { ...info, role: "PARTICIPANT" });
+        }
+      }
+      const targetSockets = userSockets.get(targetUserId);
+      if (targetSockets) {
+        for (const sid of targetSockets) io.to(sid).emit("fishbowlRole", "PARTICIPANT");
+      }
+      broadcastPresence(roomId);
+    } catch (err) { console.error("grantSeat error:", err); }
+  });
+
+  socket.on("revokeSeat", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
+        socket.emit("error", { message: "Only the room owner can revoke seats." }); return;
+      }
+      await prisma.$executeRawUnsafe(
+        `UPDATE "RoomMember" SET "role" = 'SPECTATOR' WHERE "userId" = $1 AND "roomId" = $2`,
+        targetUserId, room.id
+      );
+      const members = presence.get(roomId);
+      if (members) {
+        for (const [sid, info] of members.entries()) {
+          if (info.userId === targetUserId) members.set(sid, { ...info, role: "SPECTATOR" });
+        }
+      }
+      const targetSockets = userSockets.get(targetUserId);
+      if (targetSockets) {
+        for (const sid of targetSockets) io.to(sid).emit("fishbowlRole", "SPECTATOR");
+      }
+      broadcastPresence(roomId);
+    } catch (err) { console.error("revokeSeat error:", err); }
+  });
+
   socket.on(
     "sendMessage",
     async (payload: { roomId: string; userId: string; username: string; content: string; channelId?: string; settings?: { factualCorrection: boolean; ambiguityResolution: boolean } }) => {
@@ -365,6 +457,15 @@ io.on("connection", (socket) => {
 
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) { socket.emit("roomDeleted"); return; }
+
+        // Block spectators in fishbowl rooms
+        if ((room as any).isFishbowl) {
+          const role = await getFishbowlRole(user.id, room.id);
+          if (role === "SPECTATOR") {
+            socket.emit("error", { message: "Spectators cannot send messages." });
+            return;
+          }
+        }
 
         // Enforce structured debate turn order (sidebar channel is exempt)
         let isSidebarMsg = false;
@@ -878,12 +979,28 @@ app.get("/api/rooms/browse", async (req, res) => {
       take: 100,
       include: { _count: { select: { messages: true, members: true } } },
     });
-    let joinedIds = new Set<string>();
-    if (userId) {
-      const memberships = await prisma.roomMember.findMany({ where: { userId }, select: { roomId: true } });
-      joinedIds = new Set(memberships.map(m => m.roomId));
-    }
-    res.json(rooms.map(({ password: _pw, ...r }) => ({ ...r, joined: joinedIds.has(r.id) })));
+    const [joinedMemberships, fishbowlRows, participantCounts] = await Promise.all([
+      userId ? prisma.roomMember.findMany({ where: { userId }, select: { roomId: true } }) : Promise.resolve([]),
+      prisma.$queryRawUnsafe<{ id: string; isFishbowl: boolean; fishbowlSeats: number | null }[]>(
+        `SELECT "id", "isFishbowl", "fishbowlSeats" FROM "Room" WHERE "isDM" = false`
+      ).catch(() => [] as any[]),
+      prisma.$queryRawUnsafe<{ roomId: string; count: string }[]>(
+        `SELECT "roomId", COUNT(*)::text as count FROM "RoomMember" WHERE "role" = 'PARTICIPANT' GROUP BY "roomId"`
+      ).catch(() => [] as any[]),
+    ]);
+    const joinedIds = new Set(joinedMemberships.map(m => m.roomId));
+    const fishbowlMap = new Map((fishbowlRows as any[]).map((f: any) => [f.id, f]));
+    const participantMap = new Map((participantCounts as any[]).map((p: any) => [p.roomId, parseInt(p.count)]));
+    res.json(rooms.map(({ password: _pw, ...r }) => {
+      const fb = fishbowlMap.get(r.id) as any;
+      return {
+        ...r,
+        joined: joinedIds.has(r.id),
+        isFishbowl: fb?.isFishbowl ?? false,
+        fishbowlSeats: fb?.fishbowlSeats ?? null,
+        participantCount: participantMap.get(r.id) ?? 0,
+      };
+    }));
   } catch {
     res.status(500).json({ error: "Failed to browse rooms" });
   }
@@ -896,12 +1013,32 @@ app.post("/api/rooms/:name/join", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
-    await prisma.roomMember.upsert({
+
+    // Check if already a member (don't downgrade an existing participant)
+    const existing = await prisma.roomMember.findUnique({
       where: { userId_roomId: { userId, roomId: room.id } },
-      update: {},
-      create: { userId, roomId: room.id },
     });
-    res.json({ ok: true });
+
+    let role = "PARTICIPANT";
+    if (!existing) {
+      if ((room as any).isFishbowl && room.creatorId !== userId) {
+        const countRows = await prisma.$queryRawUnsafe<{ count: string }[]>(
+          `SELECT COUNT(*)::text as count FROM "RoomMember" WHERE "roomId" = $1 AND "role" = 'PARTICIPANT'`, room.id
+        );
+        const seats = (room as any).fishbowlSeats ?? 4;
+        role = parseInt(countRows[0]?.count ?? "0") < seats ? "PARTICIPANT" : "SPECTATOR";
+      }
+      await prisma.roomMember.create({ data: { userId, roomId: room.id } } as any);
+      if (role === "SPECTATOR") {
+        await prisma.$executeRawUnsafe(
+          `UPDATE "RoomMember" SET "role" = 'SPECTATOR' WHERE "userId" = $1 AND "roomId" = $2`, userId, room.id
+        );
+      }
+    } else {
+      role = (existing as any).role ?? "PARTICIPANT";
+    }
+
+    res.json({ ok: true, role });
   } catch {
     res.status(500).json({ error: "Failed to join room" });
   }
@@ -1035,18 +1172,21 @@ app.post("/api/rooms", async (req, res) => {
   const isOpinionated: boolean = req.body?.isOpinionated === true;
   const stanceCooldown: number = req.body?.stanceCooldown ? Math.max(0, Math.round(parseInt(req.body.stanceCooldown))) : 0;
   const rawStances: string[] | undefined = Array.isArray(req.body?.stances) ? req.body.stances : undefined;
+  const isFishbowl: boolean = req.body?.isFishbowl === true;
+  const fishbowlSeats: number | null = req.body?.fishbowlSeats ? Math.min(20, Math.max(2, parseInt(req.body.fishbowlSeats))) : null;
 
   if (!name) return res.status(400).json({ error: "Invalid room name" });
   if (containsSlur(name)) return res.status(400).json({ error: "Room name contains prohibited language." });
   if (isPrivate && !rawPassword) return res.status(400).json({ error: "Private rooms require a password." });
   if (maxMembers !== null && (maxMembers < 2 || maxMembers > 500)) return res.status(400).json({ error: "Max members must be between 2 and 500." });
+  if (isFishbowl && (!fishbowlSeats || fishbowlSeats < 2 || fishbowlSeats > 20)) return res.status(400).json({ error: "Fishbowl rooms need 2–20 seats." });
 
   try {
     const existing = await prisma.room.findUnique({ where: { name } });
     if (existing) return res.status(409).json({ error: "Room already exists" });
     const password = isPrivate && rawPassword ? await bcrypt.hash(rawPassword, 10) : null;
     const room = await prisma.room.create({
-      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona, isOpinionated },
+      data: { name, description, proposition, creatorId: creatorId ?? null, isPrivate, password, maxMembers, aiPersona, isOpinionated, isFishbowl, fishbowlSeats },
     } as any);
     if (stanceCooldown > 0) {
       try { await prisma.$executeRawUnsafe(`UPDATE "Room" SET "stanceCooldown" = $1 WHERE "id" = $2`, stanceCooldown, room.id); } catch { /* ignore */ }
@@ -1059,9 +1199,9 @@ app.post("/api/rooms", async (req, res) => {
     }
     // Auto-create default "general" channel for every new room
     await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
-    // Auto-join the creator
+    // Auto-join the creator as a PARTICIPANT
     if (creatorId) {
-      await prisma.roomMember.create({ data: { userId: creatorId, roomId: room.id } });
+      await prisma.roomMember.create({ data: { userId: creatorId, roomId: room.id } } as any);
     }
     res.json({ ...room, password: undefined });
   } catch {
@@ -1841,6 +1981,15 @@ async function start() {
     console.log("[DB] Message edit/delete columns ready");
   } catch (e) {
     console.error("[DB] Message edit/delete columns setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "isFishbowl" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "fishbowlSeats" INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "RoomMember" ADD COLUMN IF NOT EXISTS "role" TEXT NOT NULL DEFAULT 'PARTICIPANT'`);
+    console.log("[DB] Fishbowl columns ready");
+  } catch (e) {
+    console.error("[DB] Fishbowl columns setup failed:", e);
   }
 
   try {
