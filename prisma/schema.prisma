@@ -91,6 +91,8 @@ model Room {
   isOpinionated  Boolean   @default(false)
   isFishbowl     Boolean   @default(false)
   fishbowlSeats  Int?
+  isBotRoom      Boolean   @default(false)
+  botId          String?
   messages       Message[]
   sections       Section[]
   channels       Channel[]

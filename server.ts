@@ -9,6 +9,7 @@ import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
 import { evaluateClaim, computeCredibility } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
+import { respondAsBot, BOT_IDS } from "./services/debateBot";
 import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -530,12 +531,17 @@ io.on("connection", (socket) => {
           }
         }
 
+        // Bot auto-reply (fire-and-forget; delay is handled inside respondAsBot)
+        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg && (room as any).isBotRoom && (room as any).botId) {
+          respondAsBot(room.id, room.name, (room as any).botId as string, content, channelId ?? null, io, prisma);
+        }
+
         if (!isImage && !isSpectatorChatMsg) {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
           const aiDeps = { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name, channelId: channelId ?? null };
-          if (!isOpinionated) scheduleAI(channelId ?? roomId, aiDeps);
+          if (!isOpinionated && !(room as any).isBotRoom) scheduleAI(channelId ?? roomId, aiDeps);
           if (/@claude\b/i.test(content)) {
             respondToMention(content, channelId ?? roomId, aiDeps);
           }
@@ -1176,6 +1182,40 @@ app.post("/api/dm", async (req, res) => {
     res.json(room);
   } catch {
     res.status(500).json({ error: "Failed to create DM" });
+  }
+});
+
+// POST /api/bot-rooms — create a private 1v1 debate room against a bot
+app.post("/api/bot-rooms", async (req, res) => {
+  const { userId, botId } = req.body as { userId: string; botId: string };
+  if (!userId || !botId) return res.status(400).json({ error: "userId and botId required" });
+  if (!BOT_IDS.includes(botId)) return res.status(400).json({ error: "Unknown bot" });
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Unique room name scoped to this user+bot combination (most recent match)
+    const shortId = Date.now().toString(36).slice(-5);
+    const name = `arena-${botId}-${userId.slice(-5)}-${shortId}`;
+
+    const room = await prisma.room.create({
+      data: { name, isPrivate: false, creatorId: userId },
+    } as any);
+
+    // Set bot flags via raw SQL (isBotRoom and botId aren't in generated client yet)
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Room" SET "isBotRoom" = true, "botId" = $1 WHERE "id" = $2`,
+      botId, room.id,
+    );
+
+    // Auto-join the user
+    await prisma.roomMember.create({ data: { userId, roomId: room.id } } as any);
+
+    res.json({ name, id: room.id });
+  } catch (e) {
+    console.error("[bot-rooms]", e);
+    res.status(500).json({ error: "Failed to create bot room" });
   }
 });
 
@@ -2038,6 +2078,14 @@ async function start() {
     console.log("[DB] Reaction table ready");
   } catch (e) {
     console.error("[DB] Reaction table setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "isBotRoom" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "botId" TEXT`);
+    console.log("[DB] Bot room columns ready");
+  } catch (e) {
+    console.error("[DB] Bot room columns setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
