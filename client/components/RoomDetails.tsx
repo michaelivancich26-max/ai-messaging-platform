@@ -201,7 +201,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 onClick={() => setEditPrivate((v) => !v)}
                 className={`relative h-6 w-11 rounded-full transition-colors ${editPrivate ? "bg-indigo-600" : "bg-gray-700"}`}
               >
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${editPrivate ? "translate-x-5" : "translate-x-0.5"}`} />
+                <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${editPrivate ? "translate-x-5" : "translate-x-0"}`} />
               </button>
             </div>
 

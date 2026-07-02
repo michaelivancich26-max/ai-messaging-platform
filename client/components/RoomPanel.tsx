@@ -43,7 +43,7 @@ function Toggle({ enabled, onChange, label, description }: {
       </div>
       <button onClick={() => onChange(!enabled)}
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${enabled ? "bg-indigo-600" : "bg-gray-700"}`}>
-        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-4" : "translate-x-0.5"}`} />
+        <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
       </button>
     </div>
   );
@@ -311,7 +311,7 @@ export default function RoomPanel({
                 </div>
                 <button type="button" onClick={() => setEditOpinionated(v => !v)}
                   className={`relative h-5 w-9 rounded-full transition-colors ${editOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${editOpinionated ? "translate-x-4" : "translate-x-0.5"}`} />
+                  <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${editOpinionated ? "translate-x-4" : "translate-x-0"}`} />
                 </button>
               </div>
 
@@ -336,7 +336,7 @@ export default function RoomPanel({
                 </div>
                 <button type="button" onClick={() => setEditPrivate(v => !v)}
                   className={`relative h-5 w-9 rounded-full transition-colors ${editPrivate ? "bg-indigo-600" : "bg-gray-700"}`}>
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${editPrivate ? "translate-x-4" : "translate-x-0.5"}`} />
+                  <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${editPrivate ? "translate-x-4" : "translate-x-0"}`} />
                 </button>
               </div>
 

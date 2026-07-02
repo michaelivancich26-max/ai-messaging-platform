@@ -154,7 +154,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
             </div>
             <button type="button" onClick={() => setIsFishbowl(v => !v)}
               className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${isFishbowl ? "bg-cyan-500" : "bg-gray-700"}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isFishbowl ? "translate-x-5" : "translate-x-0.5"}`} />
+              <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isFishbowl ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
           {isFishbowl && (
@@ -181,7 +181,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
             </div>
             <button type="button" onClick={() => setIsOpinionated(v => !v)}
               className={`relative h-6 w-11 rounded-full transition-colors ${isOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isOpinionated ? "translate-x-5" : "translate-x-0.5"}`} />
+              <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isOpinionated ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
 
@@ -203,7 +203,7 @@ function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClos
             <div><p className="text-sm font-medium text-gray-200">Private</p><p className="text-xs text-gray-500">Requires a password</p></div>
             <button type="button" onClick={() => { setIsPrivate(v => !v); setPassword(""); }}
               className={`relative h-6 w-11 rounded-full transition-colors ${isPrivate ? "bg-indigo-600" : "bg-gray-700"}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isPrivate ? "translate-x-5" : "translate-x-0.5"}`} />
+              <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${isPrivate ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
           {isPrivate && (
