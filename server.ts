@@ -207,6 +207,7 @@ io.on("connection", (socket) => {
       let stanceCooldown = 0;
       let metaIsFishbowl = false;
       let metaFishbowlSeats: number | null = null;
+      let spectatorChatChannelId: string | null = null;
       try {
         const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null; isFishbowl: boolean; fishbowlSeats: number | null }[]>(
           `SELECT "stances", "stanceCooldown", "isFishbowl", "fishbowlSeats" FROM "Room" WHERE "id" = $1`, room.id
@@ -216,7 +217,16 @@ io.on("connection", (socket) => {
         metaIsFishbowl = stRow[0]?.isFishbowl ?? false;
         metaFishbowlSeats = stRow[0]?.fishbowlSeats ?? null;
       } catch { /* columns may not exist yet */ }
-      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats });
+      if (metaIsFishbowl) {
+        try {
+          const scRows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+            `SELECT "id" FROM "Channel" WHERE "roomId" = $1 AND "isSpectatorChat" = true LIMIT 1`, room.id
+          );
+          spectatorChatChannelId = scRows[0]?.id ?? null;
+          if (spectatorChatChannelId) socket.join(`channel:${spectatorChatChannelId}`);
+        } catch { /* ignore */ }
+      }
+      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats, spectatorChatChannelId });
 
       // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
       if (!debateTurns.has(roomId)) {
@@ -458,27 +468,36 @@ io.on("connection", (socket) => {
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) { socket.emit("roomDeleted"); return; }
 
-        // Block spectators in fishbowl rooms
+        // Enforce fishbowl channel access rules
+        let isSidebarMsg = false;
+        let isSpectatorChatMsg = false;
+        let isChannelOpinionated = false;
+        if (channelId) {
+          try {
+            const ch = await (prisma as any).channel.findUnique({ where: { id: channelId } });
+            isSidebarMsg = !!(ch as any)?.isSidebar && !(ch as any)?.isSpectatorChat;
+            isSpectatorChatMsg = !!(ch as any)?.isSpectatorChat;
+            isChannelOpinionated = !!(ch as any)?.isOpinionated;
+          } catch { /* ignore */ }
+        }
         if ((room as any).isFishbowl) {
           const role = await getFishbowlRole(user.id, room.id);
-          if (role === "SPECTATOR") {
+          if (isSpectatorChatMsg) {
+            // Spectator chat: only spectators can write
+            if (role !== "SPECTATOR") {
+              socket.emit("error", { message: "Only spectators can write in the spectator chat." });
+              return;
+            }
+          } else if (role === "SPECTATOR") {
+            // All other channels: spectators cannot write
             socket.emit("error", { message: "Spectators cannot send messages." });
             return;
           }
         }
 
         // Enforce structured debate turn order (sidebar channel is exempt)
-        let isSidebarMsg = false;
-        let isChannelOpinionated = false;
-        if (channelId) {
-          try {
-            const ch = await (prisma as any).channel.findUnique({ where: { id: channelId } });
-            isSidebarMsg = !!(ch as any)?.isSidebar;
-            isChannelOpinionated = !!(ch as any)?.isOpinionated;
-          } catch { /* ignore */ }
-        }
         const isOpinionated = isChannelOpinionated || !!(room as any).isOpinionated;
-        if (!isImage && !isSidebarMsg) {
+        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured") {
             if (!turn.currentSpeakerId) {
@@ -500,8 +519,8 @@ io.on("connection", (socket) => {
         const emitTarget = channelId ? `channel:${channelId}` : roomId;
         io.to(emitTarget).emit("message", { ...message, type: "human" });
 
-        // Auto-advance structured debate turn after speaking (not for sidebar messages)
-        if (!isImage && !isSidebarMsg) {
+        // Auto-advance structured debate turn after speaking (not for sidebar/spectator messages)
+        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured" && turn.currentSpeakerId === user.id) {
             const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
@@ -511,7 +530,7 @@ io.on("connection", (socket) => {
           }
         }
 
-        if (!isImage) {
+        if (!isImage && !isSpectatorChatMsg) {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
@@ -1199,6 +1218,10 @@ app.post("/api/rooms", async (req, res) => {
     }
     // Auto-create default "general" channel for every new room
     await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
+    // Auto-create spectator-chat channel for fishbowl rooms
+    if (isFishbowl) {
+      await (prisma as any).channel.create({ data: { name: "spectator-chat", roomId: room.id, order: 999, isSidebar: true, isSpectatorChat: true } });
+    }
     // Auto-join the creator as a PARTICIPANT
     if (creatorId) {
       await prisma.roomMember.create({ data: { userId: creatorId, roomId: room.id } } as any);
@@ -1990,6 +2013,13 @@ async function start() {
     console.log("[DB] Fishbowl columns ready");
   } catch (e) {
     console.error("[DB] Fishbowl columns setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "isSpectatorChat" BOOLEAN NOT NULL DEFAULT false`);
+    console.log("[DB] Channel isSpectatorChat column ready");
+  } catch (e) {
+    console.error("[DB] Channel isSpectatorChat column setup failed:", e);
   }
 
   try {

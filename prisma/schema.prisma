@@ -143,6 +143,7 @@ model Channel {
   sectionId String?
   section   Section?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   isSidebar            Boolean   @default(false)
+  isSpectatorChat      Boolean   @default(false)
   isSubDebate          Boolean   @default(false)
   proposition          String?
   parentMessageId      String?

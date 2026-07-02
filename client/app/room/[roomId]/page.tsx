@@ -71,6 +71,10 @@ export default function RoomPage() {
   const [sidebarChannel, setSidebarChannel] = useState<{ id: string; name: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarMessages, setSidebarMessages] = useState<ChatMessage[]>([]);
+  const [spectatorChatChannelId, setSpectatorChatChannelId] = useState<string | null>(null);
+  const [spectatorChatOpen, setSpectatorChatOpen] = useState(false);
+  const [spectatorChatMessages, setSpectatorChatMessages] = useState<ChatMessage[]>([]);
+  const spectatorChatChannelRef = useRef<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
   const [inviteResults, setInviteResults] = useState<{ id: string; username: string }[]>([]);
@@ -198,9 +202,18 @@ export default function RoomPage() {
     socket.on("seatRequest", ({ userId: reqUserId, username: reqUsername }: { userId: string; username: string }) => {
       setSeatRequests(prev => prev.some(r => r.userId === reqUserId) ? prev : [...prev, { userId: reqUserId, username: reqUsername }]);
     });
-    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[]; isFishbowl?: boolean; fishbowlSeats?: number | null }) => {
+    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[]; isFishbowl?: boolean; fishbowlSeats?: number | null; spectatorChatChannelId?: string | null }) => {
       setRoomMeta(meta as any);
       if (meta.stances && meta.stances.length > 0) setStances(meta.stances);
+      if (meta.spectatorChatChannelId && meta.spectatorChatChannelId !== spectatorChatChannelRef.current) {
+        setSpectatorChatChannelId(meta.spectatorChatChannelId);
+        spectatorChatChannelRef.current = meta.spectatorChatChannelId;
+        socket.emit("joinSidebar", { channelId: meta.spectatorChatChannelId });
+        fetch(`${SERVER}/api/channels/${meta.spectatorChatChannelId}/messages`)
+          .then(r => r.json())
+          .then((msgs: ChatMessage[]) => setSpectatorChatMessages(msgs.filter((m: ChatMessage) => m.type === "human")))
+          .catch(() => {});
+      }
     });
     socket.on("aiStreamStart", ({ tempId, sarcasm, isMention }: { tempId: string; sarcasm: boolean; isMention?: boolean }) => {
       setStreamingMsgs((prev) => new Map(prev).set(tempId, { text: "", sarcasm, isMention }));
@@ -276,6 +289,15 @@ export default function RoomPage() {
     });
 
     socket.on("message", (msg: ChatMessage) => {
+      // Route spectator chat messages
+      if (msg.channelId && msg.channelId === spectatorChatChannelRef.current) {
+        setSpectatorChatMessages(prev => {
+          const tempIdx = prev.findIndex(m => m.id.startsWith("temp-") && m.content === msg.content && m.userId === msg.userId);
+          if (tempIdx !== -1) { const next = [...prev]; next[tempIdx] = msg; return next; }
+          return [...prev, msg];
+        });
+        return;
+      }
       // Route sidebar messages to split-pane state only when sidebar isn't the active main channel
       const isSidebarMsg = msg.channelId && msg.channelId === sidebarChannelRef.current?.id;
       const sidebarIsMainView = sidebarChannelRef.current?.id && sidebarChannelRef.current.id === activeChannelRef.current?.id;
@@ -562,6 +584,22 @@ export default function RoomPage() {
     });
   }
 
+  function sendSpectatorMessage(content: string) {
+    if (!spectatorChatChannelRef.current) return;
+    const tempId = `temp-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: tempId, content, type: "human", senderType: "HUMAN",
+      createdAt: new Date().toISOString(), roomId, userId,
+      channelId: spectatorChatChannelRef.current,
+      user: { username },
+    } as any;
+    setSpectatorChatMessages(prev => [...prev, optimistic]);
+    getSocket({ id: userId, username }).emit("sendMessage", {
+      roomId, userId, username, content, settings,
+      channelId: spectatorChatChannelRef.current,
+    });
+  }
+
   async function createSidebarForChannel(channelId: string) {
     try {
       const res = await fetch(`${SERVER}/api/rooms/${roomId}/channels/${channelId}/sidebar`, {
@@ -796,8 +834,26 @@ export default function RoomPage() {
             {onlineMembers.filter(m => m.role !== "SPECTATOR").length}/{(roomMeta as any).fishbowlSeats} seats
           </span>
         )}
-        {/* Side chat toggle — visible for any non-sidebar, non-DM channel */}
-        {!roomId.startsWith("dm-") && activeChannel && !activeChannel.isSidebar && (
+        {/* Spectator chat toggle — fishbowl rooms only, visible to everyone */}
+        {!roomId.startsWith("dm-") && spectatorChatChannelId && (
+          <button
+            onClick={() => { setSpectatorChatOpen(v => !v); if (sidebarOpen) setSidebarOpen(false); }}
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
+              spectatorChatOpen
+                ? "border-cyan-600 bg-cyan-900/40 text-cyan-300"
+                : "border-gray-700 text-gray-500 hover:border-cyan-700/60 hover:text-cyan-500"
+            }`}
+            title={spectatorChatOpen ? "Hide spectator chat" : "Show spectator chat"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
+              <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
+              <path fillRule="evenodd" d="M1.38 8.28a.87.87 0 0 1 0-.566 7.003 7.003 0 0 1 13.239.006.87.87 0 0 1 0 .565A7.003 7.003 0 0 1 1.379 8.28ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" clipRule="evenodd" />
+            </svg>
+            Spectator chat
+          </button>
+        )}
+        {/* Side chat toggle — participants only in fishbowl rooms; all in regular rooms */}
+        {!roomId.startsWith("dm-") && activeChannel && !activeChannel.isSidebar && myFishbowlRole !== "SPECTATOR" && (
           <button
             onClick={() => {
               if (sidebarChannel) {
@@ -805,6 +861,7 @@ export default function RoomPage() {
               } else {
                 createSidebarForChannel(activeChannel.id);
               }
+              if (spectatorChatOpen) setSpectatorChatOpen(false);
             }}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
               sidebarOpen && sidebarChannel
@@ -996,9 +1053,12 @@ export default function RoomPage() {
         </div>
       )}
 
-      <div className={`flex flex-1 overflow-hidden min-h-0 ${sidebarOpen && sidebarChannel ? "flex-row" : "flex-col"}`}>
+      {(() => {
+        const anyPanelOpen = (sidebarOpen && !!sidebarChannel) || (spectatorChatOpen && !!spectatorChatChannelId);
+        return (
+      <div className={`flex flex-1 overflow-hidden min-h-0 ${anyPanelOpen ? "flex-row" : "flex-col"}`}>
         {/* Main chat column — hidden on mobile when sidebar is open (sidebar takes full screen instead) */}
-        <div className={`flex-col flex-1 overflow-hidden min-w-0 ${sidebarOpen && sidebarChannel ? "hidden md:flex" : "flex"}`}>
+        <div className={`flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
           {!roomId.startsWith("dm-") && !activeChannel ? (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
           ) : (
@@ -1023,7 +1083,7 @@ export default function RoomPage() {
             </>
           )}
         </div>
-        {/* Sidebar chat panel */}
+        {/* Sidebar chat panel (participants) */}
         {sidebarOpen && sidebarChannel && (
           <SidebarChat
             messages={sidebarMessages}
@@ -1032,7 +1092,20 @@ export default function RoomPage() {
             onClose={() => setSidebarOpen(false)}
           />
         )}
+        {/* Spectator chat panel (fishbowl rooms) */}
+        {spectatorChatOpen && spectatorChatChannelId && (
+          <SidebarChat
+            messages={spectatorChatMessages}
+            currentUsername={username}
+            onSend={sendSpectatorMessage}
+            onClose={() => setSpectatorChatOpen(false)}
+            variant="spectator"
+            readOnly={myFishbowlRole !== "SPECTATOR"}
+          />
+        )}
       </div>
+        );
+      })()}
 
       {/* Poll suggestion banner */}
       {pollSuggestion && (
