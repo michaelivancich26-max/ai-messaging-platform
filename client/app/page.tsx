@@ -38,7 +38,7 @@ export default function AuthPage() {
     });
     setLoading(false);
     if (res?.error) return setError("Invalid username or password.");
-    router.push("/lobby");
+    router.push("/home");
   }
 
   async function handleSignup(e: React.FormEvent) {
@@ -60,7 +60,7 @@ export default function AuthPage() {
     });
     setLoading(false);
     if (login?.error) return setError("Account created — please log in.");
-    router.push("/lobby");
+    router.push("/home");
   }
 
   async function handleForgot(e: React.FormEvent) {

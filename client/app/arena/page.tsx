@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Sidebar from "@/components/Sidebar";
+import ArenaSidebar from "@/components/ArenaSidebar";
 import { BOTS, BOT_COLORS, botWinRate, type Bot } from "@/lib/bots";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -157,10 +157,19 @@ function BotCard({ bot }: { bot: Bot }) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function ArenaPage() {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   return (
     <div className="flex h-full">
-      <Sidebar />
+      <ArenaSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
       <main className="flex flex-1 flex-col overflow-y-auto bg-gray-950">
+
+        {/* Mobile top bar */}
+        <div className="flex min-h-12 shrink-0 items-center border-b border-gray-800 px-4 md:hidden pt-safe">
+          <button onClick={() => setMobileSidebarOpen(true)} className="rounded p-1.5 text-gray-400 hover:bg-gray-800">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" /></svg>
+          </button>
+          <span className="ml-3 text-sm font-semibold text-amber-400">Arena</span>
+        </div>
 
         {/* Hero */}
         <div className="relative shrink-0 border-b border-gray-800 bg-gradient-to-b from-gray-900 via-gray-900/90 to-gray-950 px-6 py-14 text-center">

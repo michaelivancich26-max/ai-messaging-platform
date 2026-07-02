@@ -126,7 +126,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
           </svg>
         </button>
         {!collapsed && (
-          <button onClick={() => router.push("/lobby")}
+          <button onClick={() => router.push("/home")}
             className="flex-1 truncate text-sm font-semibold text-gray-100 hover:text-indigo-400 transition-colors text-left">
             Veritas
           </button>
@@ -138,18 +138,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2">
-
-        {/* Debate Arena */}
-        <div className="px-2 pb-1">
-          <button onClick={() => router.push("/arena")}
-            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-gray-500 hover:bg-gray-800 hover:text-indigo-400 transition-colors ${collapsed ? "justify-center" : ""}`}
-            title="Debate Arena">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
-              <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
-            </svg>
-            {!collapsed && <span className="text-sm">Arena</span>}
-          </button>
-        </div>
 
         {/* Knowledge Graph */}
         <div className="mb-2 px-2">
@@ -297,7 +285,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
 
       {/* Profile + Sign out */}
       <div className="border-t border-gray-800 px-2 pt-2 pb-safe space-y-0.5">
-        <button onClick={() => router.push("/profile")}
+        <button onClick={() => router.push("/dashboard")}
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors ${collapsed ? "justify-center" : ""}`}>
           {myAvatarUrl
             ? <img src={myAvatarUrl} alt={username} className="h-7 w-7 rounded-full object-cover shrink-0 ring-1 ring-gray-700" />

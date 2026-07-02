@@ -1108,13 +1108,33 @@ app.get("/api/messages/:id/image", async (req, res) => {
 // GET /api/users/:id/profile
 app.get("/api/users/:id/profile", async (req, res) => {
   try {
+    const uid = req.params.id;
     const user = await prisma.user.findUnique({
-      where: { id: req.params.id },
+      where: { id: uid },
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    const cred = await computeCredibility(req.params.id, prisma).catch(() => null);
-    res.json({ ...user, ...(cred ? { cred } : {}) });
+    const [cred, debateRows, messageRows, arenaRows] = await Promise.all([
+      computeCredibility(uid, prisma).catch(() => null),
+      prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
+        uid,
+      ).catch(() => [{ count: 0n }]),
+      prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(*) AS count FROM "Message" WHERE "senderId" = $1`,
+        uid,
+      ).catch(() => [{ count: 0n }]),
+      prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isBotRoom" = true`,
+        uid,
+      ).catch(() => [{ count: 0n }]),
+    ]);
+    const stats = {
+      debateCount: Number((debateRows[0] as any)?.count ?? 0),
+      messageCount: Number((messageRows[0] as any)?.count ?? 0),
+      arenaMatchCount: Number((arenaRows[0] as any)?.count ?? 0),
+    };
+    res.json({ ...user, stats, ...(cred ? { cred } : {}) });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
