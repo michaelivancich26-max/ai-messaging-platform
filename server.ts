@@ -52,6 +52,7 @@ io.use((socket, next) => {
 const prisma = new PrismaClient();
 
 const redis = createClient({ url: process.env.REDIS_URL ?? "redis://localhost:6379" });
+redis.on("error", (err) => console.error("[Redis] Client error:", err));
 redis.connect().catch(console.error);
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
@@ -1709,10 +1710,8 @@ async function start() {
 
   // Ensure User profile columns exist (Railway migration history can get out of sync)
   try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bio" TEXT;
-      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT;
-    `);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bio" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`);
     console.log("[DB] User profile columns ready");
   } catch (e) {
     console.error("[DB] User profile columns setup failed:", e);
@@ -1720,24 +1719,28 @@ async function start() {
 
   // Ensure debate position tables and Room.proposition exist
   try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "proposition" TEXT`);
     await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "proposition" TEXT;
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'DebatePosition') THEN
           CREATE TYPE "DebatePosition" AS ENUM ('FOR', 'AGAINST', 'NEUTRAL');
         END IF;
-      END $$;
+      END $$
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "UserPosition" (
-        "id"        TEXT             NOT NULL,
-        "userId"    TEXT             NOT NULL,
-        "roomId"    TEXT             NOT NULL,
-        "position"  "DebatePosition" NOT NULL,
-        "updatedAt" TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "createdAt" TIMESTAMP(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "id"        TEXT         NOT NULL,
+        "userId"    TEXT         NOT NULL,
+        "roomId"    TEXT         NOT NULL,
+        "position"  TEXT         NOT NULL,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "UserPosition_pkey" PRIMARY KEY ("id")
-      );
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE UNIQUE INDEX IF NOT EXISTS "UserPosition_userId_roomId_key"
-        ON "UserPosition"("userId", "roomId");
+        ON "UserPosition"("userId", "roomId")
     `);
     console.log("[DB] Debate position tables ready");
   } catch (e) {
@@ -1763,22 +1766,18 @@ async function start() {
   }
 
   try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "isSubDebate" BOOLEAN NOT NULL DEFAULT false;
-      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "proposition" TEXT;
-      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentMessageId" TEXT;
-      ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentMessagePreview" TEXT;
-    `);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "isSubDebate" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "proposition" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentMessageId" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Channel" ADD COLUMN IF NOT EXISTS "parentMessagePreview" TEXT`);
     console.log("[DB] Channel sub-debate columns ready");
   } catch (e) {
     console.error("[DB] Channel sub-debate columns setup failed:", e);
   }
 
   try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "stances" TEXT;
-      ALTER TABLE "UserPosition" ALTER COLUMN "position" TYPE TEXT USING "position"::text;
-    `);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "stances" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "UserPosition" ALTER COLUMN "position" TYPE TEXT USING "position"::text`);
     console.log("[DB] Stances and position columns ready");
   } catch (e) {
     console.error("[DB] Stances/position column setup failed:", e);
@@ -1837,10 +1836,8 @@ async function start() {
   }
 
   try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "editedAt" TIMESTAMP(3);
-      ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
-    `);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "editedAt" TIMESTAMP(3)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`);
     console.log("[DB] Message edit/delete columns ready");
   } catch (e) {
     console.error("[DB] Message edit/delete columns setup failed:", e);
