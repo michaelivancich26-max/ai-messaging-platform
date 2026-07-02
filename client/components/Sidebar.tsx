@@ -139,6 +139,18 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2">
 
+        {/* Hub link */}
+        <div className="px-2 pb-1">
+          <button onClick={() => router.push("/home")}
+            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-200 transition-colors ${collapsed ? "justify-center" : ""}`}
+            title="Back to Hub">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
+              <path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" />
+            </svg>
+            {!collapsed && <span className="text-sm">Hub</span>}
+          </button>
+        </div>
+
         {/* Knowledge Graph */}
         <div className="mb-2 px-2">
           <button onClick={() => router.push("/graph")}
@@ -181,9 +193,9 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
 
           {!collapsed && roomsOpen && (
             <ul className="mt-0.5">
-              {rooms.length === 0 ? (
+              {rooms.filter(r => !r.name.startsWith("arena-")).length === 0 ? (
                 <li className="px-3 py-2 text-xs text-gray-600">No rooms yet</li>
-              ) : rooms.map(room => (
+              ) : rooms.filter(r => !r.name.startsWith("arena-")).map(room => (
                 <li key={room.id}>
                   <button onClick={() => handleRoomClick(room)}
                     className={`flex w-full flex-col rounded-lg px-3 py-1.5 transition-colors text-left

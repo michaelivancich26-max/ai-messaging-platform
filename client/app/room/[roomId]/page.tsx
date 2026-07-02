@@ -14,6 +14,7 @@ import VibeSearch from "@/components/VibeSearch";
 import RoomPanel from "@/components/RoomPanel";
 import type { Settings } from "@/components/RoomPanel";
 import Sidebar from "@/components/Sidebar";
+import ArenaSidebar from "@/components/ArenaSidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
 import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
@@ -757,7 +758,10 @@ export default function RoomPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      <Sidebar activeRoomName={roomId} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
+      {roomId.startsWith("arena-")
+        ? <ArenaSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
+        : <Sidebar activeRoomName={roomId} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
+      }
 
       {/* Channel list — only for non-DM rooms */}
       {!roomId.startsWith("dm-") && (
