@@ -14,28 +14,63 @@ function BotIcon({ id, size }: { id: string; size: number }) {
   const s = size;
   const icons: Record<string, React.ReactNode> = {
     rex: (
+      // Flame — pure heat, no light
       <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
-        <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm3.5-9.5c0 .828-.672 1.5-1.5 1.5s-1.5-.672-1.5-1.5.672-1.5 1.5-1.5 1.5.672 1.5 1.5zm-5 0c0 .828-.672 1.5-1.5 1.5S7.5 11.328 7.5 10.5 8.172 9 9 9s1.5.672 1.5 1.5zm6.25 4.5H7.25C7.664 16.596 9.726 18 12 18s4.336-1.404 4.75-3z"/>
+        <path d="M13.5 .67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/>
+      </svg>
+    ),
+    dunk: (
+      // Warning triangle — alarm, paranoia
+      <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
+        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
       </svg>
     ),
     cass: (
+      // Graduation cap — the student
       <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
         <path d="M12 3L1 9l4 2.18V17h2v-4.82l2 1.09V17c0 2.21 3.134 4 7 4s7-1.79 7-4v-3.73l2-1.09L23 9 12 3zM6.087 15.683C5.422 14.989 5 14.027 5 13v-1.95l7 3.82 7-3.82V13c0 2.21-3.134 4-7 4a8.76 8.76 0 0 1-5.913-1.317z"/>
       </svg>
     ),
-    morgan: (
+    norm: (
+      // Balance/scales — pathological both-sidesism
       <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
-        <path d="M12 3C6.477 3 2 7.477 2 13c0 3.478 1.793 6.539 4.5 8.321V22h11v-.679C20.207 19.539 22 16.478 22 13c0-5.523-4.477-10-10-10zm4 15H8v-1l1-1v-3.5l-1-.5V11h8v1.5l-1 .5V16l1 1v1zm-4-9c-1.105 0-2-.895-2-2s.895-2 2-2 2 .895 2 2-.895 2-2 2z"/>
+        <path d="M17 2H7L2 12h5v8h2v-8h6v8h2v-8h5L17 2zm-5 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+      </svg>
+    ),
+    morgan: (
+      // Lightbulb — methodical, pragmatic
+      <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
+        <path d="M12 3C8.69 3 6 5.69 6 9c0 2.27 1.26 4.25 3.13 5.31V17a1 1 0 0 0 1 1h3.74a1 1 0 0 0 1-1v-2.69C16.74 13.25 18 11.27 18 9c0-3.31-2.69-6-6-6zm2.25 14H9.75v-1h4.5v1zm.75-3H9V12.5c-1.77-.64-3-2.36-3-4.5 0-2.76 2.24-5 5-5s5 2.24 5 5c0 2.14-1.23 3.86-3 4.5V14zm-3 5h2v1h-2v-1z"/>
+      </svg>
+    ),
+    pip: (
+      // Bar chart — data obsession
+      <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
+        <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zM16.2 13h2.8v6h-2.8v-6z"/>
       </svg>
     ),
     vera: (
+      // Target/crosshair — finds the flaw precisely
       <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
-        <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-14a6 6 0 1 0 0 12A6 6 0 0 0 12 6zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm0 10c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+      </svg>
+    ),
+    hugo: (
+      // Question mark — the contrarian Socrates
+      <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
       </svg>
     ),
     atlas: (
+      // Trophy — tournament champion
       <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
         <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z"/>
+      </svg>
+    ),
+    nova: (
+      // Sparkle / auto-awesome — philosophical brilliance
+      <svg viewBox="0 0 24 24" fill="currentColor" width={s} height={s}>
+        <path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/>
       </svg>
     ),
   };
@@ -113,16 +148,27 @@ function BotCard({ bot }: { bot: Bot }) {
 
       {/* Body */}
       <div className="flex flex-1 flex-col p-4">
-        {/* Tier */}
-        <div className="mb-3 flex items-center justify-between">
+        {/* Tier + style badge */}
+        <div className="mb-2 flex items-center justify-between">
           <StarRow tier={bot.tier} color={bot.color} />
           <span className={`text-[10px] font-semibold uppercase tracking-wider ${c.subtext}`}>
             {bot.tierName}
           </span>
         </div>
+        <div className="mb-3">
+          <span className={`inline-flex rounded-full bg-gray-800/80 px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-gray-700/40 ${c.text}`}>
+            {bot.specialty}
+          </span>
+        </div>
 
         {/* Bio */}
         <p className="flex-1 text-xs leading-relaxed text-gray-500">{bot.bio}</p>
+
+        {/* Weakness */}
+        <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-950/20 px-2.5 py-2 ring-1 ring-red-900/20">
+          <span className="mt-px shrink-0 text-[9px] font-bold uppercase tracking-wider text-red-500">Weak</span>
+          <p className="text-[10px] leading-relaxed text-red-400/70">{bot.flaw}</p>
+        </div>
 
         {/* Stats */}
         <div className="mt-4 flex items-center gap-2 border-t border-gray-800 pt-3 text-[10px]">
@@ -194,7 +240,7 @@ export default function ArenaPage() {
             <div className="mt-5 flex items-center justify-center gap-4 text-xs text-gray-600">
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                All bots powered by Claude Haiku
+                10 opponents across 5 tiers
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
@@ -214,7 +260,7 @@ export default function ArenaPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-5">
             {BOTS.map((bot) => (
               <BotCard key={bot.id} bot={bot} />
             ))}
