@@ -301,22 +301,22 @@ io.on("connection", (socket) => {
 
       socket.join(`channel:${channelId}`);
 
-      // If this is a botFirst match with no messages yet, trigger the bot's opening
+      // If this is a botFirst match with no messages yet, trigger the bot's opening.
+      // Use channel.room directly — socket.data.roomDbId may not be set yet if joinRoom
+      // is still awaiting its async DB queries when joinChannel arrives.
       try {
-        const roomDbId = socket.data.roomDbId as string | undefined;
-        if (roomDbId) {
-          const cfgRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null; botId: string | null }[]>(
-            `SELECT "matchConfig", "botId" FROM "Room" WHERE "id" = $1 LIMIT 1`, roomDbId
-          );
-          const cfg = cfgRows[0]?.matchConfig ? JSON.parse(cfgRows[0].matchConfig) : null;
-          if (cfg?.botFirst) {
-            const msgCount = await prisma.message.count({ where: { roomId: roomDbId, channelId } });
-            if (msgCount === 0) {
-              const botId = cfgRows[0]?.botId;
-              const roomName = socket.data.roomId as string;
-              if (botId && roomName) {
-                respondAsBot(roomDbId, roomName, botId, "", channelId, io, prisma, true);
-              }
+        const roomDbId = channel.room.id;
+        const roomName = channel.room.name;
+        const cfgRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null; botId: string | null }[]>(
+          `SELECT "matchConfig", "botId" FROM "Room" WHERE "id" = $1 LIMIT 1`, roomDbId
+        );
+        const cfg = cfgRows[0]?.matchConfig ? JSON.parse(cfgRows[0].matchConfig) : null;
+        if (cfg?.botFirst) {
+          const msgCount = await prisma.message.count({ where: { roomId: roomDbId, channelId } });
+          if (msgCount === 0) {
+            const botId = cfgRows[0]?.botId;
+            if (botId) {
+              respondAsBot(roomDbId, roomName, botId, "", channelId, io, prisma, true);
             }
           }
         }
