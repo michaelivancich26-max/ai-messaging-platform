@@ -14,16 +14,21 @@ interface Stats {
   debateCount: number;
   messageCount: number;
   arenaMatchCount: number;
+  arenaWins: number;
+  arenaLosses: number;
+  arenaBonus: number;
 }
 
 // ─── Veritas Score Panel ─────────────────────────────────────────────────────
-function VeritasScorePanel({ cred }: { cred: CredScore }) {
+function VeritasScorePanel({ cred, arenaBonus = 0 }: { cred: CredScore; arenaBonus?: number }) {
   const accuracy = cred.total > 0 ? Math.round((cred.supported / cred.total) * 100) : null;
+  const baseScore = cred.total >= 3 ? cred.score : 0;
+  const displayScore = baseScore + arenaBonus;
   const tier =
-    cred.total < 3         ? { label: "Unrated",  color: "text-gray-500",    bg: "bg-gray-800/60",    ring: "ring-gray-700/40"   } :
-    (accuracy ?? 0) >= 80  ? { label: "Credible", color: "text-emerald-300", bg: "bg-emerald-950/40", ring: "ring-emerald-700/40" } :
-    (accuracy ?? 0) >= 50  ? { label: "Mixed",    color: "text-yellow-300",  bg: "bg-yellow-950/30",  ring: "ring-yellow-700/40"  } :
-                             { label: "Disputed", color: "text-red-400",     bg: "bg-red-950/30",     ring: "ring-red-700/40"     };
+    cred.total < 3 && arenaBonus === 0 ? { label: "Unrated",  color: "text-gray-500",    bg: "bg-gray-800/60",    ring: "ring-gray-700/40"   } :
+    (accuracy ?? 0) >= 80              ? { label: "Credible", color: "text-emerald-300", bg: "bg-emerald-950/40", ring: "ring-emerald-700/40" } :
+    (accuracy ?? 0) >= 50              ? { label: "Mixed",    color: "text-yellow-300",  bg: "bg-yellow-950/30",  ring: "ring-yellow-700/40"  } :
+                                         { label: "Disputed", color: "text-red-400",     bg: "bg-red-950/30",     ring: "ring-red-700/40"     };
   return (
     <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-3">
       <div className="flex items-center justify-between">
@@ -31,10 +36,17 @@ function VeritasScorePanel({ cred }: { cred: CredScore }) {
         <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${tier.bg} ${tier.color} ${tier.ring}`}>{tier.label}</span>
       </div>
       <div className="flex items-end gap-3">
-        <span className="text-4xl font-bold tabular-nums text-gray-100">{cred.total < 3 ? "—" : cred.score.toFixed(1)}</span>
+        <span className="text-4xl font-bold tabular-nums text-gray-100">
+          {cred.total < 3 && arenaBonus === 0 ? "—" : displayScore.toFixed(1)}
+        </span>
         {cred.total >= 3 && accuracy !== null && <span className="mb-1 text-sm text-gray-500">{accuracy}% accuracy</span>}
+        {arenaBonus !== 0 && (
+          <span className={`mb-1 text-xs font-semibold ${arenaBonus > 0 ? "text-amber-500" : "text-red-500"}`}>
+            {arenaBonus > 0 ? "+" : ""}{arenaBonus.toFixed(1)} arena
+          </span>
+        )}
       </div>
-      {cred.total < 3 && <p className="text-xs text-gray-600">Make at least 3 verified claims to earn a score.</p>}
+      {cred.total < 3 && arenaBonus === 0 && <p className="text-xs text-gray-600">Make at least 3 verified claims to earn a score.</p>}
       {cred.total >= 1 && accuracy !== null && (
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-800 flex">
           <div className="bg-emerald-500 transition-all" style={{ width: `${accuracy}%` }} />
@@ -257,12 +269,19 @@ export default function DashboardPage() {
             </div>
 
             {/* ── Veritas Score ── */}
-            {cred && <VeritasScorePanel cred={cred} />}
+            {cred && <VeritasScorePanel cred={cred} arenaBonus={stats?.arenaBonus ?? 0} />}
 
             {/* ── Arena overview ── */}
             {(stats?.arenaMatchCount ?? 0) > 0 && (
               <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5">
-                <SectionLabel>Arena</SectionLabel>
+                <div className="flex items-center justify-between mb-3">
+                  <SectionLabel>Arena</SectionLabel>
+                  <div className="flex items-center gap-2 text-xs -mt-3">
+                    <span className="font-bold text-emerald-400">{stats?.arenaWins ?? 0}W</span>
+                    <span className="text-gray-700">/</span>
+                    <span className="font-bold text-red-400">{stats?.arenaLosses ?? 0}L</span>
+                  </div>
+                </div>
                 <div className="grid grid-cols-5 gap-2">
                   {BOTS.map(bot => (
                     <button

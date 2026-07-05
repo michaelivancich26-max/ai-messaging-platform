@@ -25,6 +25,7 @@ import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
 import SubDebateModal from "@/components/SubDebateModal";
 import type { RoomMeta } from "@/components/RoomPanel";
+import { getBotById } from "@/lib/bots";
 
 export type Annotation = { pronoun: string; referent: string };
 
@@ -89,6 +90,16 @@ export default function RoomPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   // Ref so reconnect handler can always see the latest active channel without stale closure
   const activeChannelRef = useRef<Channel | null>(null);
+
+  const isBotRoom = roomId.startsWith("arena-");
+  const MATCH_TURNS = 10;
+  const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
+  const [matchResult, setMatchResult] = useState<{
+    winner: "human" | "bot";
+    verdict: string;
+    scoreImpact: number;
+    botId: string;
+  } | null>(null);
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
@@ -415,6 +426,53 @@ export default function RoomPage() {
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, userId, roomId]);
+
+  // Arena: derive human turn count from message list
+  const myTurnCount = isBotRoom
+    ? messages.filter((m) => (m as any).userId === userId).length
+    : 0;
+
+  // Arena: load existing match result on mount (handles page reload after match ends)
+  useEffect(() => {
+    if (!isBotRoom || !userId) return;
+    fetch(`${SERVER}/api/arena-result/${encodeURIComponent(roomId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.winner) {
+          setMatchResult(data);
+          setMatchState("ended");
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBotRoom, userId]);
+
+  // Arena: auto-trigger judge when turn limit reached
+  useEffect(() => {
+    if (!isBotRoom || matchState !== "active" || myTurnCount < MATCH_TURNS) return;
+    triggerJudge(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTurnCount, matchState, isBotRoom]);
+
+  async function triggerJudge(forfeit: boolean) {
+    setMatchState("judging");
+    try {
+      const res = await fetch(`${SERVER}/api/arena-judge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomName: roomId, userId, forfeit }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMatchResult(data);
+        setMatchState("ended");
+      } else {
+        setMatchState("active");
+      }
+    } catch {
+      setMatchState("active");
+    }
+  }
 
   function emitTyping() {
     getSocket({ id: userId, username }).emit("typing", { roomId });
@@ -1057,12 +1115,91 @@ export default function RoomPage() {
         </div>
       )}
 
+      {/* Arena match progress banner */}
+      {isBotRoom && matchState === "active" && (
+        <div className="shrink-0 flex items-center gap-3 border-b border-amber-900/30 bg-amber-950/15 px-4 py-2">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
+            <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
+          </svg>
+          <div className="flex flex-1 items-center gap-2 min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Arena Match</span>
+            <span className="text-[10px] text-amber-700">·</span>
+            <span className="text-[10px] text-amber-600/80">{myTurnCount} / {MATCH_TURNS} exchanges</span>
+            <div className="flex gap-0.5 ml-1">
+              {Array.from({ length: MATCH_TURNS }).map((_, i) => (
+                <span key={i} className={`h-1.5 w-1.5 rounded-full transition-colors ${i < myTurnCount ? "bg-amber-500" : "bg-gray-700"}`} />
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => triggerJudge(true)}
+            className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors"
+          >
+            Forfeit
+          </button>
+        </div>
+      )}
+      {isBotRoom && matchState === "judging" && (
+        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-amber-900/30 bg-amber-950/15 px-4 py-3">
+          <svg className="h-4 w-4 animate-spin text-amber-400" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-xs font-medium text-amber-400">Judging the debate…</span>
+        </div>
+      )}
+
       {(() => {
         const anyPanelOpen = (sidebarOpen && !!sidebarChannel) || (spectatorChatOpen && !!spectatorChatChannelId);
         return (
       <div className={`flex flex-1 overflow-hidden min-h-0 ${anyPanelOpen ? "flex-row" : "flex-col"}`}>
         {/* Main chat column — hidden on mobile when sidebar is open (sidebar takes full screen instead) */}
-        <div className={`flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
+        <div className={`relative flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
+          {/* Arena match result overlay */}
+          {isBotRoom && matchState === "ended" && matchResult && (() => {
+            const bot = getBotById(matchResult.botId);
+            const won = matchResult.winner === "human";
+            return (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
+                  <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
+                    {won ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-400">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="9 12 11 14 15 10" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-400">
+                        <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </div>
+                  <div>
+                    <h2 className={`text-2xl font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                      {won ? "You Won!" : "You Lost"}
+                    </h2>
+                    {bot && <p className="mt-0.5 text-sm text-gray-500">vs. {bot.name} — {bot.title}</p>}
+                  </div>
+                  <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
+                  <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Veritas Score Impact</p>
+                    <p className={`text-xl font-bold tabular-nums mt-0.5 ${won ? "text-emerald-400" : "text-red-400"}`}>
+                      {matchResult.scoreImpact > 0 ? "+" : ""}{matchResult.scoreImpact.toFixed(1)}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => router.push("/arena")}
+                      className="flex-1 rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 transition-colors"
+                    >
+                      Return to Arena
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {!roomId.startsWith("dm-") && !activeChannel ? (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
           ) : (
@@ -1180,8 +1317,13 @@ export default function RoomPage() {
         const isMyTurn = debateTurn?.currentSpeakerId === userId;
         const floorClaimed = !!debateTurn?.currentSpeakerId;
         const isMySide = myPosition === debateTurn?.currentSide;
-        const locked = isSpectating || (isStructured && !isMyTurn);
-        const reason = isSpectating
+        const arenaLocked = isBotRoom && matchState !== "active";
+        const locked = isSpectating || (isStructured && !isMyTurn) || arenaLocked;
+        const reason = arenaLocked
+          ? matchState === "judging"
+            ? "Judging in progress…"
+            : "The match has ended"
+          : isSpectating
           ? "You're spectating — request a seat above to participate"
           : isStructured
           ? !myPosition || myPosition === "NEUTRAL"

@@ -300,3 +300,67 @@ export async function respondAsBot(
 }
 
 export const BOT_IDS = Object.keys(BOT_CONFIGS);
+
+export const BOT_TIER: Record<string, number> = Object.fromEntries(
+  Object.entries(BOT_CONFIGS).map(([id, cfg]) => [id, cfg.tier]),
+);
+
+const TIER_BONUS: Record<number, number> = { 1: 0.5, 2: 1.0, 3: 2.0, 4: 3.5, 5: 5.0 };
+const LOSS_PENALTY = 0.3;
+
+export async function judgeMatch(
+  roomDbId: string,
+  _roomName: string,
+  _userId: string,
+  botId: string,
+  prisma: PrismaClient,
+  forfeit = false,
+): Promise<{ winner: "human" | "bot"; verdict: string; scoreImpact: number; botId: string }> {
+  const config = BOT_CONFIGS[botId];
+  if (!config) throw new Error(`Unknown bot: ${botId}`);
+
+  if (forfeit) {
+    return { winner: "bot", verdict: "You forfeited the match.", scoreImpact: -LOSS_PENALTY, botId };
+  }
+
+  const botUser = await prisma.user
+    .findUnique({ where: { username: config.name }, select: { id: true } })
+    .catch(() => null);
+
+  const msgs = await prisma.message.findMany({
+    where: { roomId: roomDbId },
+    include: { user: { select: { id: true, username: true } } },
+    orderBy: { createdAt: "asc" },
+    take: 40,
+  });
+
+  const transcript = msgs
+    .map((m) => `${m.userId === botUser?.id ? config.name : "Human"}: ${m.content}`)
+    .join("\n");
+
+  const judgePrompt =
+    `You are an impartial debate judge. Read the transcript and decide who argued better — ` +
+    `based on logic, evidence quality, and persuasion. Return ONLY valid JSON, no other text: ` +
+    `{"winner":"human" or "bot","verdict":"one concise sentence explaining the decision"}\n\nTranscript:\n${transcript}`;
+
+  let winner: "human" | "bot" = "bot";
+  let verdict = "The debate was inconclusive.";
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 150,
+      messages: [{ role: "user", content: judgePrompt }],
+    });
+    const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+    const jsonStart = raw.indexOf("{");
+    const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
+    if (parsed.winner === "human" || parsed.winner === "bot") winner = parsed.winner;
+    if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
+  } catch (e) {
+    console.error("[Judge] Haiku error:", e);
+  }
+
+  const scoreImpact = winner === "human" ? (TIER_BONUS[config.tier] ?? 1.0) : -LOSS_PENALTY;
+  return { winner, verdict, scoreImpact, botId };
+}

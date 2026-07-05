@@ -9,7 +9,7 @@ import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
 import { evaluateClaim, computeCredibility } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
-import { respondAsBot, BOT_IDS } from "./services/debateBot";
+import { respondAsBot, BOT_IDS, judgeMatch } from "./services/debateBot";
 import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -1105,6 +1105,59 @@ app.get("/api/messages/:id/image", async (req, res) => {
   }
 });
 
+// GET /api/arena-result/:roomName
+app.get("/api/arena-result/:roomName", async (req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "ArenaMatch" WHERE "roomName" = $1 LIMIT 1`,
+      req.params.roomName,
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "No result" });
+    const row = rows[0];
+    res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/arena-judge — idempotent: returns existing result if already judged
+app.post("/api/arena-judge", async (req, res) => {
+  try {
+    const { roomName, userId, forfeit = false } = req.body as {
+      roomName: string; userId: string; forfeit?: boolean;
+    };
+    if (!roomName || !userId) return res.status(400).json({ error: "roomName and userId required" });
+
+    const existing = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "ArenaMatch" WHERE "roomName" = $1 LIMIT 1`,
+      roomName,
+    );
+    if (existing.length > 0) {
+      const row = existing[0];
+      return res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId });
+    }
+
+    const room = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true, botId: true } as any });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const botId = (room as any).botId ?? roomName.replace("arena-", "").split("-")[0];
+    if (!botId) return res.status(400).json({ error: "Bot not found for room" });
+
+    const result = await judgeMatch(room.id, roomName, userId, botId, prisma, forfeit);
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6)
+       ON CONFLICT ("roomName") DO NOTHING`,
+      roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact,
+    );
+
+    res.json(result);
+  } catch (e) {
+    console.error("[arena-judge]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/users/:id/profile
 app.get("/api/users/:id/profile", async (req, res) => {
   try {
@@ -1114,7 +1167,7 @@ app.get("/api/users/:id/profile", async (req, res) => {
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    const [cred, debateRows, messageRows, arenaRows] = await Promise.all([
+    const [cred, debateRows, messageRows, arenaRows, arenaStats] = await Promise.all([
       computeCredibility(uid, prisma).catch(() => null),
       prisma.$queryRawUnsafe<{ count: bigint }[]>(
         `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
@@ -1128,11 +1181,23 @@ app.get("/api/users/:id/profile", async (req, res) => {
         `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isBotRoom" = true`,
         uid,
       ).catch(() => [{ count: 0n }]),
+      prisma.$queryRawUnsafe<{ wins: bigint; losses: bigint; bonus: number }[]>(
+        `SELECT
+          COALESCE(SUM(CASE WHEN "winner"='human' THEN 1 ELSE 0 END),0) AS wins,
+          COALESCE(SUM(CASE WHEN "winner"='bot'   THEN 1 ELSE 0 END),0) AS losses,
+          COALESCE(SUM("scoreImpact"),0) AS bonus
+         FROM "ArenaMatch" WHERE "userId" = $1`,
+        uid,
+      ).catch(() => [{ wins: 0n, losses: 0n, bonus: 0 }]),
     ]);
+    const as = arenaStats[0] as any;
     const stats = {
       debateCount: Number((debateRows[0] as any)?.count ?? 0),
       messageCount: Number((messageRows[0] as any)?.count ?? 0),
       arenaMatchCount: Number((arenaRows[0] as any)?.count ?? 0),
+      arenaWins: Number(as?.wins ?? 0),
+      arenaLosses: Number(as?.losses ?? 0),
+      arenaBonus: Math.round(Number(as?.bonus ?? 0) * 10) / 10,
     };
     res.json({ ...user, stats, ...(cred ? { cred } : {}) });
   } catch {
@@ -2106,6 +2171,25 @@ async function start() {
     console.log("[DB] Bot room columns ready");
   } catch (e) {
     console.error("[DB] Bot room columns setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ArenaMatch" (
+        "id"          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "roomName"    TEXT NOT NULL UNIQUE,
+        "userId"      TEXT NOT NULL,
+        "botId"       TEXT NOT NULL,
+        "winner"      TEXT NOT NULL,
+        "verdict"     TEXT NOT NULL,
+        "scoreImpact" DOUBLE PRECISION NOT NULL,
+        "createdAt"   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ArenaMatch_userId_idx" ON "ArenaMatch"("userId")`);
+    console.log("[DB] ArenaMatch table ready");
+  } catch (e) {
+    console.error("[DB] ArenaMatch table setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
