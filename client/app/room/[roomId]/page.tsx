@@ -102,6 +102,7 @@ export default function RoomPage() {
   const [propositionScore, setPropositionScore] = useState(50); // 0=bot winning, 100=human winning
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // seconds remaining
   const lastScoredLenRef = useRef(0);
+  const botKickFiredRef = useRef(false);
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
@@ -453,16 +454,18 @@ export default function RoomPage() {
     ? messages.filter((m) => (m as any).userId === userId).length
     : 0;
 
-  // Arena: bot-goes-first — trigger bot opening message when room has no messages yet
+  // Arena: bot-goes-first — trigger bot opening after socket joins (activeChannel set)
   useEffect(() => {
-    if (!isBotRoom || !matchBotFirst || messages.length > 0 || !roomMeta) return;
+    if (!isBotRoom || !matchBotFirst || !activeChannel || messages.length > 0) return;
+    if (botKickFiredRef.current) return;
+    botKickFiredRef.current = true;
     fetch(`${SERVER}/api/bot-kick`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roomName: roomId }),
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBotRoom, matchBotFirst, roomMeta]);
+  }, [isBotRoom, matchBotFirst, activeChannel]);
 
   // Arena: load existing match result on mount (handles page reload after match ends)
   useEffect(() => {

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ArenaSidebar from "@/components/ArenaSidebar";
 import { BOTS, BOT_COLORS, botWinRate, type Bot } from "@/lib/bots";
 
@@ -468,11 +468,11 @@ function MatchSetupModal({
 
 // ─── Bot Card ────────────────────────────────────────────────────────────────
 
-function BotCard({ bot }: { bot: Bot }) {
+function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
   const { data: session } = useSession();
   const router = useRouter();
   const [challenging, setChallenging] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(autoOpen);
   const [error, setError] = useState("");
   const userId: string = (session?.user as any)?.id ?? "";
   const c = BOT_COLORS[bot.color];
@@ -573,8 +573,10 @@ function BotCard({ bot }: { bot: Bot }) {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function ArenaPage() {
+function ArenaContent() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const autoChallenge = searchParams.get("challenge");
   return (
     <div className="flex h-full">
       <ArenaSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
@@ -633,7 +635,7 @@ export default function ArenaPage() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-5">
             {BOTS.map((bot) => (
-              <BotCard key={bot.id} bot={bot} />
+              <BotCard key={bot.id} bot={bot} autoOpen={bot.id === autoChallenge} />
             ))}
           </div>
 
@@ -644,5 +646,13 @@ export default function ArenaPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ArenaPage() {
+  return (
+    <Suspense>
+      <ArenaContent />
+    </Suspense>
   );
 }

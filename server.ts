@@ -209,14 +209,24 @@ io.on("connection", (socket) => {
       let metaIsFishbowl = false;
       let metaFishbowlSeats: number | null = null;
       let spectatorChatChannelId: string | null = null;
+      let metaMatchConfig: string | null = null;
+      let metaIsBotRoom = false;
+      let metaBotId: string | null = null;
       try {
-        const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null; isFishbowl: boolean; fishbowlSeats: number | null }[]>(
-          `SELECT "stances", "stanceCooldown", "isFishbowl", "fishbowlSeats" FROM "Room" WHERE "id" = $1`, room.id
+        const stRow = await prisma.$queryRawUnsafe<{
+          stances: string | null; stanceCooldown: number | null;
+          isFishbowl: boolean; fishbowlSeats: number | null;
+          matchConfig: string | null; isBotRoom: boolean; botId: string | null;
+        }[]>(
+          `SELECT "stances", "stanceCooldown", "isFishbowl", "fishbowlSeats", "matchConfig", "isBotRoom", "botId" FROM "Room" WHERE "id" = $1`, room.id
         );
         if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
         if (stRow[0]?.stanceCooldown) stanceCooldown = stRow[0].stanceCooldown;
         metaIsFishbowl = stRow[0]?.isFishbowl ?? false;
         metaFishbowlSeats = stRow[0]?.fishbowlSeats ?? null;
+        metaMatchConfig = stRow[0]?.matchConfig ?? null;
+        metaIsBotRoom = stRow[0]?.isBotRoom ?? false;
+        metaBotId = stRow[0]?.botId ?? null;
       } catch { /* columns may not exist yet */ }
       if (metaIsFishbowl) {
         try {
@@ -227,7 +237,7 @@ io.on("connection", (socket) => {
           if (spectatorChatChannelId) socket.join(`channel:${spectatorChatChannelId}`);
         } catch { /* ignore */ }
       }
-      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats, spectatorChatChannelId });
+      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats, spectatorChatChannelId, matchConfig: metaMatchConfig, isBotRoom: metaIsBotRoom, botId: metaBotId });
 
       // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
       if (!debateTurns.has(roomId)) {
@@ -1345,8 +1355,10 @@ app.post("/api/bot-kick", async (req, res) => {
     if (!cfg.botFirst) { res.json({ ok: true, skipped: true }); return; }
 
     const resolvedBotId = botId ?? roomName.replace("arena-", "").split("-")[0];
+    // Get the room's first channel so the message lands in the right channel
+    const firstChannel = await prisma.channel.findFirst({ where: { roomId: roomDbId }, orderBy: { createdAt: "asc" } });
     // Fire-and-forget; client will receive bot message via socket
-    respondAsBot(roomDbId, roomName, resolvedBotId, "", null, io, prisma, true);
+    respondAsBot(roomDbId, roomName, resolvedBotId, "", firstChannel?.id ?? null, io, prisma, true);
     res.json({ ok: true });
   } catch (e) {
     console.error("[bot-kick]", e);

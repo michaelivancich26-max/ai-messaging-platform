@@ -37,7 +37,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
-  const [challenging, setChallenging] = useState<string | null>(null);
+  const [challenging] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -60,20 +60,8 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
       .catch(() => {});
   }, [userId]);
 
-  async function challenge(bot: Bot) {
-    if (!userId || challenging) return;
-    setChallenging(bot.id);
-    try {
-      const res = await fetch(`${SERVER}/api/bot-rooms`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, botId: bot.id }),
-      });
-      const data = await res.json();
-      if (res.ok) router.push(`/room/${data.name}`);
-    } finally {
-      setChallenging(null);
-    }
+  function challenge(bot: Bot) {
+    router.push(`/arena?challenge=${bot.id}`);
   }
 
   return (
