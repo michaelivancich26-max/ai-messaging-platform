@@ -1298,9 +1298,12 @@ export default function RoomPage() {
           {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && (() => {
             if (isCompetitiveRoom) {
               const won = matchResult.winnerId === userId;
-              const myEloChange = matchResult.challengerId === userId
+              const myEloChange = (matchResult.challengerId === userId
                 ? matchResult.challengerEloChange
-                : matchResult.challengedEloChange;
+                : matchResult.challengedEloChange) ?? 0;
+              const myEloAfter = (matchResult.challengerId === userId
+                ? matchResult.challengerEloAfter
+                : matchResult.challengedEloAfter) ?? 0;
               return (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
                   <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
@@ -1325,7 +1328,7 @@ export default function RoomPage() {
                     <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">ELO Change</p>
                       <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {myEloChange >= 0 ? "+" : ""}{myEloChange} → {won ? matchResult.challengerId === userId ? matchResult.challengerEloAfter : matchResult.challengedEloAfter : matchResult.challengerId === userId ? matchResult.challengerEloAfter : matchResult.challengedEloAfter}
+                        {myEloChange >= 0 ? "+" : ""}{myEloChange} → {myEloAfter}
                       </p>
                     </div>
                     <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
