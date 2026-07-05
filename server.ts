@@ -1137,12 +1137,16 @@ app.post("/api/arena-judge", async (req, res) => {
       return res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId });
     }
 
-    const room = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true, botId: true } as any });
-    if (!room) return res.status(404).json({ error: "Room not found" });
-    const botId = (room as any).botId ?? roomName.replace("arena-", "").split("-")[0];
+    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null }[]>(
+      `SELECT id, "botId" FROM "Room" WHERE name = $1 LIMIT 1`,
+      roomName,
+    );
+    if (roomRows.length === 0) return res.status(404).json({ error: "Room not found" });
+    const roomDbId = roomRows[0].id;
+    const botId = roomRows[0].botId ?? roomName.replace("arena-", "").split("-")[0];
     if (!botId) return res.status(400).json({ error: "Bot not found for room" });
 
-    const result = await judgeMatch(room.id, roomName, userId, botId, prisma, forfeit);
+    const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit);
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact")
