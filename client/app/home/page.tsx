@@ -6,18 +6,38 @@ import { useRouter } from "next/navigation";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
+interface ProfileSnap {
+  avatarUrl: string | null;
+  bio: string | null;
+  credScore: number | null;
+  credTotal: number;
+  arenaBonus: number;
+  debateCount: number;
+  arenaWins: number;
+  arenaLosses: number;
+}
+
 export default function HomePage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const userId: string = (session?.user as any)?.id ?? "";
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [profile, setProfile] = useState<ProfileSnap | null>(null);
 
   useEffect(() => {
     if (!userId) return;
     fetch(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json())
-      .then(d => setAvatarUrl(d.avatarUrl ?? null))
+      .then(d => setProfile({
+        avatarUrl: d.avatarUrl ?? null,
+        bio: d.bio ?? null,
+        credScore: d.cred?.total >= 3 ? d.cred.score : null,
+        credTotal: d.cred?.total ?? 0,
+        arenaBonus: d.stats?.arenaBonus ?? 0,
+        debateCount: d.stats?.debateCount ?? 0,
+        arenaWins: d.stats?.arenaWins ?? 0,
+        arenaLosses: d.stats?.arenaLosses ?? 0,
+      }))
       .catch(() => {});
   }, [userId]);
 
@@ -28,28 +48,72 @@ export default function HomePage() {
   return (
     <div className="flex h-full flex-col bg-gray-950">
 
-      {/* Top bar */}
-      <div className="flex shrink-0 items-center justify-between border-b border-gray-800/60 px-6 py-3 pt-safe">
-        <span className="text-base font-bold tracking-tight text-white">Veritas</span>
-        <div className="flex items-center gap-3">
-          <span className="hidden text-xs text-gray-500 sm:block">Welcome back, <span className="text-gray-300">{username}</span></span>
-          <button
-            onClick={() => router.push("/dashboard")}
-            title="Dashboard"
-            className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-gray-700 hover:ring-indigo-500 transition-all"
-          >
-            {avatarUrl
-              ? <img src={avatarUrl} alt={username} className="h-full w-full object-cover" />
-              : <span className="flex h-full w-full items-center justify-center bg-gray-800 text-xs font-bold text-gray-300">{username[0]?.toUpperCase()}</span>
-            }
-          </button>
+      {/* Profile header */}
+      <div className="shrink-0 border-b border-gray-800/60 pt-safe">
+        {/* Top bar — brand + sign out */}
+        <div className="flex items-center justify-between px-6 pt-3 pb-2">
+          <span className="text-sm font-bold tracking-tight text-gray-400">Veritas</span>
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="hidden text-xs text-gray-600 hover:text-gray-400 transition-colors sm:block"
+            className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
           >
             Sign out
           </button>
         </div>
+
+        {/* Profile strip */}
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="w-full flex items-center gap-4 px-6 pb-4 hover:bg-gray-900/40 transition-colors text-left"
+        >
+          {/* Avatar */}
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full ring-2 ring-gray-700 hover:ring-gray-500 transition-all">
+            {profile?.avatarUrl
+              ? <img src={profile.avatarUrl} alt={username} className="h-full w-full object-cover" />
+              : <span className="flex h-full w-full items-center justify-center bg-gray-800 text-lg font-bold text-gray-300">{username[0]?.toUpperCase()}</span>
+            }
+          </div>
+
+          {/* Info */}
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-semibold text-gray-100 truncate">{username}</p>
+            {profile?.bio && (
+              <p className="mt-0.5 text-xs text-gray-500 truncate">{profile.bio}</p>
+            )}
+            {/* Stats row */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              {/* Veritas score */}
+              {profile?.credScore !== null && profile?.credScore !== undefined ? (
+                <span className="flex items-center gap-1 text-xs">
+                  <span className="font-bold text-emerald-400">
+                    {(profile.credScore + profile.arenaBonus).toFixed(1)}
+                  </span>
+                  <span className="text-gray-600">Veritas</span>
+                </span>
+              ) : (
+                <span className="text-xs text-gray-600">Unrated</span>
+              )}
+              {profile && profile.debateCount > 0 && (
+                <span className="text-xs text-gray-600">
+                  {profile.debateCount} {profile.debateCount === 1 ? "debate" : "debates"}
+                </span>
+              )}
+              {profile && (profile.arenaWins + profile.arenaLosses) > 0 && (
+                <span className="flex items-center gap-1 text-xs">
+                  <span className="font-semibold text-emerald-400">{profile.arenaWins}W</span>
+                  <span className="text-gray-700">/</span>
+                  <span className="font-semibold text-red-400">{profile.arenaLosses}L</span>
+                  <span className="text-gray-600">arena</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Chevron hint */}
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-700">
+            <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+          </svg>
+        </button>
       </div>
 
       {/* Split panel */}
@@ -106,7 +170,7 @@ export default function HomePage() {
               </p>
             </div>
             <ul className="space-y-1.5 self-start text-xs text-gray-600">
-              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />5 opponents with distinct styles</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />10 opponents across 5 tiers</li>
               <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />Instant private 1-on-1 matches</li>
               <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />Debate any topic you choose</li>
             </ul>
@@ -120,17 +184,9 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* Bottom bar — Dashboard link */}
-      <div className="flex shrink-0 items-center justify-center border-t border-gray-800/60 py-3 pb-safe">
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs text-gray-600 hover:bg-gray-800 hover:text-gray-300 transition-colors"
-        >
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-            <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.735 14c.618 0 1.093-.561.872-1.139a6.002 6.002 0 0 0-11.215 0c-.22.578.254 1.139.872 1.139h9.47Z" />
-          </svg>
-          Dashboard
-        </button>
+      {/* Bottom bar */}
+      <div className="flex shrink-0 items-center justify-center border-t border-gray-800/60 py-2.5 pb-safe">
+        <p className="text-[10px] text-gray-700">Tap your profile above to open Dashboard</p>
       </div>
     </div>
   );
