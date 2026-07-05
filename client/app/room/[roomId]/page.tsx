@@ -99,6 +99,15 @@ export default function RoomPage() {
     verdict: string;
     scoreImpact: number;
     botId: string;
+    // competitive fields
+    isCompetitive?: boolean;
+    winnerId?: string;
+    challengerId?: string;
+    challengedId?: string;
+    challengerEloChange?: number;
+    challengedEloChange?: number;
+    challengerEloAfter?: number;
+    challengedEloAfter?: number;
   } | null>(null);
   const [propositionScore, setPropositionScore] = useState(50); // 0=bot winning, 100=human winning
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // seconds remaining
