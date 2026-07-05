@@ -108,13 +108,78 @@ function StarRow({ tier, color }: { tier: number; color: Bot["color"] }) {
 // ─── Win Condition types ──────────────────────────────────────────────────────
 
 type WinCondition =
-  | { type: "exchanges"; limit: number }
-  | { type: "time"; minutes: number }
-  | { type: "proposition"; threshold: number };
+  | { type: "exchanges"; limit: number; topic?: string }
+  | { type: "time"; minutes: number; topic?: string }
+  | { type: "proposition"; threshold: number; topic?: string };
 
-// ─── Win Condition Modal ──────────────────────────────────────────────────────
+// ─── Topic catalog ────────────────────────────────────────────────────────────
 
-function WinConditionModal({
+const TOPIC_CATALOG: { category: string; topics: string[] }[] = [
+  {
+    category: "Politics",
+    topics: [
+      "Universal Basic Income should be implemented",
+      "Voting should be mandatory in democracies",
+      "Term limits should apply to all elected officials",
+      "Social media platforms should be regulated as public utilities",
+      "Ranked choice voting is better than first-past-the-post",
+    ],
+  },
+  {
+    category: "Technology",
+    topics: [
+      "AI will create more jobs than it destroys",
+      "Social media does more harm than good to society",
+      "Nuclear energy is the best path to clean energy",
+      "Cryptocurrencies will replace traditional currencies",
+      "Surveillance technology makes society safer",
+    ],
+  },
+  {
+    category: "Philosophy",
+    topics: [
+      "Free will is an illusion",
+      "Moral relativism is correct",
+      "Utilitarianism is the best ethical framework",
+      "Privacy is more important than national security",
+      "Cancel culture does more harm than good",
+    ],
+  },
+  {
+    category: "Science",
+    topics: [
+      "Space exploration is worth the cost",
+      "Gene editing in humans should be permitted",
+      "Lab-grown meat will replace traditional farming",
+      "Geoengineering is too risky to pursue",
+      "Electric vehicles will solve transportation emissions",
+    ],
+  },
+  {
+    category: "Society",
+    topics: [
+      "College education is overvalued in modern society",
+      "Remote work is better than office work",
+      "Zoos should be abolished",
+      "Social media influencers deserve their income",
+      "The gig economy exploits workers",
+    ],
+  },
+  {
+    category: "Economics",
+    topics: [
+      "Billionaires should not exist in a just society",
+      "A four-day work week should be the global standard",
+      "Free trade benefits all participating countries",
+      "Automation will cause mass unemployment",
+      "Universal healthcare improves economic productivity",
+    ],
+  },
+];
+
+// ─── Match Setup Modal ────────────────────────────────────────────────────────
+
+function MatchSetupModal({
   bot,
   onConfirm,
   onClose,
@@ -123,16 +188,26 @@ function WinConditionModal({
   onConfirm: (wc: WinCondition) => void;
   onClose: () => void;
 }) {
+  const [step, setStep] = useState<"topic" | "condition">("topic");
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [customTopic, setCustomTopic] = useState("");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [type, setType] = useState<WinCondition["type"]>("exchanges");
   const [exchangeLimit, setExchangeLimit] = useState(10);
   const [timeMinutes, setTimeMinutes] = useState(5);
   const [propThreshold, setPropThreshold] = useState(70);
   const c = BOT_COLORS[bot.color];
 
+  const effectiveTopic = selectedTopic === "__custom__" ? customTopic.trim() : selectedTopic;
+  const filteredTopics = activeCategory
+    ? TOPIC_CATALOG.find(g => g.category === activeCategory)?.topics ?? []
+    : TOPIC_CATALOG.flatMap(g => g.topics);
+
   function confirm() {
-    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit });
-    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes });
-    else onConfirm({ type: "proposition", threshold: propThreshold });
+    const topic = effectiveTopic ?? undefined;
+    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit, topic });
+    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes, topic });
+    else onConfirm({ type: "proposition", threshold: propThreshold, topic });
   }
 
   const optionCls = (active: boolean) =>
@@ -143,113 +218,215 @@ function WinConditionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4"
+        className="w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 flex flex-col"
+        style={{ maxHeight: "92vh" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-gray-800 shrink-0">
           <div className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center ring-1 ${c.ring} bg-gray-950`}>
             <span className={c.text}><BotIcon id={bot.id} size={20} /></span>
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-100">Challenge {bot.name}</p>
             <p className={`text-[11px] ${c.text}`}>{bot.title} · {bot.tierName}</p>
           </div>
+          {/* Step indicator */}
+          <div className="flex items-center gap-1 shrink-0">
+            <div className={`h-1.5 w-4 rounded-full transition-colors ${step === "topic" ? "bg-indigo-500" : "bg-gray-700"}`} />
+            <div className={`h-1.5 w-4 rounded-full transition-colors ${step === "condition" ? "bg-indigo-500" : "bg-gray-700"}`} />
+          </div>
         </div>
 
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Win Condition</p>
-
-        {/* Option: Exchanges */}
-        <div className={optionCls(type === "exchanges")} onClick={() => setType("exchanges")}>
-          <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "exchanges" ? "border-indigo-500" : "border-gray-600"}`}>
-            {type === "exchanges" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-gray-200">Exchange Limit</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">Match ends after N back-and-forth exchanges.</p>
-            {type === "exchanges" && (
-              <div className="flex gap-1.5 mt-2 flex-wrap">
-                {[5, 10, 15, 20].map(n => (
+        {/* ── Step 1: Topic ── */}
+        {step === "topic" && (
+          <>
+            <div className="px-5 pt-4 shrink-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Choose a topic</p>
+              {/* Category pills */}
+              <div className="flex gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setActiveCategory(null)}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${activeCategory === null ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                >
+                  All
+                </button>
+                {TOPIC_CATALOG.map(g => (
                   <button
-                    key={n}
-                    onClick={e => { e.stopPropagation(); setExchangeLimit(n); }}
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${exchangeLimit === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                    key={g.category}
+                    onClick={() => setActiveCategory(g.category === activeCategory ? null : g.category)}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${activeCategory === g.category ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
                   >
-                    {n}
+                    {g.category}
                   </button>
                 ))}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* Option: Time */}
-        <div className={optionCls(type === "time")} onClick={() => setType("time")}>
-          <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "time" ? "border-indigo-500" : "border-gray-600"}`}>
-            {type === "time" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-gray-200">Time Limit</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">Match is judged when the clock runs out.</p>
-            {type === "time" && (
-              <div className="flex gap-1.5 mt-2 flex-wrap">
-                {[3, 5, 10, 15].map(n => (
-                  <button
-                    key={n}
-                    onClick={e => { e.stopPropagation(); setTimeMinutes(n); }}
-                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${timeMinutes === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
-                  >
-                    {n} min
-                  </button>
-                ))}
+            {/* Topic list */}
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5 min-h-0">
+              {filteredTopics.map(topic => (
+                <button
+                  key={topic}
+                  onClick={() => setSelectedTopic(topic)}
+                  className={`w-full text-left rounded-xl border px-3.5 py-2.5 text-xs leading-snug transition-colors ${
+                    selectedTopic === topic
+                      ? "border-indigo-600 bg-indigo-950/30 text-gray-100"
+                      : "border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-300"
+                  }`}
+                >
+                  {topic}
+                </button>
+              ))}
+
+              {/* Custom topic */}
+              <div
+                onClick={() => setSelectedTopic("__custom__")}
+                className={`rounded-xl border px-3.5 py-2.5 cursor-pointer transition-colors ${
+                  selectedTopic === "__custom__"
+                    ? "border-indigo-600 bg-indigo-950/30"
+                    : "border-gray-800 hover:border-gray-700"
+                }`}
+              >
+                <p className={`text-xs font-semibold mb-1 ${selectedTopic === "__custom__" ? "text-gray-200" : "text-gray-500"}`}>
+                  Custom topic…
+                </p>
+                {selectedTopic === "__custom__" && (
+                  <input
+                    autoFocus
+                    value={customTopic}
+                    onChange={e => setCustomTopic(e.target.value)}
+                    onClick={e => e.stopPropagation()}
+                    placeholder="Type your debate topic…"
+                    className="w-full bg-transparent text-xs text-gray-200 placeholder-gray-600 outline-none border-b border-gray-700 pb-0.5"
+                  />
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* Option: Proposition bar */}
-        <div className={optionCls(type === "proposition")} onClick={() => setType("proposition")}>
-          <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "proposition" ? "border-indigo-500" : "border-gray-600"}`}>
-            {type === "proposition" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-gray-200">Proposition Bar</p>
-            <p className="text-[10px] text-gray-500 mt-0.5">AI scores each exchange live. First to dominate the bar wins.</p>
-            {type === "proposition" && (
-              <div className="mt-2 space-y-1.5">
-                <p className="text-[10px] text-gray-500">Win threshold</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {[60, 70, 80].map(n => (
-                    <button
-                      key={n}
-                      onClick={e => { e.stopPropagation(); setPropThreshold(n); }}
-                      className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${propThreshold === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
-                    >
-                      {n}%
-                    </button>
-                  ))}
-                </div>
-                {/* Mini preview bar */}
-                <div className="mt-2 h-2 rounded-full bg-gray-800 overflow-hidden relative">
-                  <div className="absolute inset-y-0 left-0 bg-red-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
-                  <div className="absolute inset-y-0 right-0 bg-emerald-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
-                  <div className="absolute inset-y-0 bg-gray-700" style={{ left: `${100 - propThreshold}%`, right: `${100 - propThreshold}%` }} />
-                </div>
-                <p className="text-[10px] text-gray-600">Win zone starts at {propThreshold}% on either side</p>
+            {/* Actions */}
+            <div className="flex gap-2 px-5 py-4 border-t border-gray-800 shrink-0">
+              <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={() => setStep("condition")}
+                disabled={!effectiveTopic}
+                className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors disabled:opacity-40 ${c.btn}`}
+              >
+                Next →
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── Step 2: Win condition ── */}
+        {step === "condition" && (
+          <>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 min-h-0">
+              {/* Selected topic recap */}
+              <div className="rounded-xl bg-gray-800/50 px-3 py-2 flex items-start gap-2">
+                <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500">
+                  <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.979l-3.136 1.015a.75.75 0 0 1-1.12-.814l.853-3.574-2.79-2.39a.75.75 0 0 1 .427-1.318l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
+                </svg>
+                <p className="text-[11px] text-gray-400 leading-snug">{effectiveTopic}</p>
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800 transition-colors">
-            Cancel
-          </button>
-          <button onClick={confirm} className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors ${c.btn}`}>
-            Start Match →
-          </button>
-        </div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Win Condition</p>
+
+              {/* Option: Exchanges */}
+              <div className={optionCls(type === "exchanges")} onClick={() => setType("exchanges")}>
+                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "exchanges" ? "border-indigo-500" : "border-gray-600"}`}>
+                  {type === "exchanges" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-200">Exchange Limit</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Match ends after N back-and-forth exchanges.</p>
+                  {type === "exchanges" && (
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                      {[5, 10, 15, 20].map(n => (
+                        <button
+                          key={n}
+                          onClick={e => { e.stopPropagation(); setExchangeLimit(n); }}
+                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${exchangeLimit === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Option: Time */}
+              <div className={optionCls(type === "time")} onClick={() => setType("time")}>
+                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "time" ? "border-indigo-500" : "border-gray-600"}`}>
+                  {type === "time" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-200">Time Limit</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Match is judged when the clock runs out.</p>
+                  {type === "time" && (
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                      {[3, 5, 10, 15].map(n => (
+                        <button
+                          key={n}
+                          onClick={e => { e.stopPropagation(); setTimeMinutes(n); }}
+                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${timeMinutes === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                        >
+                          {n} min
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Option: Proposition bar */}
+              <div className={optionCls(type === "proposition")} onClick={() => setType("proposition")}>
+                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "proposition" ? "border-indigo-500" : "border-gray-600"}`}>
+                  {type === "proposition" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-200">Proposition Bar</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">AI scores each exchange live. First to dominate wins.</p>
+                  {type === "proposition" && (
+                    <div className="mt-2 space-y-1.5">
+                      <p className="text-[10px] text-gray-500">Win threshold</p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[60, 70, 80].map(n => (
+                          <button
+                            key={n}
+                            onClick={e => { e.stopPropagation(); setPropThreshold(n); }}
+                            className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${propThreshold === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                          >
+                            {n}%
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-gray-800 overflow-hidden relative">
+                        <div className="absolute inset-y-0 left-0 bg-red-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
+                        <div className="absolute inset-y-0 right-0 bg-emerald-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
+                        <div className="absolute inset-y-0 bg-gray-700" style={{ left: `${100 - propThreshold}%`, right: `${100 - propThreshold}%` }} />
+                      </div>
+                      <p className="text-[10px] text-gray-600">Win zone starts at {propThreshold}% on either side</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 px-5 py-4 border-t border-gray-800 shrink-0">
+              <button onClick={() => setStep("topic")} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800 transition-colors">
+                ← Back
+              </button>
+              <button onClick={confirm} className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors ${c.btn}`}>
+                Start Match →
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -350,7 +527,7 @@ function BotCard({ bot }: { bot: Bot }) {
       </div>
 
       {modalOpen && (
-        <WinConditionModal
+        <MatchSetupModal
           bot={bot}
           onConfirm={challenge}
           onClose={() => setModalOpen(false)}

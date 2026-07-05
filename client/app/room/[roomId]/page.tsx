@@ -84,7 +84,7 @@ export default function RoomPage() {
   const sidebarChannelRef = useRef<{ id: string; name: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
-    roomId.startsWith("dm-") ? "chat" : "channels"
+    (roomId.startsWith("dm-") || roomId.startsWith("arena-")) ? "chat" : "channels"
   );
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -438,6 +438,11 @@ export default function RoomPage() {
     if (!isBotRoom || !(roomMeta as any)?.matchConfig) return { type: "exchanges", limit: 10 };
     try { return JSON.parse((roomMeta as any).matchConfig) as WinCondition; }
     catch { return { type: "exchanges", limit: 10 }; }
+  })();
+  const matchTopic: string | null = (() => {
+    if (!isBotRoom || !(roomMeta as any)?.matchConfig) return null;
+    try { return JSON.parse((roomMeta as any).matchConfig).topic ?? null; }
+    catch { return null; }
   })();
 
   // Arena: derive human turn count from message list
@@ -874,8 +879,8 @@ export default function RoomPage() {
         : <Sidebar activeRoomName={roomId} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
       }
 
-      {/* Channel list — only for non-DM rooms */}
-      {!roomId.startsWith("dm-") && (
+      {/* Channel list — only for non-DM, non-arena rooms */}
+      {!roomId.startsWith("dm-") && !isBotRoom && (
         <div className={`
           border-r border-gray-800 flex flex-col bg-gray-900
           ${mobileView === "channels" ? "flex" : "hidden"}
@@ -921,8 +926,8 @@ export default function RoomPage() {
         flex-1 md:flex
       `}>
       <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 pb-2.5 pt-safe">
-        {/* Mobile: back to channels (non-DM) or hamburger (DM) */}
-        {!roomId.startsWith("dm-") ? (
+        {/* Mobile: back to channels (non-DM, non-arena) or hamburger (DM / arena) */}
+        {!roomId.startsWith("dm-") && !isBotRoom ? (
           <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
             onClick={() => setMobileView("channels")} title="Back to channels">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -1299,10 +1304,19 @@ export default function RoomPage() {
             );
           })()}
 
-          {!roomId.startsWith("dm-") && !activeChannel ? (
+          {!roomId.startsWith("dm-") && !isBotRoom && !activeChannel ? (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
           ) : (
             <>
+              {/* Arena: topic banner */}
+              {isBotRoom && matchTopic && (
+                <div className="shrink-0 border-b border-gray-800 bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
+                    <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.979l-3.136 1.015a.75.75 0 0 1-1.12-.814l.853-3.574-2.79-2.39a.75.75 0 0 1 .427-1.318l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-xs text-gray-300 leading-snug">{matchTopic}</span>
+                </div>
+              )}
               {activeChannel?.isSubDebate && activeChannel.proposition && (
                 <div className="shrink-0 border-b border-amber-900/40 bg-amber-950/20 px-4 py-2 flex items-start gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500">
