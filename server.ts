@@ -101,6 +101,9 @@ async function loadWithReactions(messages: any[]) {
 // Presence: roomId → Map<socketId, { userId, username }>
 const presence = new Map<string, Map<string, { userId: string; username: string; role?: string }>>();
 
+// Tracks bot rooms where an opening message is already in flight (prevents double-fire on fast reconnects)
+const botOpeningPending = new Set<string>();
+
 // Global socket index: userId → Set<socketId> for real-time notification delivery
 const userSockets = new Map<string, Set<string>>();
 
@@ -239,6 +242,34 @@ io.on("connection", (socket) => {
       }
       socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats, spectatorChatChannelId, matchConfig: metaMatchConfig, isBotRoom: metaIsBotRoom, botId: metaBotId });
 
+      // Bot rooms: emit history (no channels, so this is the only delivery path)
+      // and trigger bot opening if botFirst is set
+      if (metaIsBotRoom) {
+        try {
+          const botHistory = await prisma.message.findMany({
+            where: { roomId: room.id },
+            orderBy: { createdAt: "desc" },
+            take: 50,
+            include: { user: true },
+          });
+          botHistory.reverse();
+          socket.emit("history", await loadWithReactions(botHistory));
+
+          const cfg = metaMatchConfig ? JSON.parse(metaMatchConfig) : null;
+          console.log("[BotFirst] joinRoom", { roomName: room.name, botFirst: cfg?.botFirst, botId: metaBotId });
+          if (cfg?.botFirst && metaBotId) {
+            const msgCount = await prisma.message.count({ where: { roomId: room.id } });
+            console.log("[BotFirst] msgCount=", msgCount, "pending=", botOpeningPending.has(room.id));
+            if (msgCount === 0 && !botOpeningPending.has(room.id)) {
+              botOpeningPending.add(room.id);
+              console.log("[BotFirst] firing respondAsBot from joinRoom", { botId: metaBotId, roomName: room.name });
+              respondAsBot(room.id, room.name, metaBotId, "", null, io, prisma, true)
+                .finally(() => botOpeningPending.delete(room.id));
+            }
+          }
+        } catch (e) { console.error("[BotFirst] joinRoom error", e); }
+      }
+
       // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
       if (!debateTurns.has(roomId)) {
         try {
@@ -301,33 +332,8 @@ io.on("connection", (socket) => {
 
       socket.join(`channel:${channelId}`);
 
-      // If this is a botFirst match with no messages yet, trigger the bot's opening.
-      // Use channel.room directly — socket.data.roomDbId may not be set yet if joinRoom
-      // is still awaiting its async DB queries when joinChannel arrives.
-      try {
-        const roomDbId = channel.room.id;
-        const roomName = channel.room.name;
-        console.log("[BotFirst] joinChannel", { roomName, channelId });
-        const cfgRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null; botId: string | null }[]>(
-          `SELECT "matchConfig", "botId" FROM "Room" WHERE "id" = $1 LIMIT 1`, roomDbId
-        );
-        const rawCfg = cfgRows[0]?.matchConfig;
-        const cfg = rawCfg ? JSON.parse(rawCfg) : null;
-        console.log("[BotFirst] cfg=", cfg, "botId=", cfgRows[0]?.botId);
-        if (cfg?.botFirst) {
-          const msgCount = await prisma.message.count({ where: { roomId: roomDbId, channelId } });
-          console.log("[BotFirst] msgCount=", msgCount);
-          if (msgCount === 0) {
-            const botId = cfgRows[0]?.botId;
-            if (botId) {
-              console.log("[BotFirst] firing respondAsBot", { botId, roomName, channelId });
-              respondAsBot(roomDbId, roomName, botId, "", channelId, io, prisma, true);
-            } else {
-              console.log("[BotFirst] skipped: botId is null");
-            }
-          }
-        }
-      } catch (e) { console.error("[BotFirst] error", e); }
+      // Note: bot-first opening is triggered in joinRoom, not here —
+      // bot rooms have no channels so joinChannel is never called for them.
 
       const history = await prisma.message.findMany({
         where: { channelId },
