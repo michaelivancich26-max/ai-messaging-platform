@@ -189,8 +189,7 @@ function MatchSetupModal({
   onClose: () => void;
 }) {
   const [step, setStep] = useState<"topic" | "condition">("topic");
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  const [customTopic, setCustomTopic] = useState("");
+  const [topicInput, setTopicInput] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [type, setType] = useState<WinCondition["type"]>("exchanges");
   const [exchangeLimit, setExchangeLimit] = useState(10);
@@ -198,7 +197,7 @@ function MatchSetupModal({
   const [propThreshold, setPropThreshold] = useState(70);
   const c = BOT_COLORS[bot.color];
 
-  const effectiveTopic = selectedTopic === "__custom__" ? customTopic.trim() : selectedTopic;
+  const effectiveTopic = topicInput.trim();
   const filteredTopics = activeCategory
     ? TOPIC_CATALOG.find(g => g.category === activeCategory)?.topics ?? []
     : TOPIC_CATALOG.flatMap(g => g.topics);
@@ -241,9 +240,23 @@ function MatchSetupModal({
         {/* ── Step 1: Topic ── */}
         {step === "topic" && (
           <>
-            <div className="px-5 pt-4 shrink-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-3">Choose a topic</p>
-              {/* Category pills */}
+            {/* Custom input — pinned at top, always visible */}
+            <div className="px-5 pt-4 pb-3 shrink-0">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                Debate topic
+              </label>
+              <input
+                autoFocus
+                value={topicInput}
+                onChange={e => setTopicInput(e.target.value)}
+                placeholder="Type your own topic, or pick one below…"
+                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3.5 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors"
+              />
+            </div>
+
+            {/* Divider + category pills */}
+            <div className="px-5 pb-2 shrink-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-2">or choose from catalog</p>
               <div className="flex gap-1.5 flex-wrap">
                 <button
                   onClick={() => setActiveCategory(null)}
@@ -264,13 +277,13 @@ function MatchSetupModal({
             </div>
 
             {/* Topic list */}
-            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5 min-h-0">
+            <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-1.5 min-h-0">
               {filteredTopics.map(topic => (
                 <button
                   key={topic}
-                  onClick={() => setSelectedTopic(topic)}
+                  onClick={() => setTopicInput(topic)}
                   className={`w-full text-left rounded-xl border px-3.5 py-2.5 text-xs leading-snug transition-colors ${
-                    selectedTopic === topic
+                    topicInput === topic
                       ? "border-indigo-600 bg-indigo-950/30 text-gray-100"
                       : "border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-300"
                   }`}
@@ -278,30 +291,6 @@ function MatchSetupModal({
                   {topic}
                 </button>
               ))}
-
-              {/* Custom topic */}
-              <div
-                onClick={() => setSelectedTopic("__custom__")}
-                className={`rounded-xl border px-3.5 py-2.5 cursor-pointer transition-colors ${
-                  selectedTopic === "__custom__"
-                    ? "border-indigo-600 bg-indigo-950/30"
-                    : "border-gray-800 hover:border-gray-700"
-                }`}
-              >
-                <p className={`text-xs font-semibold mb-1 ${selectedTopic === "__custom__" ? "text-gray-200" : "text-gray-500"}`}>
-                  Custom topic…
-                </p>
-                {selectedTopic === "__custom__" && (
-                  <input
-                    autoFocus
-                    value={customTopic}
-                    onChange={e => setCustomTopic(e.target.value)}
-                    onClick={e => e.stopPropagation()}
-                    placeholder="Type your debate topic…"
-                    className="w-full bg-transparent text-xs text-gray-200 placeholder-gray-600 outline-none border-b border-gray-700 pb-0.5"
-                  />
-                )}
-              </div>
             </div>
 
             {/* Actions */}
