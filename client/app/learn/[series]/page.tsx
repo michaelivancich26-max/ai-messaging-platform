@@ -42,7 +42,7 @@ export default function SeriesPage() {
   const pct = series.lessons.length > 0 ? Math.round((seriesCompleted / series.lessons.length) * 100) : 0;
 
   return (
-    <div className="min-h-full bg-gray-950">
+    <div className="h-full overflow-y-auto bg-gray-950">
       {/* Top bar */}
       <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-800 bg-gray-950/95 px-4 py-3 backdrop-blur-sm pt-safe">
         <button onClick={() => router.push("/learn")} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors">
