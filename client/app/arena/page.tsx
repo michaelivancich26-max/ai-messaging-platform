@@ -105,26 +105,178 @@ function StarRow({ tier, color }: { tier: number; color: Bot["color"] }) {
   );
 }
 
+// ─── Win Condition types ──────────────────────────────────────────────────────
+
+type WinCondition =
+  | { type: "exchanges"; limit: number }
+  | { type: "time"; minutes: number }
+  | { type: "proposition"; threshold: number };
+
+// ─── Win Condition Modal ──────────────────────────────────────────────────────
+
+function WinConditionModal({
+  bot,
+  onConfirm,
+  onClose,
+}: {
+  bot: Bot;
+  onConfirm: (wc: WinCondition) => void;
+  onClose: () => void;
+}) {
+  const [type, setType] = useState<WinCondition["type"]>("exchanges");
+  const [exchangeLimit, setExchangeLimit] = useState(10);
+  const [timeMinutes, setTimeMinutes] = useState(5);
+  const [propThreshold, setPropThreshold] = useState(70);
+  const c = BOT_COLORS[bot.color];
+
+  function confirm() {
+    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit });
+    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes });
+    else onConfirm({ type: "proposition", threshold: propThreshold });
+  }
+
+  const optionCls = (active: boolean) =>
+    `flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors ${
+      active ? "border-indigo-600 bg-indigo-950/30" : "border-gray-800 hover:border-gray-700"
+    }`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <div className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center ring-1 ${c.ring} bg-gray-950`}>
+            <span className={c.text}><BotIcon id={bot.id} size={20} /></span>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-100">Challenge {bot.name}</p>
+            <p className={`text-[11px] ${c.text}`}>{bot.title} · {bot.tierName}</p>
+          </div>
+        </div>
+
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Win Condition</p>
+
+        {/* Option: Exchanges */}
+        <div className={optionCls(type === "exchanges")} onClick={() => setType("exchanges")}>
+          <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "exchanges" ? "border-indigo-500" : "border-gray-600"}`}>
+            {type === "exchanges" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-gray-200">Exchange Limit</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Match ends after N back-and-forth exchanges.</p>
+            {type === "exchanges" && (
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {[5, 10, 15, 20].map(n => (
+                  <button
+                    key={n}
+                    onClick={e => { e.stopPropagation(); setExchangeLimit(n); }}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${exchangeLimit === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Option: Time */}
+        <div className={optionCls(type === "time")} onClick={() => setType("time")}>
+          <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "time" ? "border-indigo-500" : "border-gray-600"}`}>
+            {type === "time" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-gray-200">Time Limit</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Match is judged when the clock runs out.</p>
+            {type === "time" && (
+              <div className="flex gap-1.5 mt-2 flex-wrap">
+                {[3, 5, 10, 15].map(n => (
+                  <button
+                    key={n}
+                    onClick={e => { e.stopPropagation(); setTimeMinutes(n); }}
+                    className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${timeMinutes === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                  >
+                    {n} min
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Option: Proposition bar */}
+        <div className={optionCls(type === "proposition")} onClick={() => setType("proposition")}>
+          <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "proposition" ? "border-indigo-500" : "border-gray-600"}`}>
+            {type === "proposition" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-gray-200">Proposition Bar</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">AI scores each exchange live. First to dominate the bar wins.</p>
+            {type === "proposition" && (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-[10px] text-gray-500">Win threshold</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[60, 70, 80].map(n => (
+                    <button
+                      key={n}
+                      onClick={e => { e.stopPropagation(); setPropThreshold(n); }}
+                      className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${propThreshold === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                    >
+                      {n}%
+                    </button>
+                  ))}
+                </div>
+                {/* Mini preview bar */}
+                <div className="mt-2 h-2 rounded-full bg-gray-800 overflow-hidden relative">
+                  <div className="absolute inset-y-0 left-0 bg-red-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
+                  <div className="absolute inset-y-0 right-0 bg-emerald-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
+                  <div className="absolute inset-y-0 bg-gray-700" style={{ left: `${100 - propThreshold}%`, right: `${100 - propThreshold}%` }} />
+                </div>
+                <p className="text-[10px] text-gray-600">Win zone starts at {propThreshold}% on either side</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800 transition-colors">
+            Cancel
+          </button>
+          <button onClick={confirm} className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors ${c.btn}`}>
+            Start Match →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Bot Card ────────────────────────────────────────────────────────────────
 
 function BotCard({ bot }: { bot: Bot }) {
   const { data: session } = useSession();
   const router = useRouter();
   const [challenging, setChallenging] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [error, setError] = useState("");
   const userId: string = (session?.user as any)?.id ?? "";
   const c = BOT_COLORS[bot.color];
   const winRate = botWinRate(bot);
 
-  async function challenge() {
+  async function challenge(winCondition: WinCondition) {
     if (!userId || challenging) return;
+    setModalOpen(false);
     setChallenging(true);
     setError("");
     try {
       const res = await fetch(`${SERVER}/api/bot-rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, botId: bot.id }),
+        body: JSON.stringify({ userId, botId: bot.id, winCondition }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Failed to start match."); setChallenging(false); return; }
@@ -181,7 +333,7 @@ function BotCard({ bot }: { bot: Bot }) {
         {/* Challenge button */}
         {error && <p className="mt-2 text-[10px] text-red-400">{error}</p>}
         <button
-          onClick={challenge}
+          onClick={() => setModalOpen(true)}
           disabled={challenging || !userId}
           className={`mt-3 w-full rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-40 ${c.btn}`}
         >
@@ -196,6 +348,14 @@ function BotCard({ bot }: { bot: Bot }) {
           ) : "Challenge"}
         </button>
       </div>
+
+      {modalOpen && (
+        <WinConditionModal
+          bot={bot}
+          onConfirm={challenge}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

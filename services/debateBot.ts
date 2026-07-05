@@ -299,6 +299,11 @@ export async function respondAsBot(
   }
 }
 
+export type WinCondition =
+  | { type: "exchanges"; limit: number }
+  | { type: "time"; minutes: number }
+  | { type: "proposition"; threshold: number };
+
 export const BOT_IDS = Object.keys(BOT_CONFIGS);
 
 export const BOT_TIER: Record<string, number> = Object.fromEntries(
@@ -315,6 +320,7 @@ export async function judgeMatch(
   botId: string,
   prisma: PrismaClient,
   forfeit = false,
+  forcedWinner?: "human" | "bot",
 ): Promise<{ winner: "human" | "bot"; verdict: string; scoreImpact: number; botId: string }> {
   const config = BOT_CONFIGS[botId];
   if (!config) throw new Error(`Unknown bot: ${botId}`);
@@ -343,7 +349,7 @@ export async function judgeMatch(
     `based on logic, evidence quality, and persuasion. Return ONLY valid JSON, no other text: ` +
     `{"winner":"human" or "bot","verdict":"one concise sentence explaining the decision"}\n\nTranscript:\n${transcript}`;
 
-  let winner: "human" | "bot" = "bot";
+  let winner: "human" | "bot" = forcedWinner ?? "bot";
   let verdict = "The debate was inconclusive.";
 
   try {
@@ -355,7 +361,8 @@ export async function judgeMatch(
     const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
     const jsonStart = raw.indexOf("{");
     const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
-    if (parsed.winner === "human" || parsed.winner === "bot") winner = parsed.winner;
+    // Only override winner from Claude if no forcedWinner was supplied
+    if (!forcedWinner && (parsed.winner === "human" || parsed.winner === "bot")) winner = parsed.winner;
     if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
   } catch (e) {
     console.error("[Judge] Haiku error:", e);
@@ -363,4 +370,53 @@ export async function judgeMatch(
 
   const scoreImpact = winner === "human" ? (TIER_BONUS[config.tier] ?? 1.0) : -LOSS_PENALTY;
   return { winner, verdict, scoreImpact, botId };
+}
+
+// scoreMatch — returns 0–100 representing who is currently winning.
+// 0 = bot decisively ahead, 50 = even, 100 = human decisively ahead.
+export async function scoreMatch(
+  roomDbId: string,
+  botId: string,
+  prisma: PrismaClient,
+): Promise<number> {
+  const config = BOT_CONFIGS[botId];
+  if (!config) return 50;
+
+  const botUser = await prisma.user
+    .findUnique({ where: { username: config.name }, select: { id: true } })
+    .catch(() => null);
+
+  const msgs = await prisma.message.findMany({
+    where: { roomId: roomDbId },
+    include: { user: { select: { id: true } } },
+    orderBy: { createdAt: "asc" },
+    take: 30,
+  });
+
+  if (msgs.length < 2) return 50;
+
+  const transcript = msgs
+    .map((m) => `${m.userId === botUser?.id ? config.name : "Human"}: ${m.content}`)
+    .join("\n");
+
+  const prompt =
+    `You are an impartial debate judge. Rate who is currently winning from 0 to 100:\n` +
+    `0 = ${config.name} is decisively winning\n` +
+    `50 = Exactly even\n` +
+    `100 = Human is decisively winning\n` +
+    `Return ONLY valid JSON: {"score":<integer>}\n\nConversation:\n${transcript}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 50,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+    const jsonStart = raw.indexOf("{");
+    const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
+    return Math.max(0, Math.min(100, Number(parsed.score ?? 50)));
+  } catch {
+    return 50;
+  }
 }

@@ -92,7 +92,6 @@ export default function RoomPage() {
   const activeChannelRef = useRef<Channel | null>(null);
 
   const isBotRoom = roomId.startsWith("arena-");
-  const MATCH_TURNS = 10;
   const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
   const [matchResult, setMatchResult] = useState<{
     winner: "human" | "bot";
@@ -100,6 +99,9 @@ export default function RoomPage() {
     scoreImpact: number;
     botId: string;
   } | null>(null);
+  const [propositionScore, setPropositionScore] = useState(50); // 0=bot winning, 100=human winning
+  const [timeLeft, setTimeLeft] = useState<number | null>(null); // seconds remaining
+  const lastScoredLenRef = useRef(0);
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
@@ -427,6 +429,17 @@ export default function RoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, userId, roomId]);
 
+  // Arena: parse win condition from room metadata
+  type WinCondition =
+    | { type: "exchanges"; limit: number }
+    | { type: "time"; minutes: number }
+    | { type: "proposition"; threshold: number };
+  const winCondition: WinCondition = (() => {
+    if (!isBotRoom || !(roomMeta as any)?.matchConfig) return { type: "exchanges", limit: 10 };
+    try { return JSON.parse((roomMeta as any).matchConfig) as WinCondition; }
+    catch { return { type: "exchanges", limit: 10 }; }
+  })();
+
   // Arena: derive human turn count from message list
   const myTurnCount = isBotRoom
     ? messages.filter((m) => (m as any).userId === userId).length
@@ -447,20 +460,60 @@ export default function RoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBotRoom, userId]);
 
-  // Arena: auto-trigger judge when turn limit reached
+  // Arena: exchanges — auto-trigger when limit reached
   useEffect(() => {
-    if (!isBotRoom || matchState !== "active" || myTurnCount < MATCH_TURNS) return;
-    triggerJudge(false);
+    if (!isBotRoom || matchState !== "active" || winCondition.type !== "exchanges") return;
+    if (myTurnCount >= winCondition.limit) triggerJudge(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myTurnCount, matchState, isBotRoom]);
+  }, [myTurnCount, matchState, isBotRoom, winCondition.type, (winCondition as any).limit]);
 
-  async function triggerJudge(forfeit: boolean) {
+  // Arena: time — countdown and auto-trigger when expired
+  useEffect(() => {
+    if (!isBotRoom || matchState !== "active" || winCondition.type !== "time" || !roomMeta) return;
+    const startMs = new Date((roomMeta as any).createdAt ?? Date.now()).getTime();
+    const durationMs = (winCondition as { type: "time"; minutes: number }).minutes * 60 * 1000;
+    const endMs = startMs + durationMs;
+    function tick() {
+      const remaining = Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining === 0 && matchState === "active") triggerJudge(false);
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBotRoom, matchState, winCondition.type, (winCondition as any).minutes, (roomMeta as any)?.createdAt]);
+
+  // Arena: proposition — score after each message, trigger when threshold crossed
+  useEffect(() => {
+    if (!isBotRoom || matchState !== "active" || winCondition.type !== "proposition") return;
+    if (messages.length <= lastScoredLenRef.current || messages.length < 2) return;
+    lastScoredLenRef.current = messages.length;
+    const threshold = (winCondition as { type: "proposition"; threshold: number }).threshold;
+    fetch(`${SERVER}/api/arena-score`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomName: roomId }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.score === undefined || matchState !== "active") return;
+        const score = Math.max(0, Math.min(100, Number(data.score)));
+        setPropositionScore(score);
+        if (score >= threshold) triggerJudge(false, "human");
+        else if (score <= 100 - threshold) triggerJudge(false, "bot");
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, isBotRoom, matchState, winCondition.type, (winCondition as any).threshold]);
+
+  async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
     setMatchState("judging");
     try {
       const res = await fetch(`${SERVER}/api/arena-judge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomName: roomId, userId, forfeit }),
+        body: JSON.stringify({ roomName: roomId, userId, forfeit, forcedWinner }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1116,7 +1169,7 @@ export default function RoomPage() {
       )}
 
       {/* Arena match progress banner */}
-      {isBotRoom && matchState === "active" && (
+      {isBotRoom && matchState === "active" && winCondition.type === "exchanges" && (
         <div className="shrink-0 flex items-center gap-3 border-b border-amber-900/30 bg-amber-950/15 px-4 py-2">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
             <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
@@ -1124,19 +1177,65 @@ export default function RoomPage() {
           <div className="flex flex-1 items-center gap-2 min-w-0">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Arena Match</span>
             <span className="text-[10px] text-amber-700">·</span>
-            <span className="text-[10px] text-amber-600/80">{myTurnCount} / {MATCH_TURNS} exchanges</span>
+            <span className="text-[10px] text-amber-600/80">{myTurnCount} / {winCondition.limit} exchanges</span>
             <div className="flex gap-0.5 ml-1">
-              {Array.from({ length: MATCH_TURNS }).map((_, i) => (
+              {Array.from({ length: winCondition.limit }).map((_, i) => (
                 <span key={i} className={`h-1.5 w-1.5 rounded-full transition-colors ${i < myTurnCount ? "bg-amber-500" : "bg-gray-700"}`} />
               ))}
             </div>
           </div>
-          <button
-            onClick={() => triggerJudge(true)}
-            className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors"
-          >
-            Forfeit
-          </button>
+          <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+        </div>
+      )}
+      {isBotRoom && matchState === "active" && winCondition.type === "time" && (
+        <div className="shrink-0 flex items-center gap-3 border-b border-indigo-900/30 bg-indigo-950/15 px-4 py-2">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-indigo-400">
+            <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
+          </svg>
+          <div className="flex flex-1 items-center gap-2 min-w-0">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Arena Match</span>
+            <span className="text-[10px] text-indigo-700">·</span>
+            {timeLeft !== null && (
+              <span className={`text-[10px] font-mono font-bold ${timeLeft <= 30 ? "text-red-400" : "text-indigo-300"}`}>
+                {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
+              </span>
+            )}
+            <div className="flex-1 h-1.5 rounded-full bg-gray-800 overflow-hidden mx-1">
+              {timeLeft !== null && (
+                <div
+                  className="h-full bg-indigo-500 transition-all duration-1000"
+                  style={{ width: `${(timeLeft / (winCondition.minutes * 60)) * 100}%` }}
+                />
+              )}
+            </div>
+          </div>
+          <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+        </div>
+      )}
+      {isBotRoom && matchState === "active" && winCondition.type === "proposition" && (
+        <div className="shrink-0 border-b border-violet-900/30 bg-violet-950/10 px-4 py-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-violet-400">
+              <path d="M7.457 3.843A1.5 1.5 0 0 1 8.5 3.002L13 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1l-4.5-.002a1.5 1.5 0 0 1-1.043-.841L6.9 3.75l.557.093zM3 8.998l4.5.002a1.5 1.5 0 0 1 1.043.841L9.1 11.25l-.557-.093A1.5 1.5 0 0 1 7.5 11.998L3 12a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1z"/>
+            </svg>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">Proposition Bar</span>
+            <span className="text-[10px] text-violet-700">·</span>
+            <span className="text-[10px] text-violet-500/70">win at {winCondition.threshold}%</span>
+            <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+          </div>
+          {/* Sliding proposition bar */}
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold text-red-400 shrink-0 w-8 text-right">Bot</span>
+            <div className="relative flex-1 h-3 rounded-full bg-gray-800 overflow-hidden">
+              {/* Bot zone (left) */}
+              <div className="absolute inset-y-0 left-0 bg-red-600/50 rounded-full transition-all duration-700" style={{ width: `${100 - propositionScore}%` }} />
+              {/* Human zone (right) */}
+              <div className="absolute inset-y-0 right-0 bg-emerald-600/50 rounded-full transition-all duration-700" style={{ width: `${propositionScore}%` }} />
+              {/* Center needle */}
+              <div className="absolute inset-y-0 w-0.5 bg-white/80 transition-all duration-700" style={{ left: `${propositionScore}%`, transform: "translateX(-50%)" }} />
+            </div>
+            <span className="text-[9px] font-bold text-emerald-400 shrink-0 w-8">You</span>
+          </div>
         </div>
       )}
       {isBotRoom && matchState === "judging" && (

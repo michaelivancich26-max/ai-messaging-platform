@@ -9,7 +9,7 @@ import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
 import { evaluateClaim, computeCredibility } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
-import { respondAsBot, BOT_IDS, judgeMatch } from "./services/debateBot";
+import { respondAsBot, BOT_IDS, judgeMatch, scoreMatch } from "./services/debateBot";
 import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -1105,6 +1105,25 @@ app.get("/api/messages/:id/image", async (req, res) => {
   }
 });
 
+// POST /api/arena-score — live proposition score (0 = bot winning, 100 = human winning, 50 = even)
+app.post("/api/arena-score", async (req, res) => {
+  try {
+    const { roomName } = req.body as { roomName: string };
+    if (!roomName) return res.status(400).json({ error: "roomName required" });
+    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null }[]>(
+      `SELECT id, "botId" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
+    );
+    if (!roomRows.length) return res.json({ score: 50 });
+    const { id: roomDbId, botId } = roomRows[0];
+    if (!botId) return res.json({ score: 50 });
+    const score = await scoreMatch(roomDbId, botId, prisma);
+    res.json({ score });
+  } catch (e) {
+    console.error("[arena-score]", e);
+    res.json({ score: 50 });
+  }
+});
+
 // GET /api/arena-result/:roomName
 app.get("/api/arena-result/:roomName", async (req, res) => {
   try {
@@ -1123,8 +1142,8 @@ app.get("/api/arena-result/:roomName", async (req, res) => {
 // POST /api/arena-judge — idempotent: returns existing result if already judged
 app.post("/api/arena-judge", async (req, res) => {
   try {
-    const { roomName, userId, forfeit = false } = req.body as {
-      roomName: string; userId: string; forfeit?: boolean;
+    const { roomName, userId, forfeit = false, forcedWinner } = req.body as {
+      roomName: string; userId: string; forfeit?: boolean; forcedWinner?: "human" | "bot";
     };
     if (!roomName || !userId) return res.status(400).json({ error: "roomName and userId required" });
 
@@ -1146,7 +1165,7 @@ app.post("/api/arena-judge", async (req, res) => {
     const botId = roomRows[0].botId ?? roomName.replace("arena-", "").split("-")[0];
     if (!botId) return res.status(400).json({ error: "Bot not found for room" });
 
-    const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit);
+    const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit, forcedWinner);
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact")
@@ -1276,7 +1295,9 @@ app.post("/api/dm", async (req, res) => {
 
 // POST /api/bot-rooms — create a private 1v1 debate room against a bot
 app.post("/api/bot-rooms", async (req, res) => {
-  const { userId, botId } = req.body as { userId: string; botId: string };
+  const { userId, botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {
+    userId: string; botId: string; winCondition?: object;
+  };
   if (!userId || !botId) return res.status(400).json({ error: "userId and botId required" });
   if (!BOT_IDS.includes(botId)) return res.status(400).json({ error: "Unknown bot" });
 
@@ -1284,7 +1305,6 @@ app.post("/api/bot-rooms", async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // Unique room name scoped to this user+bot combination (most recent match)
     const shortId = Date.now().toString(36).slice(-5);
     const name = `arena-${botId}-${userId.slice(-5)}-${shortId}`;
 
@@ -1292,13 +1312,11 @@ app.post("/api/bot-rooms", async (req, res) => {
       data: { name, isPrivate: false, creatorId: userId },
     } as any);
 
-    // Set bot flags via raw SQL (isBotRoom and botId aren't in generated client yet)
     await prisma.$executeRawUnsafe(
-      `UPDATE "Room" SET "isBotRoom" = true, "botId" = $1 WHERE "id" = $2`,
-      botId, room.id,
+      `UPDATE "Room" SET "isBotRoom" = true, "botId" = $1, "matchConfig" = $2 WHERE "id" = $3`,
+      botId, JSON.stringify(winCondition), room.id,
     );
 
-    // Auto-join the user
     await prisma.roomMember.create({ data: { userId, roomId: room.id } } as any);
 
     res.json({ name, id: room.id });
@@ -2194,6 +2212,13 @@ async function start() {
     console.log("[DB] ArenaMatch table ready");
   } catch (e) {
     console.error("[DB] ArenaMatch table setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "matchConfig" TEXT`);
+    console.log("[DB] matchConfig column ready");
+  } catch (e) {
+    console.error("[DB] matchConfig column setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
