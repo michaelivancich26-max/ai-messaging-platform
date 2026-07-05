@@ -122,7 +122,7 @@ export default function HomePage() {
         {/* ── Debates ── */}
         <button
           onClick={() => router.push("/lobby")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-10 text-left transition-colors hover:bg-indigo-950/20 focus:outline-none md:border-b-0 md:border-r"
+          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-indigo-950/20 focus:outline-none md:border-b-0 md:border-r"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-950 ring-1 ring-indigo-900/60 transition-all group-hover:ring-indigo-700">
@@ -155,7 +155,7 @@ export default function HomePage() {
         {/* ── Arena ── */}
         <button
           onClick={() => router.push("/arena")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 p-10 text-left transition-colors hover:bg-amber-950/10 focus:outline-none"
+          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-amber-950/10 focus:outline-none md:border-b-0 md:border-r"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-950/60 ring-1 ring-amber-900/60 transition-all group-hover:ring-amber-700">
@@ -176,6 +176,37 @@ export default function HomePage() {
             </ul>
             <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-amber-500">
               Enter Arena
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </div>
+          </div>
+        </button>
+
+        {/* ── Compete ── */}
+        <button
+          onClick={() => router.push("/compete")}
+          className="group relative flex flex-1 flex-col items-center justify-center gap-6 p-8 text-left transition-colors hover:bg-violet-950/10 focus:outline-none"
+        >
+          <div className="flex flex-col items-center gap-5 max-w-xs">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-950/60 ring-1 ring-violet-900/60 transition-all group-hover:ring-violet-700">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-violet-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-white">Compete</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-500">
+                Post a claim, dare someone to debate you, and climb the ELO leaderboard.
+              </p>
+            </div>
+            <ul className="space-y-1.5 self-start text-xs text-gray-600">
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-violet-500" />Challenge board — post your claim</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-violet-500" />1v1 human debates, AI judged</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-violet-500" />ELO rating and leaderboard</li>
+            </ul>
+            <div className="mt-2 flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-violet-500">
+              Enter Compete
               <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
               </svg>

@@ -92,6 +92,7 @@ export default function RoomPage() {
   const activeChannelRef = useRef<Channel | null>(null);
 
   const isBotRoom = roomId.startsWith("arena-");
+  const isCompetitiveRoom = roomId.startsWith("comp-");
   const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
   const [matchResult, setMatchResult] = useState<{
     winner: "human" | "bot";
@@ -435,21 +436,31 @@ export default function RoomPage() {
     | { type: "time"; minutes: number }
     | { type: "proposition"; threshold: number };
   const winCondition: WinCondition = (() => {
-    if (!isBotRoom || !(roomMeta as any)?.matchConfig) return { type: "exchanges", limit: 10 };
+    if (!(isBotRoom || isCompetitiveRoom) || !(roomMeta as any)?.matchConfig) return { type: "exchanges", limit: 10 };
     try { return JSON.parse((roomMeta as any).matchConfig) as WinCondition; }
     catch { return { type: "exchanges", limit: 10 }; }
   })();
   const parsedMatchConfig = (() => {
-    if (!isBotRoom || !(roomMeta as any)?.matchConfig) return null;
-    try { return JSON.parse((roomMeta as any).matchConfig) as { topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean }; }
+    if (!(isBotRoom || isCompetitiveRoom) || !(roomMeta as any)?.matchConfig) return null;
+    try { return JSON.parse((roomMeta as any).matchConfig) as {
+      topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean;
+      isCompetitive?: boolean; challengerId?: string; challengedId?: string;
+      challengerStance?: string; challengedStance?: string;
+    }; }
     catch { return null; }
+  })();
+  const myStanceInMatch: string | null = (() => {
+    if (!isCompetitiveRoom || !parsedMatchConfig || !userId) return null;
+    if (parsedMatchConfig.challengerId === userId) return parsedMatchConfig.challengerStance ?? null;
+    if (parsedMatchConfig.challengedId === userId) return parsedMatchConfig.challengedStance ?? null;
+    return null;
   })();
   const matchTopic: string | null = parsedMatchConfig?.topic ?? null;
   const matchStance: "affirmative" | "negative" | null = parsedMatchConfig?.stance ?? null;
   const matchBotFirst: boolean = parsedMatchConfig?.botFirst ?? false;
 
   // Arena: derive human turn count from message list
-  const myTurnCount = isBotRoom
+  const myTurnCount = (isBotRoom || isCompetitiveRoom)
     ? messages.filter((m) => (m as any).userId === userId).length
     : 0;
 
@@ -471,14 +482,14 @@ export default function RoomPage() {
 
   // Arena: exchanges — auto-trigger when limit reached
   useEffect(() => {
-    if (!isBotRoom || matchState !== "active" || winCondition.type !== "exchanges") return;
+    if (!(isBotRoom || isCompetitiveRoom) || matchState !== "active" || winCondition.type !== "exchanges") return;
     if (myTurnCount >= winCondition.limit) triggerJudge(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myTurnCount, matchState, isBotRoom, winCondition.type, (winCondition as any).limit]);
+  }, [myTurnCount, matchState, isBotRoom, isCompetitiveRoom, winCondition.type, (winCondition as any).limit]);
 
   // Arena: time — countdown and auto-trigger when expired
   useEffect(() => {
-    if (!isBotRoom || matchState !== "active" || winCondition.type !== "time" || !roomMeta) return;
+    if (!(isBotRoom || isCompetitiveRoom) || matchState !== "active" || winCondition.type !== "time" || !roomMeta) return;
     const startMs = new Date((roomMeta as any).createdAt ?? Date.now()).getTime();
     const durationMs = (winCondition as { type: "time"; minutes: number }).minutes * 60 * 1000;
     const endMs = startMs + durationMs;
@@ -495,7 +506,7 @@ export default function RoomPage() {
 
   // Arena: proposition — score after each message, trigger when threshold crossed
   useEffect(() => {
-    if (!isBotRoom || matchState !== "active" || winCondition.type !== "proposition") return;
+    if (!(isBotRoom || isCompetitiveRoom) || matchState !== "active" || winCondition.type !== "proposition") return;
     if (messages.length <= lastScoredLenRef.current || messages.length < 2) return;
     lastScoredLenRef.current = messages.length;
     const threshold = (winCondition as { type: "proposition"; threshold: number }).threshold;
@@ -519,17 +530,28 @@ export default function RoomPage() {
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
     setMatchState("judging");
     try {
-      const res = await fetch(`${SERVER}/api/arena-judge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomName: roomId, userId, forfeit, forcedWinner }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setMatchResult(data);
-        setMatchState("ended");
+      if (isCompetitiveRoom) {
+        const res = await fetch(`${SERVER}/api/competitive/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomName: roomId, forcedWinner: forfeit ? parsedMatchConfig?.challengerId === userId ? parsedMatchConfig?.challengedId : parsedMatchConfig?.challengerId : undefined }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMatchResult({ ...data, isCompetitive: true });
+          setMatchState("ended");
+        } else { setMatchState("active"); }
       } else {
-        setMatchState("active");
+        const res = await fetch(`${SERVER}/api/arena-judge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomName: roomId, userId, forfeit, forcedWinner }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMatchResult(data);
+          setMatchState("ended");
+        } else { setMatchState("active"); }
       }
     } catch {
       setMatchState("active");
@@ -884,7 +906,7 @@ export default function RoomPage() {
       }
 
       {/* Channel list — only for non-DM, non-arena rooms */}
-      {!roomId.startsWith("dm-") && !isBotRoom && (
+      {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && (
         <div className={`
           border-r border-gray-800 flex flex-col bg-gray-900
           ${mobileView === "channels" ? "flex" : "hidden"}
@@ -931,7 +953,7 @@ export default function RoomPage() {
       `}>
       <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 pb-2.5 pt-safe">
         {/* Mobile: back to channels (non-DM, non-arena) or hamburger (DM / arena) */}
-        {!roomId.startsWith("dm-") && !isBotRoom ? (
+        {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom ? (
           <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
             onClick={() => setMobileView("channels")} title="Back to channels">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -1177,8 +1199,8 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Arena match progress banner */}
-      {isBotRoom && matchState === "active" && winCondition.type === "exchanges" && (
+      {/* Match progress banner */}
+      {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "exchanges" && (
         <div className="shrink-0 flex items-center gap-3 border-b border-amber-900/30 bg-amber-950/15 px-4 py-2">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
             <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
@@ -1196,7 +1218,7 @@ export default function RoomPage() {
           <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
-      {isBotRoom && matchState === "active" && winCondition.type === "time" && (
+      {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "time" && (
         <div className="shrink-0 flex items-center gap-3 border-b border-indigo-900/30 bg-indigo-950/15 px-4 py-2">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-indigo-400">
             <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
@@ -1221,7 +1243,7 @@ export default function RoomPage() {
           <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
-      {isBotRoom && matchState === "active" && winCondition.type === "proposition" && (
+      {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "proposition" && (
         <div className="shrink-0 border-b border-violet-900/30 bg-violet-950/10 px-4 py-2 space-y-1.5">
           <div className="flex items-center gap-2">
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-violet-400">
@@ -1247,7 +1269,7 @@ export default function RoomPage() {
           </div>
         </div>
       )}
-      {isBotRoom && matchState === "judging" && (
+      {(isBotRoom || isCompetitiveRoom) && matchState === "judging" && (
         <div className="shrink-0 flex items-center justify-center gap-2 border-b border-amber-900/30 bg-amber-950/15 px-4 py-3">
           <svg className="h-4 w-4 animate-spin text-amber-400" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -1263,8 +1285,47 @@ export default function RoomPage() {
       <div className={`flex flex-1 overflow-hidden min-h-0 ${anyPanelOpen ? "flex-row" : "flex-col"}`}>
         {/* Main chat column — hidden on mobile when sidebar is open (sidebar takes full screen instead) */}
         <div className={`relative flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
-          {/* Arena match result overlay */}
-          {isBotRoom && matchState === "ended" && matchResult && (() => {
+          {/* Match result overlay */}
+          {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && (() => {
+            if (isCompetitiveRoom) {
+              const won = matchResult.winnerId === userId;
+              const myEloChange = matchResult.challengerId === userId
+                ? matchResult.challengerEloChange
+                : matchResult.challengedEloChange;
+              return (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
+                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
+                      {won ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-400">
+                          <circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/>
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-400">
+                          <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/>
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <h2 className={`text-2xl font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                        {won ? "You Won!" : "You Lost"}
+                      </h2>
+                      <p className="mt-0.5 text-xs text-gray-500">Competitive Match</p>
+                    </div>
+                    <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
+                    <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">ELO Change</p>
+                      <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {myEloChange >= 0 ? "+" : ""}{myEloChange} → {won ? matchResult.challengerId === userId ? matchResult.challengerEloAfter : matchResult.challengedEloAfter : matchResult.challengerId === userId ? matchResult.challengerEloAfter : matchResult.challengedEloAfter}
+                      </p>
+                    </div>
+                    <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
+                      Return to Challenge Board
+                    </button>
+                  </div>
+                </div>
+              );
+            }
             const bot = getBotById(matchResult.botId);
             const won = matchResult.winner === "human";
             return (
@@ -1308,10 +1369,25 @@ export default function RoomPage() {
             );
           })()}
 
-          {!roomId.startsWith("dm-") && !isBotRoom && !activeChannel ? (
+          {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && !activeChannel ? (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
           ) : (
             <>
+              {/* Competitive: topic + stances banner */}
+              {isCompetitiveRoom && parsedMatchConfig?.topic && (
+                <div className="shrink-0 border-b border-gray-800 bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-violet-400">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                  </svg>
+                  <span className="flex-1 text-xs text-gray-300 leading-snug">{parsedMatchConfig.topic}</span>
+                  {myStanceInMatch && (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${myStanceInMatch === "affirmative" ? "bg-emerald-900/40 text-emerald-400" : "bg-red-900/40 text-red-400"}`}>
+                      You: {myStanceInMatch === "affirmative" ? "FOR" : "AGAINST"}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* Arena: topic banner */}
               {isBotRoom && matchTopic && (
                 <div className="shrink-0 border-b border-gray-800 bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
@@ -1436,14 +1512,14 @@ export default function RoomPage() {
         />
       )}
 
-      {(roomId.startsWith("dm-") || isBotRoom || activeChannel) && (() => {
+      {(roomId.startsWith("dm-") || isBotRoom || isCompetitiveRoom || activeChannel) && (() => {
         const isSidebarChannel = activeChannel?.isSidebar === true;
         const isSpectating = (roomMeta as any)?.isFishbowl && myFishbowlRole === "SPECTATOR";
         const isStructured = debateTurn?.mode === "structured" && !roomId.startsWith("dm-") && !isSidebarChannel;
         const isMyTurn = debateTurn?.currentSpeakerId === userId;
         const floorClaimed = !!debateTurn?.currentSpeakerId;
         const isMySide = myPosition === debateTurn?.currentSide;
-        const arenaLocked = isBotRoom && matchState !== "active";
+        const arenaLocked = (isBotRoom || isCompetitiveRoom) && matchState !== "active";
         const locked = isSpectating || (isStructured && !isMyTurn) || arenaLocked;
         const reason = arenaLocked
           ? matchState === "judging"
