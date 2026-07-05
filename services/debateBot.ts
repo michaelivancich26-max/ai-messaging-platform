@@ -213,9 +213,10 @@ export async function respondAsBot(
   opening = false,
 ): Promise<void> {
   const config = BOT_CONFIGS[botId];
-  if (!config) return;
+  if (!config) { console.error("[respondAsBot] unknown botId:", botId); return; }
 
   const emitTarget = channelId ? `channel:${channelId}` : roomName;
+  console.log("[respondAsBot] start", { botId, roomName, channelId, emitTarget, opening });
 
   // Find or create the bot's user account
   let botUser: { id: string; username: string } | null = null;
@@ -238,8 +239,9 @@ export async function respondAsBot(
       });
     } catch { return; }
   }
-  if (!botUser) return;
+  if (!botUser) { console.error("[respondAsBot] botUser is null, aborting"); return; }
 
+  console.log("[respondAsBot] emitting userTyping to", emitTarget);
   io.to(emitTarget).emit("userTyping", { userId: botUser.id, username: botUser.username });
 
   await sleep(config.delayMs);
@@ -308,6 +310,7 @@ export async function respondAsBot(
   }
 
   io.to(emitTarget).emit("userStopTyping", { userId: botUser.id });
+  console.log("[respondAsBot] saving message, emitting to", emitTarget);
 
   try {
     const msg = await prisma.message.create({

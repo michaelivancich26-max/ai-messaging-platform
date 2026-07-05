@@ -307,20 +307,27 @@ io.on("connection", (socket) => {
       try {
         const roomDbId = channel.room.id;
         const roomName = channel.room.name;
+        console.log("[BotFirst] joinChannel", { roomName, channelId });
         const cfgRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null; botId: string | null }[]>(
           `SELECT "matchConfig", "botId" FROM "Room" WHERE "id" = $1 LIMIT 1`, roomDbId
         );
-        const cfg = cfgRows[0]?.matchConfig ? JSON.parse(cfgRows[0].matchConfig) : null;
+        const rawCfg = cfgRows[0]?.matchConfig;
+        const cfg = rawCfg ? JSON.parse(rawCfg) : null;
+        console.log("[BotFirst] cfg=", cfg, "botId=", cfgRows[0]?.botId);
         if (cfg?.botFirst) {
           const msgCount = await prisma.message.count({ where: { roomId: roomDbId, channelId } });
+          console.log("[BotFirst] msgCount=", msgCount);
           if (msgCount === 0) {
             const botId = cfgRows[0]?.botId;
             if (botId) {
+              console.log("[BotFirst] firing respondAsBot", { botId, roomName, channelId });
               respondAsBot(roomDbId, roomName, botId, "", channelId, io, prisma, true);
+            } else {
+              console.log("[BotFirst] skipped: botId is null");
             }
           }
         }
-      } catch { /* ignore */ }
+      } catch (e) { console.error("[BotFirst] error", e); }
 
       const history = await prisma.message.findMany({
         where: { channelId },
