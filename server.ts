@@ -1447,15 +1447,24 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
     ]);
     let stances: string[] = [];
     let stanceCooldown = 0;
+    let matchConfig: string | null = null;
+    let isBotRoom = false;
+    let botId: string | null = null;
     try {
-      const stRow = await prisma.$queryRawUnsafe<{ stances: string | null; stanceCooldown: number | null }[]>(
-        `SELECT "stances", "stanceCooldown" FROM "Room" WHERE "id" = $1`, room.id
+      const stRow = await prisma.$queryRawUnsafe<{
+        stances: string | null; stanceCooldown: number | null;
+        matchConfig: string | null; isBotRoom: boolean; botId: string | null;
+      }[]>(
+        `SELECT "stances", "stanceCooldown", "matchConfig", "isBotRoom", "botId" FROM "Room" WHERE "id" = $1`, room.id
       );
       if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
       if (stRow[0]?.stanceCooldown) stanceCooldown = stRow[0].stanceCooldown;
-    } catch { /* stances/stanceCooldown columns may not exist yet */ }
+      matchConfig = stRow[0]?.matchConfig ?? null;
+      isBotRoom = stRow[0]?.isBotRoom ?? false;
+      botId = stRow[0]?.botId ?? null;
+    } catch { /* columns may not exist yet */ }
     const { password: _pw, ...roomMeta } = room as any;
-    res.json({ sections, channels, sidebarChannels: sidebarChannelList, roomMeta: { ...roomMeta, stances, stanceCooldown } });
+    res.json({ sections, channels, sidebarChannels: sidebarChannelList, roomMeta: { ...roomMeta, stances, stanceCooldown, matchConfig, isBotRoom, botId } });
   } catch {
     res.status(500).json({ error: "Server error" });
   }

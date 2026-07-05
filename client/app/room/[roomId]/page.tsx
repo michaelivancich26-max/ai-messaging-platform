@@ -455,8 +455,9 @@ export default function RoomPage() {
     : 0;
 
   // Arena: bot-goes-first — trigger bot opening after socket joins (activeChannel set)
+  // Server is idempotent (skips if messages already exist), so no client-side message count guard needed
   useEffect(() => {
-    if (!isBotRoom || !matchBotFirst || !activeChannel || messages.length > 0) return;
+    if (!isBotRoom || !matchBotFirst || !activeChannel) return;
     if (botKickFiredRef.current) return;
     botKickFiredRef.current = true;
     fetch(`${SERVER}/api/bot-kick`, {
