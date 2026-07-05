@@ -210,6 +210,7 @@ export async function respondAsBot(
   channelId: string | null,
   io: Server,
   prisma: PrismaClient,
+  opening = false,
 ): Promise<void> {
   const config = BOT_CONFIGS[botId];
   if (!config) return;
@@ -243,7 +244,23 @@ export async function respondAsBot(
 
   await sleep(config.delayMs);
 
-  // Fetch recent conversation for context
+  // Fetch match config (topic, stance) and recent conversation for context
+  let topic: string | null = null;
+  let userStance: "affirmative" | "negative" | null = null;
+  try {
+    const cfgRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(
+      `SELECT "matchConfig" FROM "Room" WHERE "id" = $1 LIMIT 1`, roomDbId
+    );
+    if (cfgRows[0]?.matchConfig) {
+      const cfg = JSON.parse(cfgRows[0].matchConfig);
+      topic = cfg.topic ?? null;
+      userStance = cfg.stance ?? null;
+    }
+  } catch { /* proceed without config */ }
+
+  // Bot's stance is opposite of the user's stance
+  const botStance = userStance === "affirmative" ? "AGAINST" : userStance === "negative" ? "FOR" : null;
+
   let contextBlock = "";
   try {
     const recentMsgs = await prisma.message.findMany({
@@ -262,9 +279,19 @@ export async function respondAsBot(
       .join("\n");
   } catch { /* proceed without context */ }
 
-  const userMessage = contextBlock
-    ? `Debate conversation so far:\n\n${contextBlock}\n\nRespond to the last argument from the human.`
-    : humanContent;
+  const topicLine = topic ? `Debate proposition: "${topic}"` : "";
+  const stanceLine = botStance ? `You are arguing ${botStance} this proposition.` : "";
+
+  let userMessage: string;
+  if (opening) {
+    userMessage = [topicLine, stanceLine, "Make your opening argument. Begin directly with your argument — no preamble."].filter(Boolean).join("\n");
+  } else {
+    userMessage = [
+      topicLine,
+      stanceLine,
+      contextBlock ? `Debate conversation so far:\n\n${contextBlock}\n\nRespond to the last argument from the human.` : humanContent,
+    ].filter(Boolean).join("\n\n");
+  }
 
   let responseText = "I'll need to think about that.";
   try {

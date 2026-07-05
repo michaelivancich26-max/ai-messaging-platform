@@ -108,9 +108,9 @@ function StarRow({ tier, color }: { tier: number; color: Bot["color"] }) {
 // ─── Win Condition types ──────────────────────────────────────────────────────
 
 type WinCondition =
-  | { type: "exchanges"; limit: number; topic?: string }
-  | { type: "time"; minutes: number; topic?: string }
-  | { type: "proposition"; threshold: number; topic?: string };
+  | { type: "exchanges"; limit: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean }
+  | { type: "time"; minutes: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean }
+  | { type: "proposition"; threshold: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean };
 
 // ─── Topic catalog ────────────────────────────────────────────────────────────
 
@@ -190,6 +190,8 @@ function MatchSetupModal({
 }) {
   const [step, setStep] = useState<"topic" | "condition">("topic");
   const [topicInput, setTopicInput] = useState("");
+  const [stance, setStance] = useState<"affirmative" | "negative">("affirmative");
+  const [botFirst, setBotFirst] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [type, setType] = useState<WinCondition["type"]>("exchanges");
   const [exchangeLimit, setExchangeLimit] = useState(10);
@@ -204,9 +206,9 @@ function MatchSetupModal({
 
   function confirm() {
     const topic = effectiveTopic ?? undefined;
-    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit, topic });
-    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes, topic });
-    else onConfirm({ type: "proposition", threshold: propThreshold, topic });
+    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit, topic, stance, botFirst });
+    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes, topic, stance, botFirst });
+    else onConfirm({ type: "proposition", threshold: propThreshold, topic, stance, botFirst });
   }
 
   const optionCls = (active: boolean) =>
@@ -252,6 +254,49 @@ function MatchSetupModal({
                 placeholder="Type your own topic, or pick one below…"
                 className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3.5 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors"
               />
+            </div>
+
+            {/* Stance + turn order */}
+            <div className="px-5 pb-3 shrink-0 grid grid-cols-2 gap-3">
+              {/* Stance */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-1.5">My stance</p>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setStance("affirmative")}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${stance === "affirmative" ? "bg-emerald-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                  >
+                    FOR
+                  </button>
+                  <button
+                    onClick={() => setStance("negative")}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${stance === "negative" ? "bg-red-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                  >
+                    AGAINST
+                  </button>
+                </div>
+                <p className="mt-1 text-[9px] text-gray-600">{stance === "affirmative" ? "You argue for the proposition" : "You argue against it"}</p>
+              </div>
+
+              {/* Turn order */}
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-1.5">First move</p>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setBotFirst(false)}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${!botFirst ? "bg-indigo-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                  >
+                    Me
+                  </button>
+                  <button
+                    onClick={() => setBotFirst(true)}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${botFirst ? "bg-indigo-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                  >
+                    Bot
+                  </button>
+                </div>
+                <p className="mt-1 text-[9px] text-gray-600">{botFirst ? "Bot makes the opening argument" : "You open the debate"}</p>
+              </div>
             </div>
 
             {/* Divider + category pills */}

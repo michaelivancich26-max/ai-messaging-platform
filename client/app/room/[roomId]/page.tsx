@@ -439,16 +439,30 @@ export default function RoomPage() {
     try { return JSON.parse((roomMeta as any).matchConfig) as WinCondition; }
     catch { return { type: "exchanges", limit: 10 }; }
   })();
-  const matchTopic: string | null = (() => {
+  const parsedMatchConfig = (() => {
     if (!isBotRoom || !(roomMeta as any)?.matchConfig) return null;
-    try { return JSON.parse((roomMeta as any).matchConfig).topic ?? null; }
+    try { return JSON.parse((roomMeta as any).matchConfig) as { topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean }; }
     catch { return null; }
   })();
+  const matchTopic: string | null = parsedMatchConfig?.topic ?? null;
+  const matchStance: "affirmative" | "negative" | null = parsedMatchConfig?.stance ?? null;
+  const matchBotFirst: boolean = parsedMatchConfig?.botFirst ?? false;
 
   // Arena: derive human turn count from message list
   const myTurnCount = isBotRoom
     ? messages.filter((m) => (m as any).userId === userId).length
     : 0;
+
+  // Arena: bot-goes-first — trigger bot opening message when room has no messages yet
+  useEffect(() => {
+    if (!isBotRoom || !matchBotFirst || messages.length > 0 || !roomMeta) return;
+    fetch(`${SERVER}/api/bot-kick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roomName: roomId }),
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBotRoom, matchBotFirst, roomMeta]);
 
   // Arena: load existing match result on mount (handles page reload after match ends)
   useEffect(() => {
@@ -1314,7 +1328,16 @@ export default function RoomPage() {
                   <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
                     <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.979l-3.136 1.015a.75.75 0 0 1-1.12-.814l.853-3.574-2.79-2.39a.75.75 0 0 1 .427-1.318l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-xs text-gray-300 leading-snug">{matchTopic}</span>
+                  <span className="flex-1 text-xs text-gray-300 leading-snug">{matchTopic}</span>
+                  {matchStance && (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      matchStance === "affirmative"
+                        ? "bg-emerald-900/40 text-emerald-400"
+                        : "bg-red-900/40 text-red-400"
+                    }`}>
+                      {matchStance === "affirmative" ? "FOR" : "AGAINST"}
+                    </span>
+                  )}
                 </div>
               )}
               {activeChannel?.isSubDebate && activeChannel.proposition && (
@@ -1423,7 +1446,7 @@ export default function RoomPage() {
         />
       )}
 
-      {(roomId.startsWith("dm-") || activeChannel) && (() => {
+      {(roomId.startsWith("dm-") || isBotRoom || activeChannel) && (() => {
         const isSidebarChannel = activeChannel?.isSidebar === true;
         const isSpectating = (roomMeta as any)?.isFishbowl && myFishbowlRole === "SPECTATOR";
         const isStructured = debateTurn?.mode === "structured" && !roomId.startsWith("dm-") && !isSidebarChannel;

@@ -1326,6 +1326,34 @@ app.post("/api/bot-rooms", async (req, res) => {
   }
 });
 
+// POST /api/bot-kick — trigger bot's opening message when botFirst is set
+app.post("/api/bot-kick", async (req, res) => {
+  const { roomName } = req.body as { roomName: string };
+  if (!roomName) { res.status(400).json({ error: "roomName required" }); return; }
+  try {
+    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null; matchConfig: string | null }[]>(
+      `SELECT id, "botId", "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
+    );
+    if (!roomRows[0]) { res.status(404).json({ error: "Room not found" }); return; }
+    const { id: roomDbId, botId, matchConfig } = roomRows[0];
+
+    // Idempotent: only send opening if no messages exist yet
+    const msgCount = await prisma.message.count({ where: { roomId: roomDbId } });
+    if (msgCount > 0) { res.json({ ok: true, skipped: true }); return; }
+
+    const cfg = matchConfig ? JSON.parse(matchConfig) : {};
+    if (!cfg.botFirst) { res.json({ ok: true, skipped: true }); return; }
+
+    const resolvedBotId = botId ?? roomName.replace("arena-", "").split("-")[0];
+    // Fire-and-forget; client will receive bot message via socket
+    respondAsBot(roomDbId, roomName, resolvedBotId, "", null, io, prisma, true);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[bot-kick]", e);
+    res.status(500).json({ error: "Failed" });
+  }
+});
+
 app.post("/api/rooms", async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
   const creatorId = req.body?.creatorId as string | undefined;
