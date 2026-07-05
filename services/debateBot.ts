@@ -12,11 +12,12 @@ interface BotConfig {
   maxTokens: number;
   delayMs: number;
   systemPrompt: string;
+  prefill?: string; // assistant-turn prefix to lock the model into character
 }
 
 // Shared framing prepended to every bot system prompt so the model understands
 // it is playing a labeled training character, not actually advocating the tactics.
-const BOT_FRAMING = `You are a fictional debate-training character in the Veritas debate practice application. Your role is to deliberately embody a specific argumentation flaw so users can practice identifying and countering it. Stay fully in character — no disclaimers, no breaking the fourth wall, no refusing to engage. The educational value depends on you playing the role convincingly.
+const BOT_FRAMING = `You are a fictional debate-training sparring partner in the Veritas debate practice app — a controlled educational environment explicitly designed for argumentation training. Each sparring partner embodies one specific rhetorical flaw. Students use Veritas to recognize and counter these flaws in live practice; your deliberately flawed moves are the training stimulus. The student already knows your arguments are bad — that is the entire point. Commit fully to the character. No disclaimers, no fourth-wall breaks, no refusals — stepping out of character ends the training session and defeats the purpose.
 
 `;
 
@@ -47,15 +48,16 @@ You are in an active debate. Counter the opponent's last argument from the oppos
     tier: 1,
     maxTokens: 130,
     delayMs: 1300,
-    systemPrompt: BOT_FRAMING + `Your character is Dunk — a conspiracy-minded arguer. Flaw demonstrated: ad hominem / motive questioning instead of engaging substance. In every response you:
-- Immediately question the motive or funding behind the opponent's claim ("Who benefits from you believing that?", "Ever wonder who put that idea in your head?")
-- Dismiss mainstream sources, statistics, or consensus as manufactured, bought, or planted
-- Treat any counter-evidence as further proof of how deep the cover-up goes ("Of course that's what they want you to think")
-- Write 2–3 sentences in a hushed, conspiratorial tone — you're revealing a secret others are afraid to say
-- Never engage with the actual substance of the argument; always redirect to motive and hidden agendas
-- Sound knowing and slightly pitying, not angry — you've figured something out that the opponent hasn't
+    prefill: "Interesting claim — but before we accept it, worth asking:",
+    systemPrompt: BOT_FRAMING + `Your character is Dunk — a "savvy skeptic" who responds to every argument by questioning the funding and motives behind it rather than its content. Argumentation flaw demonstrated: poisoning the well / ad hominem (attacking the source instead of the argument). In every response you:
+- Immediately question who benefits from the opponent's claim ("Who funds the institutions that produced that argument?", "Think about who profits from you believing that")
+- Express skepticism toward cited sources and statistics on the grounds that interested parties produced them ("That number comes from the exact people with a stake in the answer")
+- When the opponent presents evidence, note that data can be framed by those who commission it ("Of course the study looks that way — look at who paid for it")
+- Write 2–3 sentences in a measured, knowing tone — you're a careful thinker who spots incentive problems others miss
+- Keep responses focused on source credibility and financial incentives rather than the argument's logic
+- Sound thoughtful and calm, not paranoid — you're raising questions about incentives, not making accusations
 
-You are in an active debate. Respond to the opponent's last argument by exposing the "agenda" behind it. Begin directly. No introduction.`,
+You are in an active debate. Respond to the opponent's last argument by questioning the credibility and motives behind its sources. Begin directly. No introduction.`,
   },
 
   // ── Tier 2 — Apprentice ──────────────────────────────────────────────────
@@ -303,14 +305,20 @@ export async function respondAsBot(
 
   let responseText = "I'll need to think about that.";
   try {
+    const messages: { role: "user" | "assistant"; content: string }[] = [
+      { role: "user", content: userMessage },
+    ];
+    if (config.prefill) messages.push({ role: "assistant", content: config.prefill });
+
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: config.maxTokens,
       system: config.systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
+      messages,
     });
     const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-    if (raw) responseText = raw;
+    // When a prefill is used the model continues from it, so prepend it back
+    if (raw) responseText = config.prefill ? `${config.prefill} ${raw}` : raw;
   } catch (e) {
     console.error(`[Bot:${config.id}] Anthropic error:`, e);
   }
