@@ -186,7 +186,7 @@ export default function HomePage() {
         {/* ── Compete ── */}
         <button
           onClick={() => router.push("/compete")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 p-8 text-left transition-colors hover:bg-violet-950/10 focus:outline-none"
+          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-violet-950/10 focus:outline-none md:border-b-0 md:border-r"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-950/60 ring-1 ring-violet-900/60 transition-all group-hover:ring-violet-700">
@@ -207,6 +207,37 @@ export default function HomePage() {
             </ul>
             <div className="mt-2 flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-violet-500">
               Enter Compete
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </div>
+          </div>
+        </button>
+
+        {/* ── Learn ── */}
+        <button
+          onClick={() => router.push("/learn")}
+          className="group relative flex flex-1 flex-col items-center justify-center gap-6 p-8 text-left transition-colors hover:bg-teal-950/10 focus:outline-none"
+        >
+          <div className="flex flex-col items-center gap-5 max-w-xs">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-950/60 ring-1 ring-teal-900/60 transition-all group-hover:ring-teal-700">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-teal-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 3.741-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-white">Learn</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-500">
+                Master debate theory — fallacies, argument structures, tactics, and rebuttal techniques.
+              </p>
+            </div>
+            <ul className="space-y-1.5 self-start text-xs text-gray-600">
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-teal-500" />4 series, 19 lessons with quizzes</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-teal-500" />Fallacies, structures, tactics, rebuttals</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-teal-500" />Practice each concept in the Arena</li>
+            </ul>
+            <div className="mt-2 flex items-center gap-2 rounded-xl bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-teal-500">
+              Enter Learn
               <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
               </svg>

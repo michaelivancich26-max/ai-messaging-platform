@@ -1453,6 +1453,39 @@ app.get("/api/competitive/match/:roomName", async (req, res) => {
   }
 });
 
+// GET /api/lessons/progress?userId=xxx
+app.get("/api/lessons/progress", async (req, res) => {
+  const userId = req.query.userId as string;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ seriesSlug: string; lessonSlug: string }[]>(
+      `SELECT "seriesSlug", "lessonSlug" FROM "UserLessonProgress" WHERE "userId" = $1`, userId
+    );
+    res.json({ completed: rows });
+  } catch (e) {
+    console.error("[lessons/progress]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/lessons/complete — mark a lesson complete (idempotent)
+app.post("/api/lessons/complete", async (req, res) => {
+  const { userId, seriesSlug, lessonSlug } = req.body;
+  if (!userId || !seriesSlug || !lessonSlug) return res.status(400).json({ error: "userId, seriesSlug, lessonSlug required" });
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "UserLessonProgress" ("userId", "seriesSlug", "lessonSlug")
+       VALUES ($1, $2, $3)
+       ON CONFLICT ("userId", "seriesSlug", "lessonSlug") DO NOTHING`,
+      userId, seriesSlug, lessonSlug
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[lessons/complete]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/leaderboard — top users by ELO
 app.get("/api/leaderboard", async (req, res) => {
   try {
@@ -2672,6 +2705,22 @@ async function start() {
     console.log("[DB] CompetitiveMatch table ready");
   } catch (e) {
     console.error("[DB] CompetitiveMatch table setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "UserLessonProgress" (
+        "id"          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "userId"      TEXT NOT NULL,
+        "seriesSlug"  TEXT NOT NULL,
+        "lessonSlug"  TEXT NOT NULL,
+        "completedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE ("userId", "seriesSlug", "lessonSlug")
+      )
+    `);
+    console.log("[DB] UserLessonProgress table ready");
+  } catch (e) {
+    console.error("[DB] UserLessonProgress table setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
