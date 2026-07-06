@@ -1590,11 +1590,29 @@ Headlines:\n${list}`;
     const topics: TrendingTopic[] = await Promise.all(
       parsed.map(async (t) => {
         const roomName = trendingSlug(t.proposition);
-        await prisma.room.upsert({
+        const room = await prisma.room.upsert({
           where: { name: roomName },
           update: {},
           create: { name: roomName, proposition: t.proposition, creatorId: null, isPrivate: false } as any,
         });
+
+        const existingChannels = await prisma.channel.count({ where: { roomId: room.id } });
+        if (existingChannels === 0) {
+          const [debateSection, resourceSection] = await Promise.all([
+            prisma.section.create({ data: { name: "Debate", roomId: room.id, order: 0 } }),
+            prisma.section.create({ data: { name: "Resources", roomId: room.id, order: 1 } }),
+          ]);
+          await (prisma as any).channel.createMany({
+            data: [
+              { name: "general",   roomId: room.id, sectionId: debateSection.id,   order: 0 },
+              { name: "for",       roomId: room.id, sectionId: debateSection.id,   order: 1 },
+              { name: "against",   roomId: room.id, sectionId: debateSection.id,   order: 2 },
+              { name: "evidence",  roomId: room.id, sectionId: resourceSection.id, order: 0 },
+              { name: "off-topic", roomId: room.id, sectionId: resourceSection.id, order: 1 },
+            ],
+          });
+        }
+
         return { ...t, roomName };
       })
     );
