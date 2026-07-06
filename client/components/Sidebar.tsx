@@ -198,16 +198,22 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                     className={`flex w-full flex-col rounded-lg px-3 py-1.5 transition-colors text-left
                       ${activeRoomName === room.name ? "bg-gray-800 text-gray-100" : "hover:bg-gray-800 text-gray-300 hover:text-gray-100"}`}>
                     <div className="flex items-center gap-2">
-                      <span className={`shrink-0 ${room.isPrivate ? "text-amber-500" : "text-indigo-400"}`}>
-                        {room.isPrivate ? <LockIcon /> : (
+                      <span className={`shrink-0 ${room.name.startsWith("tr-") ? "text-amber-400" : room.isPrivate ? "text-amber-500" : "text-indigo-400"}`}>
+                        {room.name.startsWith("tr-") ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className="h-3 w-3">
+                            <path d="M11.174 1.052a.667.667 0 0 0-1.307 0l-.16.794a.667.667 0 0 1-.523.524l-.794.159a.667.667 0 0 0 0 1.308l.794.158a.667.667 0 0 1 .523.524l.16.794a.667.667 0 0 0 1.307 0l.158-.794a.667.667 0 0 1 .524-.524l.794-.158a.667.667 0 0 0 0-1.308l-.794-.16a.667.667 0 0 1-.524-.523l-.158-.794ZM4.633 3.789a.667.667 0 0 0-1.266 0l-.455 1.367a.667.667 0 0 1-.422.422l-1.367.455a.667.667 0 0 0 0 1.266l1.367.456a.667.667 0 0 1 .422.421l.455 1.367a.667.667 0 0 0 1.266 0l.456-1.367a.667.667 0 0 1 .421-.421l1.367-.456a.667.667 0 0 0 0-1.266l-1.367-.455a.667.667 0 0 1-.421-.422l-.456-1.367ZM9.3 9.122a.667.667 0 0 0-1.266 0l-.122.367a.667.667 0 0 1-.421.421l-.367.123a.667.667 0 0 0 0 1.265l.367.123a.667.667 0 0 1 .421.42l.122.368a.667.667 0 0 0 1.266 0l.122-.367a.667.667 0 0 1 .421-.421l.367-.123a.667.667 0 0 0 0-1.265l-.367-.123a.667.667 0 0 1-.421-.421l-.122-.367Z" />
+                          </svg>
+                        ) : room.isPrivate ? <LockIcon /> : (
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className="h-3 w-3">
                             <path fillRule="evenodd" d="M5.394 1.578a.667.667 0 0 1 1.212 0l1.328 3.196 3.407.495a.667.667 0 0 1 .37 1.137l-2.466 2.402.583 3.392a.667.667 0 0 1-.968.702L6 11.048l-2.86 1.854a.667.667 0 0 1-.967-.702l.582-3.392L.29 6.406a.667.667 0 0 1 .37-1.137l3.407-.495 1.327-3.196Z" clipRule="evenodd" />
                           </svg>
                         )}
                       </span>
-                      <span className="truncate text-sm font-medium">{room.name}</span>
+                      <span className="truncate text-sm font-medium">
+                        {room.name.startsWith("tr-") && room.proposition ? room.proposition : room.name}
+                      </span>
                     </div>
-                    {room.proposition && (
+                    {!room.name.startsWith("tr-") && room.proposition && (
                       <p className="mt-0.5 truncate pl-5 text-[10px] text-gray-600 italic">{room.proposition}</p>
                     )}
                   </button>
