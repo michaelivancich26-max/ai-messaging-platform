@@ -416,7 +416,9 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
     }
   }
 
-  const filtered = rooms.filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.description?.toLowerCase().includes(search.toLowerCase()));
+  const filtered = rooms
+    .filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.description?.toLowerCase().includes(search.toLowerCase()) || r.proposition?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => (b.name.startsWith("tr-") ? 1 : 0) - (a.name.startsWith("tr-") ? 1 : 0));
 
   return (
     <div className="flex flex-1 flex-col min-w-0">
@@ -448,11 +450,21 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
           <p className="text-sm text-gray-600">No rooms found.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map(room => (
-              <div key={room.id} className="flex flex-col gap-3 rounded-2xl border border-gray-800 bg-gray-900 p-4 hover:border-gray-700 transition-colors">
+            {filtered.map(room => {
+              const isTrending = room.name.startsWith("tr-");
+              return (
+              <div key={room.id} className={`flex flex-col gap-3 rounded-2xl border p-4 transition-colors ${
+                isTrending
+                  ? "border-amber-900/50 bg-amber-950/10 hover:border-amber-700/60"
+                  : "border-gray-800 bg-gray-900 hover:border-gray-700"
+              }`}>
                 <div className="flex items-start gap-2">
-                  <span className={`mt-0.5 shrink-0 ${room.isFishbowl ? "text-cyan-400" : room.isPrivate ? "text-amber-500" : "text-indigo-500"}`}>
-                    {room.isFishbowl ? (
+                  <span className={`mt-0.5 shrink-0 ${isTrending ? "text-amber-400" : room.isFishbowl ? "text-cyan-400" : room.isPrivate ? "text-amber-500" : "text-indigo-500"}`}>
+                    {isTrending ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                        <path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.785l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .785.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.785l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.184a1 1 0 0 1 .633.632l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.632l.551-.184a1 1 0 0 0 0-1.898l-.551-.183a1 1 0 0 1-.633-.633l-.183-.551Z" />
+                      </svg>
+                    ) : room.isFishbowl ? (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                         <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
                       </svg>
@@ -467,7 +479,12 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                     )}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-gray-100">{room.name}</p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-100">{room.name}</p>
+                      {isTrending && (
+                        <span className="shrink-0 rounded-full bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-400">Trending</span>
+                      )}
+                    </div>
                     {room.proposition ? (
                       <p className="mt-0.5 text-xs text-indigo-300/80 line-clamp-2 italic">&ldquo;{room.proposition}&rdquo;</p>
                     ) : room.description ? (
@@ -500,7 +517,8 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                     : room.isPrivate ? "Join (private)" : "Join debate"}
                 </button>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>
