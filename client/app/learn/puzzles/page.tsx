@@ -97,7 +97,9 @@ function PuzzleView({
             </span>
           )}
           <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${d.pill}`}>{d.label}</span>
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${catColor}`}>{puzzle.category}</span>
+          {revealed && (
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${catColor}`}>{puzzle.category}</span>
+          )}
         </div>
 
         {/* Argument card */}
@@ -297,7 +299,9 @@ export default function PuzzlesPage() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-100">{dailyPuzzle.title}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{dailyPuzzle.category} · {DIFF_STYLE[dailyPuzzle.difficulty].label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {completed.has(dailyPuzzle.id) ? `${dailyPuzzle.category} · ` : ""}{DIFF_STYLE[dailyPuzzle.difficulty].label}
+              </p>
             </div>
             {completed.has(dailyPuzzle.id) ? (
               <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500">
@@ -361,7 +365,9 @@ export default function PuzzlesPage() {
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${d.pill}`}>{d.label}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${catColor}`}>{puzzle.category}</span>
+                      {done && (
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${catColor}`}>{puzzle.category}</span>
+                      )}
                     </div>
                   </div>
 
