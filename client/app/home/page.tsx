@@ -117,12 +117,12 @@ export default function HomePage() {
       </div>
 
       {/* Split panel */}
-      <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
+      <div className="flex flex-1 flex-col md:flex-row overflow-y-auto md:overflow-hidden">
 
         {/* ── Debates ── */}
         <button
           onClick={() => router.push("/lobby")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-indigo-950/20 focus:outline-none md:border-b-0 md:border-r"
+          className="group relative flex shrink-0 md:flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-indigo-950/20 focus:outline-none md:border-b-0 md:border-r"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-950 ring-1 ring-indigo-900/60 transition-all group-hover:ring-indigo-700">
@@ -155,7 +155,7 @@ export default function HomePage() {
         {/* ── Arena ── */}
         <button
           onClick={() => router.push("/arena")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-amber-950/10 focus:outline-none md:border-b-0 md:border-r"
+          className="group relative flex shrink-0 md:flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-amber-950/10 focus:outline-none md:border-b-0 md:border-r"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-950/60 ring-1 ring-amber-900/60 transition-all group-hover:ring-amber-700">
@@ -186,7 +186,7 @@ export default function HomePage() {
         {/* ── Compete ── */}
         <button
           onClick={() => router.push("/compete")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-violet-950/10 focus:outline-none md:border-b-0 md:border-r"
+          className="group relative flex shrink-0 md:flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-violet-950/10 focus:outline-none md:border-b-0 md:border-r"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-950/60 ring-1 ring-violet-900/60 transition-all group-hover:ring-violet-700">
@@ -217,7 +217,7 @@ export default function HomePage() {
         {/* ── Learn ── */}
         <button
           onClick={() => router.push("/learn")}
-          className="group relative flex flex-1 flex-col items-center justify-center gap-6 p-8 text-left transition-colors hover:bg-teal-950/10 focus:outline-none"
+          className="group relative flex shrink-0 md:flex-1 flex-col items-center justify-center gap-6 p-8 text-left transition-colors hover:bg-teal-950/10 focus:outline-none"
         >
           <div className="flex flex-col items-center gap-5 max-w-xs">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-950/60 ring-1 ring-teal-900/60 transition-all group-hover:ring-teal-700">
