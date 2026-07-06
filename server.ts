@@ -1526,7 +1526,7 @@ app.post("/api/puzzles/complete", async (req, res) => {
 });
 
 // ── Trending topics ───────────────────────────────────────────────────────────
-interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; }
+interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; sourceUrl?: string; }
 let trendingCache: { topics: TrendingTopic[]; at: number } | null = null;
 const TRENDING_TTL = 60 * 60 * 1000; // 1 hour
 
@@ -1534,13 +1534,15 @@ function trendingSlug(proposition: string): string {
   return "tr-" + proposition.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/, "").slice(0, 37);
 }
 
-function extractRssHeadlines(xml: string, source: string): { title: string; source: string }[] {
-  const out: { title: string; source: string }[] = [];
+function extractRssHeadlines(xml: string, source: string): { title: string; source: string; url?: string }[] {
+  const out: { title: string; source: string; url?: string }[] = [];
   const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) ?? [];
   for (const block of blocks.slice(0, 10)) {
     const m = block.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
     const title = m?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-    if (title && title.length > 15) out.push({ title, source });
+    const linkMatch = block.match(/<link>([^<]+)<\/link>/i) ?? block.match(/<link[^>]+href="([^"]+)"/i);
+    const url = linkMatch?.[1]?.trim();
+    if (title && title.length > 15) out.push({ title, source, url });
   }
   return out;
 }
@@ -1563,8 +1565,10 @@ async function buildTrending(): Promise<TrendingTopic[]> {
   );
   const headlines = settled
     .filter(r => r.status === "fulfilled")
-    .flatMap(r => (r as PromiseFulfilledResult<{ title: string; source: string }[]>).value);
+    .flatMap(r => (r as PromiseFulfilledResult<{ title: string; source: string; url?: string }[]>).value);
   if (headlines.length === 0) return [];
+  const urlMap = new Map<string, string>();
+  headlines.forEach(h => { if (h.url) urlMap.set(h.title, h.url); });
 
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const anthropic = new Anthropic();
@@ -1613,7 +1617,8 @@ Headlines:\n${list}`;
           });
         }
 
-        return { ...t, roomName };
+        const sourceUrl = urlMap.get(t.headline);
+        return { ...t, roomName, ...(sourceUrl ? { sourceUrl } : {}) };
       })
     );
     return topics;

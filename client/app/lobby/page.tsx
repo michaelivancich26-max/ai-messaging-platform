@@ -8,7 +8,7 @@ import Sidebar from "@/components/Sidebar";
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 // ─── Trending Strip ──────────────────────────────────────────────────────────
-interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; }
+interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; sourceUrl?: string; }
 
 function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string) => void }) {
   const router = useRouter();
@@ -42,7 +42,17 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
             <div key={i} className="shrink-0 w-56 flex flex-col justify-between gap-3 rounded-xl border border-amber-900/30 bg-gray-900 p-3">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">{t.source}</span>
+                  {t.sourceUrl ? (
+                    <a href={t.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                      className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-gray-500 hover:text-indigo-400 transition-colors">
+                      {t.source}
+                      <svg viewBox="0 0 12 12" fill="currentColor" className="h-2.5 w-2.5 opacity-60">
+                        <path d="M3.5 1a.5.5 0 0 0 0 1H8.3L1.15 9.15a.5.5 0 0 0 .7.7L9 2.7V7.5a.5.5 0 0 0 1 0v-6a.5.5 0 0 0-.5-.5h-6Z"/>
+                      </svg>
+                    </a>
+                  ) : (
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">{t.source}</span>
+                  )}
                   <span className="rounded-full bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-500">Official</span>
                 </div>
                 <p className="text-xs leading-relaxed text-gray-200">{t.proposition}</p>
