@@ -18,6 +18,7 @@ import ArenaSidebar from "@/components/ArenaSidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
 import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
+import { getBotById } from "@/lib/bots";
 import { parseAIContent } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
@@ -929,7 +930,13 @@ export default function RoomPage() {
                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
               </svg>
             </button>
-            <span className="text-xs font-semibold text-gray-300 truncate">#{roomId}</span>
+            <span className="text-xs font-semibold text-gray-300 truncate">
+              {isBotRoom
+                ? `vs ${getBotById((roomMeta as any)?.botId)?.name ?? "Bot"}`
+                : isCompetitiveRoom
+                ? "Competitive Match"
+                : `#${roomId}`}
+            </span>
           </div>
           <div className="flex-1 overflow-hidden">
             <ChannelList
@@ -978,7 +985,15 @@ export default function RoomPage() {
           </button>
         )}
         <span className="text-base md:text-lg font-semibold truncate">
-          {dmPartner ? `@ ${dmPartner}` : activeChannel ? `#${activeChannel.name}` : `#${roomId}`}
+          {dmPartner
+            ? `@ ${dmPartner}`
+            : isBotRoom
+            ? `vs ${getBotById((roomMeta as any)?.botId)?.name ?? "Bot"}`
+            : isCompetitiveRoom
+            ? "Competitive Match"
+            : activeChannel
+            ? `#${activeChannel.name}`
+            : `#${roomId}`}
         </span>
         {/* Fishbowl seat counter */}
         {(roomMeta as any)?.isFishbowl && (roomMeta as any)?.fishbowlSeats && (
