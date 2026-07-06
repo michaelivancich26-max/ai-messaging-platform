@@ -1492,6 +1492,39 @@ app.post("/api/lessons/complete", async (req, res) => {
   }
 });
 
+// GET /api/puzzles/progress?userId=xxx
+app.get("/api/puzzles/progress", async (req, res) => {
+  const userId = req.query.userId as string;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ puzzleId: string }[]>(
+      `SELECT "puzzleId" FROM "UserPuzzleProgress" WHERE "userId" = $1`, userId
+    );
+    res.json({ completed: rows.map(r => r.puzzleId) });
+  } catch (e) {
+    console.error("[puzzles/progress]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/puzzles/complete — idempotent
+app.post("/api/puzzles/complete", async (req, res) => {
+  const { userId, puzzleId } = req.body;
+  if (!userId || !puzzleId) return res.status(400).json({ error: "userId and puzzleId required" });
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "UserPuzzleProgress" ("userId", "puzzleId")
+       VALUES ($1, $2)
+       ON CONFLICT ("userId", "puzzleId") DO NOTHING`,
+      userId, puzzleId
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[puzzles/complete]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/leaderboard — top users by ELO
 app.get("/api/leaderboard", async (req, res) => {
   try {
@@ -2736,6 +2769,21 @@ async function start() {
     console.log("[DB] UserLessonProgress table ready");
   } catch (e) {
     console.error("[DB] UserLessonProgress table setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "UserPuzzleProgress" (
+        "id"          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "userId"      TEXT NOT NULL,
+        "puzzleId"    TEXT NOT NULL,
+        "completedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE ("userId", "puzzleId")
+      )
+    `);
+    console.log("[DB] UserPuzzleProgress table ready");
+  } catch (e) {
+    console.error("[DB] UserPuzzleProgress table setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {

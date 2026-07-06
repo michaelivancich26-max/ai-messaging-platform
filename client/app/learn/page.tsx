@@ -98,6 +98,25 @@ export default function LearnPage() {
           )}
         </div>
 
+        {/* Puzzles CTA */}
+        <button
+          onClick={() => router.push("/learn/puzzles")}
+          className="group w-full flex items-center gap-4 rounded-2xl border border-violet-900/40 bg-violet-950/20 p-5 text-left transition-all hover:border-violet-700/60 hover:bg-violet-950/30"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-950 ring-1 ring-violet-900/60 transition-all group-hover:ring-violet-700">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-6 w-6 text-violet-400">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white">Debate Puzzles</p>
+            <p className="text-xs text-gray-500 mt-0.5">Spot the fallacy or weak point — 20 puzzles, daily challenge</p>
+          </div>
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-gray-600 group-hover:text-gray-400 transition-colors shrink-0">
+            <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+          </svg>
+        </button>
+
         {/* Series cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {SERIES.map(series => {
