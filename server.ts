@@ -1045,7 +1045,13 @@ app.get("/api/rooms/browse", async (req, res) => {
   const userId = req.query.userId as string;
   try {
     const rooms = await prisma.room.findMany({
-      where: { isDM: false },
+      where: {
+        isDM: false,
+        AND: [
+          { NOT: { name: { startsWith: "arena-" } } },
+          { NOT: { name: { startsWith: "comp-" } } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
       include: { _count: { select: { messages: true, members: true } } },
@@ -1561,6 +1567,15 @@ app.post("/api/arena-judge", async (req, res) => {
        ON CONFLICT ("roomName") DO NOTHING`,
       roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact,
     );
+
+    // Keep only the last 5 arena match logs per user — delete messages from older completed rooms
+    const ARENA_LOG_LIMIT = 5;
+    const matchCountRows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) as count FROM "ArenaMatch" WHERE "userId" = $1`, userId,
+    );
+    if (Number(matchCountRows[0]?.count ?? 0n) > ARENA_LOG_LIMIT) {
+      await prisma.$executeRawUnsafe(`DELETE FROM "Message" WHERE "roomId" = $1`, roomDbId);
+    }
 
     res.json(result);
   } catch (e) {
