@@ -967,18 +967,24 @@ export default function RoomPage() {
         flex-1 md:flex
       `}>
       <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 pb-2.5 pt-safe">
-        {/* Mobile: back to channels (non-DM, non-arena) or hamburger (DM / arena) */}
-        {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom ? (
-          <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
-            onClick={() => setMobileView("channels")} title="Back to channels">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+        {/* Back to Debate Board — always visible for non-DM rooms */}
+        {!roomId.startsWith("dm-") && (
+          <button
+            onClick={() => router.push("/lobby")}
+            className="shrink-0 flex items-center gap-1 rounded-lg px-1.5 py-1 text-gray-500 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+            title="Back to Debate Board"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
               <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
             </svg>
+            <span className="hidden md:inline text-xs font-medium">Board</span>
           </button>
-        ) : (
-          <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
-            onClick={() => setMobileSidebarOpen(true)} title="Open menu">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+        )}
+        {/* Mobile-only: back to channel list for multi-channel rooms */}
+        {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && (
+          <button className="md:hidden shrink-0 rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-gray-300"
+            onClick={() => setMobileView("channels")} title="Channels">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
               <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
             </svg>
           </button>
