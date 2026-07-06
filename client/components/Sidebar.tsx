@@ -53,8 +53,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
   const [collapsed, setCollapsed] = useState(false);
   const [roomsOpen, setRoomsOpen] = useState(true);
   const [dmsOpen, setDmsOpen] = useState(true);
-  const [dmSearch, setDmSearch] = useState("");
-  const [showNewDM, setShowNewDM] = useState(false);
 
   const userId: string = (session?.user as any)?.id ?? "";
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
@@ -94,7 +92,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
   }
 
   async function openDM(u: User) {
-    setShowNewDM(false); setDmSearch("");
     const res = await fetch(`${SERVER}/api/dm`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId1: userId, userId2: u.id }),
@@ -240,40 +237,11 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                 </svg>
                 Direct Messages
               </button>
-              <button onClick={() => setShowNewDM(v => !v)}
-                className="ml-auto rounded p-0.5 text-gray-600 hover:text-indigo-400 transition-colors" title="New DM">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
-                  <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
-                </svg>
-              </button>
             </div>
           )}
 
           {!collapsed && dmsOpen && (
             <>
-              {showNewDM && (
-                <div className="px-2 pb-1 pt-1">
-                  <input autoFocus value={dmSearch} onChange={e => setDmSearch(e.target.value)}
-                    placeholder="Search users…"
-                    className="w-full rounded-lg bg-gray-800 px-2.5 py-1.5 text-xs text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
-                  <ul className="mt-1 max-h-36 overflow-y-auto">
-                    {users
-                      .filter(u => u.username.toLowerCase().includes(dmSearch.toLowerCase()))
-                      .map(u => (
-                        <li key={u.id}>
-                          <button onClick={() => openDM(u)}
-                            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-800 transition-colors text-left">
-                            {u.avatarUrl
-                              ? <img src={u.avatarUrl} alt={u.username} className="h-6 w-6 rounded-full object-cover shrink-0" />
-                              : <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300 shrink-0">{u.username[0].toUpperCase()}</span>
-                            }
-                            <span className="text-xs text-gray-200">{u.username}</span>
-                          </button>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              )}
               <ul className="mt-0.5">
                 {dms.length === 0 ? (
                   <li className="px-3 py-2 text-xs text-gray-600">No DMs yet</li>

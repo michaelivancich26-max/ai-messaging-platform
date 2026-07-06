@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
@@ -17,12 +17,133 @@ interface ProfileSnap {
   arenaLosses: number;
 }
 
+// ─── DM Panel ────────────────────────────────────────────────────────────────
+interface DMEntry { name: string; participant1Id: string; participant2Id: string; }
+interface UserResult { id: string; username: string; avatarUrl?: string | null; }
+
+function DMPanel({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const router = useRouter();
+  const [dms, setDms] = useState<DMEntry[]>([]);
+  const [dmUsers, setDmUsers] = useState<UserResult[]>([]);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<UserResult[]>([]);
+  const [opening, setOpening] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch(`${SERVER}/api/lobby?userId=${userId}`)
+      .then(r => r.json())
+      .then(d => { setDms(d.dms ?? []); setDmUsers(d.users ?? []); })
+      .catch(() => {});
+    setTimeout(() => inputRef.current?.focus(), 80);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!search.trim()) { setResults([]); return; }
+    const t = setTimeout(() => {
+      fetch(`${SERVER}/api/users/search?q=${encodeURIComponent(search.trim())}&excludeId=${userId}`)
+        .then(r => r.json()).then(setResults).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [search, userId]);
+
+  async function openDM(targetId: string) {
+    setOpening(targetId);
+    try {
+      const res = await fetch(`${SERVER}/api/dm`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId1: userId, userId2: targetId }),
+      });
+      const data = await res.json();
+      onClose();
+      router.push(`/room/${data.name}`);
+    } finally { setOpening(null); }
+  }
+
+  function partnerOf(dm: DMEntry) {
+    const otherId = dm.participant1Id === userId ? dm.participant2Id : dm.participant1Id;
+    return dmUsers.find(u => u.id === otherId);
+  }
+
+  const showSearch = search.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl border border-gray-700 bg-gray-900 shadow-xl flex flex-col max-h-[75vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
+          <h2 className="text-sm font-semibold text-gray-100">Messages</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-4 py-2.5 border-b border-gray-800 shrink-0">
+          <div className="relative">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-600 pointer-events-none">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
+            </svg>
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search people…"
+              className="w-full rounded-lg bg-gray-800 pl-8 pr-3 py-1.5 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto py-1">
+          {showSearch ? (
+            results.length === 0 ? (
+              <p className="px-4 py-3 text-xs text-gray-600">No users found</p>
+            ) : results.map(u => (
+              <button key={u.id} onClick={() => openDM(u.id)} disabled={opening === u.id}
+                className="flex w-full items-center gap-3 px-4 py-2.5 hover:bg-gray-800 transition-colors text-left">
+                {u.avatarUrl
+                  ? <img src={u.avatarUrl} alt={u.username} className="h-8 w-8 rounded-full object-cover shrink-0" />
+                  : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-400">{u.username[0].toUpperCase()}</span>
+                }
+                <span className="text-sm text-gray-200">{u.username}</span>
+                {opening === u.id && <span className="ml-auto text-xs text-gray-600">Opening…</span>}
+              </button>
+            ))
+          ) : dms.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-gray-600">No conversations yet. Search for a user to start one.</p>
+          ) : dms.map(dm => {
+            const partner = partnerOf(dm);
+            if (!partner) return null;
+            return (
+              <button key={dm.name} onClick={() => { onClose(); router.push(`/room/${dm.name}`); }}
+                className="flex w-full items-center gap-3 px-4 py-2.5 hover:bg-gray-800 transition-colors text-left">
+                {partner.avatarUrl
+                  ? <img src={partner.avatarUrl} alt={partner.username} className="h-8 w-8 rounded-full object-cover shrink-0" />
+                  : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-400">{partner.username[0].toUpperCase()}</span>
+                }
+                <span className="text-sm text-gray-200">{partner.username}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const userId: string = (session?.user as any)?.id ?? "";
   const [profile, setProfile] = useState<ProfileSnap | null>(null);
+  const [showDMPanel, setShowDMPanel] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -50,15 +171,27 @@ export default function HomePage() {
 
       {/* Profile header */}
       <div className="shrink-0 border-b border-gray-800/60 pt-safe">
-        {/* Top bar — brand + sign out */}
+        {/* Top bar — brand + actions */}
         <div className="flex items-center justify-between px-6 pt-3 pb-2">
           <span className="text-sm font-bold tracking-tight text-gray-400">Veritas</span>
-          <button
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowDMPanel(true)}
+              className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+              title="Messages"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" />
+                <path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
 
         {/* Profile strip */}
@@ -250,6 +383,8 @@ export default function HomePage() {
       <div className="flex shrink-0 items-center justify-center border-t border-gray-800/60 py-2.5 pb-safe">
         <p className="text-[10px] text-gray-700">Tap your profile above to open Dashboard</p>
       </div>
+
+      {showDMPanel && <DMPanel userId={userId} onClose={() => setShowDMPanel(false)} />}
     </div>
   );
 }
