@@ -2171,6 +2171,29 @@ app.post("/api/rooms/:name/auth", async (req, res) => {
   }
 });
 
+app.get("/api/rooms/match", async (req, res) => {
+  const prop = (req.query.proposition as string | undefined)?.trim();
+  if (!prop || prop.length < 5) return res.json({ room: null });
+  try {
+    const rooms = await prisma.room.findMany({
+      where: {
+        proposition: { equals: prop, mode: "insensitive" },
+        isDM: false,
+        isPrivate: false,
+        AND: [
+          { NOT: { name: { startsWith: "arena-" } } },
+          { NOT: { name: { startsWith: "comp-" } } },
+        ],
+      },
+      take: 1,
+      include: { _count: { select: { members: true } } },
+    });
+    res.json({ room: rooms[0] ?? null });
+  } catch {
+    res.status(500).json({ room: null });
+  }
+});
+
 app.get("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
   try {

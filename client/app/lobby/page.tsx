@@ -95,10 +95,27 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
 
 // ─── Create Room Modal ──────────────────────────────────────────────────────
 function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { userId: string; onClose: () => void; onCreate: (name: string) => void; initialProposition?: string }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [proposition, setProposition] = useState(initialProposition ?? "");
+  const [matchedRoom, setMatchedRoom] = useState<{ name: string; proposition: string; _count: { members: number } } | null>(null);
+  const [dismissedMatch, setDismissedMatch] = useState(false);
 
-  useEffect(() => { if (initialProposition) setProposition(initialProposition); }, [initialProposition]);
+  useEffect(() => { if (initialProposition) { setProposition(initialProposition); setDismissedMatch(false); } }, [initialProposition]);
+
+  useEffect(() => {
+    setDismissedMatch(false);
+    if (proposition.trim().length < 5) { setMatchedRoom(null); return; }
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`${SERVER}/api/rooms/match?proposition=${encodeURIComponent(proposition.trim())}`);
+        const d = await r.json();
+        setMatchedRoom(d.room ?? null);
+      } catch { setMatchedRoom(null); }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [proposition]);
+
   const [stances, setStances] = useState<string[]>([]);
   const [isOpinionated, setIsOpinionated] = useState(false);
   const [stanceCooldown, setStanceCooldown] = useState(0);
@@ -156,6 +173,30 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
             <textarea autoFocus value={proposition} onChange={e => setProposition(e.target.value)} placeholder="e.g. AI will replace most jobs by 2035" maxLength={300} rows={2}
               className="w-full resize-none rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
             <p className="mt-1 text-[10px] text-gray-600">The statement being debated. Participants take FOR or AGAINST positions.</p>
+            {matchedRoom && !dismissedMatch && (
+              <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2.5">
+                <svg viewBox="0 0 20 20" fill="currentColor" className="mt-0.5 h-4 w-4 shrink-0 text-amber-400">
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-amber-300">This debate already exists</p>
+                  <p className="mt-0.5 text-[11px] text-amber-400/70">
+                    <span className="font-mono text-amber-300/80">#{matchedRoom.name}</span>
+                    {" · "}{matchedRoom._count.members} member{matchedRoom._count.members !== 1 ? "s" : ""}
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button type="button" onClick={() => { onClose(); router.push(`/room/${matchedRoom.name}`); }}
+                      className="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-500 transition-colors">
+                      Join existing
+                    </button>
+                    <button type="button" onClick={() => setDismissedMatch(true)}
+                      className="rounded-md px-2.5 py-1 text-[11px] text-amber-400/70 hover:text-amber-300 transition-colors">
+                      Continue anyway
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Custom stances */}
