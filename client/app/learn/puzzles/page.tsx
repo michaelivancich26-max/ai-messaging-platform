@@ -60,9 +60,9 @@ function PuzzleView({
   const isDaily = puzzle.id === DAILY_PUZZLE_ID;
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-950">
-      {/* Top bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-800 bg-gray-950/95 px-4 py-3 backdrop-blur-sm">
+    <div className="flex h-full flex-col bg-gray-950">
+      {/* Top bar — shrink-0 so it never scrolls away */}
+      <div className="shrink-0 flex items-center gap-3 border-b border-gray-800 bg-gray-950 px-4 py-3 pt-safe">
         <button onClick={onBack}
           className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
@@ -87,6 +87,7 @@ function PuzzleView({
         )}
       </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 py-8 space-y-6">
         {/* Badges */}
         <div className="flex flex-wrap items-center gap-2">
@@ -188,6 +189,7 @@ function PuzzleView({
           </button>
         )}
       </div>
+      </div>
     </div>
   );
 }
@@ -248,9 +250,9 @@ export default function PuzzlesPage() {
   const pct = Math.round((doneCount / PUZZLES.length) * 100);
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-950">
+    <div className="flex h-full flex-col bg-gray-950">
       {/* Top bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-800 bg-gray-950/95 px-4 py-3 backdrop-blur-sm">
+      <div className="shrink-0 flex items-center gap-3 border-b border-gray-800 bg-gray-950 px-4 py-3 pt-safe">
         <button onClick={() => router.push("/learn")}
           className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
@@ -260,6 +262,7 @@ export default function PuzzlesPage() {
         <span className="text-sm font-semibold text-gray-100">Debate Puzzles</span>
       </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 space-y-8">
         {/* Hero */}
         <div className="text-center space-y-3">
@@ -379,6 +382,7 @@ export default function PuzzlesPage() {
             })}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

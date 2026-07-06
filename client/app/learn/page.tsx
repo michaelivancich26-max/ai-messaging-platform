@@ -60,9 +60,9 @@ export default function LearnPage() {
   const overallPct = TOTAL_LESSONS > 0 ? Math.round((totalCompleted / TOTAL_LESSONS) * 100) : 0;
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-950">
+    <div className="flex h-full flex-col bg-gray-950">
       {/* Top bar */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-800 bg-gray-950/95 px-4 py-3 backdrop-blur-sm pt-safe">
+      <div className="shrink-0 flex items-center gap-3 border-b border-gray-800 bg-gray-950 px-4 py-3 pt-safe">
         <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -71,6 +71,7 @@ export default function LearnPage() {
         <span className="text-sm font-semibold text-gray-100">Learn</span>
       </div>
 
+      <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 space-y-8">
         {/* Hero */}
         <div className="text-center space-y-3">
@@ -160,6 +161,7 @@ export default function LearnPage() {
             );
           })}
         </div>
+      </div>
       </div>
     </div>
   );
