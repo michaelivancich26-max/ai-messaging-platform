@@ -378,7 +378,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
         <div className="ml-auto flex items-center gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search debates…"
             className="w-32 sm:w-52 rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
-          <button onClick={onCreateClick}
+          <button onClick={() => onCreateClick()}
             className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors">
             + Start debate
           </button>
