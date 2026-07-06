@@ -518,7 +518,6 @@ export default function LobbyPage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
 
-  const [view, setView] = useState<"home" | "browse">("home");
   const [showCreate, setShowCreate] = useState(false);
   const [pendingProposition, setPendingProposition] = useState("");
   const [sidebarKey, setSidebarKey] = useState(0);
@@ -526,11 +525,9 @@ export default function LobbyPage() {
 
   function openCreate(proposition?: string) {
     setPendingProposition(proposition ?? "");
-    if (!proposition) setView("home");
     setShowCreate(true);
   }
 
-  const username = (session?.user as any)?.username ?? session?.user?.name ?? "user";
   const userId: string = (session?.user as any)?.id ?? "";
 
   if (status === "loading") return (
@@ -539,48 +536,14 @@ export default function LobbyPage() {
 
   return (
     <div className="flex h-full overflow-hidden bg-gray-950 text-gray-100">
-      <Sidebar key={sidebarKey} onBrowseClick={() => setView("browse")} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
+      <Sidebar key={sidebarKey} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
 
-      {view === "browse" ? (
-        <BrowseRooms
-          userId={userId}
-          onJoined={() => setSidebarKey(k => k + 1)}
-          onCreateClick={openCreate}
-          onMenuClick={() => setMobileSidebarOpen(true)}
-        />
-      ) : (
-        <main className="flex flex-1 flex-col items-center justify-center p-8 text-center relative">
-          {/* Mobile hamburger */}
-          <button className="absolute top-4 left-4 md:hidden rounded p-1.5 text-gray-400 hover:bg-gray-800"
-            onClick={() => setMobileSidebarOpen(true)}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-              <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
-            </svg>
-          </button>
-          <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-indigo-600/20 mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-10 w-10 text-indigo-400">
-              <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <h1 className="mb-2 text-2xl font-bold text-gray-100">Welcome back, {username}</h1>
-          <p className="mb-2 text-sm text-gray-500 max-w-sm">Debate real topics. Stake your claims. Let AI be the judge.</p>
-          <div className="mb-8 flex items-center gap-4 text-xs text-gray-600">
-            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />FOR</span>
-            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />AGAINST</span>
-            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />AI fact-checked</span>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => setView("browse")}
-              className="rounded-xl border border-gray-700 px-5 py-2.5 text-sm font-semibold text-gray-300 hover:bg-gray-800 transition-colors">
-              Debate Board
-            </button>
-            <button onClick={() => openCreate()}
-              className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
-              + Start a debate
-            </button>
-          </div>
-        </main>
-      )}
+      <BrowseRooms
+        userId={userId}
+        onJoined={() => setSidebarKey(k => k + 1)}
+        onCreateClick={openCreate}
+        onMenuClick={() => setMobileSidebarOpen(true)}
+      />
 
       {showCreate && (
         <CreateRoomModal
