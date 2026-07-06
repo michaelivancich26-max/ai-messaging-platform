@@ -1526,9 +1526,13 @@ app.post("/api/puzzles/complete", async (req, res) => {
 });
 
 // ── Trending topics ───────────────────────────────────────────────────────────
-interface TrendingTopic { headline: string; proposition: string; source: string; }
+interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; }
 let trendingCache: { topics: TrendingTopic[]; at: number } | null = null;
 const TRENDING_TTL = 60 * 60 * 1000; // 1 hour
+
+function trendingSlug(proposition: string): string {
+  return "tr-" + proposition.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/, "").slice(0, 37);
+}
 
 function extractRssHeadlines(xml: string, source: string): { title: string; source: string }[] {
   const out: { title: string; source: string }[] = [];
@@ -1582,7 +1586,19 @@ Headlines:\n${list}`;
     const raw = resp.content[0].type === "text" ? resp.content[0].text.trim() : "[]";
     const s = raw.indexOf("["), e = raw.lastIndexOf("]");
     if (s === -1 || e === -1) return [];
-    return JSON.parse(raw.slice(s, e + 1)) as TrendingTopic[];
+    const parsed = JSON.parse(raw.slice(s, e + 1)) as Omit<TrendingTopic, "roomName">[];
+    const topics: TrendingTopic[] = await Promise.all(
+      parsed.map(async (t) => {
+        const roomName = trendingSlug(t.proposition);
+        await prisma.room.upsert({
+          where: { name: roomName },
+          update: {},
+          create: { name: roomName, proposition: t.proposition, creatorId: null, isPrivate: false } as any,
+        });
+        return { ...t, roomName };
+      })
+    );
+    return topics;
   } catch { return []; }
 }
 

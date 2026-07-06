@@ -8,34 +8,17 @@ import Sidebar from "@/components/Sidebar";
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 // ─── Trending Strip ──────────────────────────────────────────────────────────
-interface TrendingTopic { headline: string; proposition: string; source: string; }
-interface MatchedRoom { name: string; _count: { members: number } }
+interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; }
 
 function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string) => void }) {
   const router = useRouter();
   const [topics, setTopics] = useState<TrendingTopic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [matches, setMatches] = useState<Record<string, MatchedRoom | null>>({});
 
   useEffect(() => {
     fetch(`${SERVER}/api/trending`)
       .then(r => r.json())
-      .then(async (d) => {
-        const fetched: TrendingTopic[] = d.topics ?? [];
-        setTopics(fetched);
-        setLoading(false);
-        const results = await Promise.all(
-          fetched.map(t =>
-            fetch(`${SERVER}/api/rooms/match?proposition=${encodeURIComponent(t.proposition)}`)
-              .then(r => r.json())
-              .then(d => ({ proposition: t.proposition, room: (d.room as MatchedRoom | null) }))
-              .catch(() => ({ proposition: t.proposition, room: null }))
-          )
-        );
-        const map: Record<string, MatchedRoom | null> = {};
-        results.forEach(r => { map[r.proposition] = r.room; });
-        setMatches(map);
-      })
+      .then(d => { setTopics(d.topics ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -55,40 +38,31 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
             <div key={i} className="shrink-0 w-56 h-28 rounded-xl bg-gray-800/60 animate-pulse" />
           ))
         ) : (
-          topics.map((t, i) => {
-            const match = matches[t.proposition];
-            return (
-              <div key={i} className="shrink-0 w-56 flex flex-col justify-between gap-3 rounded-xl border border-gray-800 bg-gray-900 p-3">
-                <div className="space-y-1.5">
+          topics.map((t, i) => (
+            <div key={i} className="shrink-0 w-56 flex flex-col justify-between gap-3 rounded-xl border border-amber-900/30 bg-gray-900 p-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">{t.source}</span>
-                  <p className="text-xs leading-relaxed text-gray-200">{t.proposition}</p>
+                  <span className="rounded-full bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-500">Official</span>
                 </div>
-                {match ? (
-                  <div className="space-y-1.5">
-                    <button
-                      onClick={() => router.push(`/room/${match.name}`)}
-                      className="w-full rounded-lg bg-emerald-700 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-600 transition-colors"
-                    >
-                      Join debate · {match._count.members} member{match._count.members !== 1 ? "s" : ""}
-                    </button>
-                    <button
-                      onClick={() => onStartDebate(t.proposition)}
-                      className="w-full rounded-lg py-1 text-[10px] font-medium text-gray-500 hover:text-gray-300 transition-colors"
-                    >
-                      Start new →
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => onStartDebate(t.proposition)}
-                    className="w-full rounded-lg bg-indigo-600 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 transition-colors"
-                  >
-                    Start debate →
-                  </button>
-                )}
+                <p className="text-xs leading-relaxed text-gray-200">{t.proposition}</p>
               </div>
-            );
-          })
+              <div className="space-y-1.5">
+                <button
+                  onClick={() => router.push(`/room/${t.roomName}`)}
+                  className="w-full rounded-lg bg-indigo-600 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 transition-colors"
+                >
+                  Join debate →
+                </button>
+                <button
+                  onClick={() => onStartDebate(t.proposition)}
+                  className="w-full rounded-lg py-1 text-[10px] font-medium text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  Start separate room
+                </button>
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
