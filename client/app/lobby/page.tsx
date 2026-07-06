@@ -479,17 +479,23 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                     )}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <p className="truncate text-sm font-semibold text-gray-100">{room.name}</p>
-                      {isTrending && (
-                        <span className="shrink-0 rounded-full bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-400">Trending</span>
-                      )}
-                    </div>
-                    {room.proposition ? (
-                      <p className="mt-0.5 text-xs text-indigo-300/80 line-clamp-2 italic">&ldquo;{room.proposition}&rdquo;</p>
-                    ) : room.description ? (
-                      <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{room.description}</p>
-                    ) : null}
+                    {isTrending ? (
+                      <>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">{room.proposition}</p>
+                        </div>
+                        <span className="mt-1 inline-block rounded-full bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-400">Official · Trending</span>
+                      </>
+                    ) : (
+                      <>
+                        <p className="truncate text-sm font-semibold text-gray-100">{room.name}</p>
+                        {room.proposition ? (
+                          <p className="mt-0.5 text-xs text-indigo-300/80 line-clamp-2 italic">&ldquo;{room.proposition}&rdquo;</p>
+                        ) : room.description ? (
+                          <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{room.description}</p>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] text-gray-600">
