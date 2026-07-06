@@ -152,37 +152,6 @@ export default function HomePage() {
           <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-indigo-900/40 to-transparent hidden md:block" />
         </button>
 
-        {/* ── Arena ── */}
-        <button
-          onClick={() => router.push("/arena")}
-          className="group relative flex shrink-0 md:flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-amber-950/10 focus:outline-none md:border-b-0 md:border-r"
-        >
-          <div className="flex flex-col items-center gap-5 max-w-xs">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-950/60 ring-1 ring-amber-900/60 transition-all group-hover:ring-amber-700">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-amber-400">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-3.044 0" />
-              </svg>
-            </div>
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-white">Arena</h2>
-              <p className="mt-2 text-sm leading-relaxed text-gray-500">
-                Challenge AI debate bots at five difficulty levels, from fumbling novice to tournament-level grandmaster.
-              </p>
-            </div>
-            <ul className="space-y-1.5 self-start text-xs text-gray-600">
-              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />10 opponents across 5 tiers</li>
-              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />Instant private 1-on-1 matches</li>
-              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />Debate any topic you choose</li>
-            </ul>
-            <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-amber-500">
-              Enter Arena
-              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-              </svg>
-            </div>
-          </div>
-        </button>
-
         {/* ── Compete ── */}
         <button
           onClick={() => router.push("/compete")}
@@ -207,6 +176,37 @@ export default function HomePage() {
             </ul>
             <div className="mt-2 flex items-center gap-2 rounded-xl bg-violet-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-violet-500">
               Enter Compete
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+              </svg>
+            </div>
+          </div>
+        </button>
+
+        {/* ── Arena ── */}
+        <button
+          onClick={() => router.push("/arena")}
+          className="group relative flex shrink-0 md:flex-1 flex-col items-center justify-center gap-6 border-b border-gray-800 p-8 text-left transition-colors hover:bg-amber-950/10 focus:outline-none md:border-b-0 md:border-r"
+        >
+          <div className="flex flex-col items-center gap-5 max-w-xs">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-950/60 ring-1 ring-amber-900/60 transition-all group-hover:ring-amber-700">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-amber-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-3.044 0" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-white">Arena</h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-500">
+                Challenge AI debate bots at five difficulty levels, from fumbling novice to tournament-level grandmaster.
+              </p>
+            </div>
+            <ul className="space-y-1.5 self-start text-xs text-gray-600">
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />10 opponents across 5 tiers</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />Instant private 1-on-1 matches</li>
+              <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-amber-500" />Debate any topic you choose</li>
+            </ul>
+            <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors group-hover:bg-amber-500">
+              Enter Arena
               <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
               </svg>
