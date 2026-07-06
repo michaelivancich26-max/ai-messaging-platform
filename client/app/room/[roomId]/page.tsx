@@ -18,7 +18,6 @@ import ArenaSidebar from "@/components/ArenaSidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import RoomGraph from "@/components/RoomGraph";
 import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
-import { getBotById } from "@/lib/bots";
 import { parseAIContent } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
