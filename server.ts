@@ -1525,6 +1525,81 @@ app.post("/api/puzzles/complete", async (req, res) => {
   }
 });
 
+// ── Trending topics ───────────────────────────────────────────────────────────
+interface TrendingTopic { headline: string; proposition: string; source: string; }
+let trendingCache: { topics: TrendingTopic[]; at: number } | null = null;
+const TRENDING_TTL = 60 * 60 * 1000; // 1 hour
+
+function extractRssHeadlines(xml: string, source: string): { title: string; source: string }[] {
+  const out: { title: string; source: string }[] = [];
+  const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) ?? [];
+  for (const block of blocks.slice(0, 10)) {
+    const m = block.match(/<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+    const title = m?.[1]?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+    if (title && title.length > 15) out.push({ title, source });
+  }
+  return out;
+}
+
+async function buildTrending(): Promise<TrendingTopic[]> {
+  const RSS = [
+    { url: "https://feeds.bbci.co.uk/news/world/rss.xml", source: "BBC" },
+    { url: "https://feeds.npr.org/1001/rss.xml",          source: "NPR" },
+    { url: "https://www.theguardian.com/world/rss",        source: "Guardian" },
+  ];
+  const settled = await Promise.allSettled(
+    RSS.map(async ({ url, source }) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 6000);
+      try {
+        const r = await fetch(url, { signal: ctrl.signal });
+        return extractRssHeadlines(await r.text(), source);
+      } finally { clearTimeout(t); }
+    })
+  );
+  const headlines = settled
+    .filter(r => r.status === "fulfilled")
+    .flatMap(r => (r as PromiseFulfilledResult<{ title: string; source: string }[]>).value);
+  if (headlines.length === 0) return [];
+
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const anthropic = new Anthropic();
+  const list = headlines.map(h => `[${h.source}] ${h.title}`).join("\n");
+  const prompt = `You are generating debate topics from today's news headlines. For each headline that has genuine two-sided potential (reasonable people could argue both sides), write a short balanced debate proposition in the style "Should [X]?" or "Is [X] justified?". Keep each proposition under 12 words.
+
+Skip: natural disasters, deaths, sports results, pure entertainment, purely factual events with no ethical/policy dimension.
+
+Return ONLY a JSON array, no markdown. Each item: {"headline":"original","proposition":"debate proposition","source":"source name"}. Return 5 to 7 items.
+
+Headlines:\n${list}`;
+
+  try {
+    const resp = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 700,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const raw = resp.content[0].type === "text" ? resp.content[0].text.trim() : "[]";
+    const s = raw.indexOf("["), e = raw.lastIndexOf("]");
+    if (s === -1 || e === -1) return [];
+    return JSON.parse(raw.slice(s, e + 1)) as TrendingTopic[];
+  } catch { return []; }
+}
+
+app.get("/api/trending", async (_req, res) => {
+  try {
+    if (trendingCache && Date.now() - trendingCache.at < TRENDING_TTL) {
+      return res.json({ topics: trendingCache.topics });
+    }
+    const topics = await buildTrending();
+    trendingCache = { topics, at: Date.now() };
+    res.json({ topics });
+  } catch (e) {
+    console.error("[trending]", e);
+    res.json({ topics: [] });
+  }
+});
+
 // GET /api/leaderboard — top users by ELO
 app.get("/api/leaderboard", async (req, res) => {
   try {

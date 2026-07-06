@@ -7,6 +7,56 @@ import Sidebar from "@/components/Sidebar";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
+// ─── Trending Strip ──────────────────────────────────────────────────────────
+interface TrendingTopic { headline: string; proposition: string; source: string; }
+
+function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string) => void }) {
+  const [topics, setTopics] = useState<TrendingTopic[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${SERVER}/api/trending`)
+      .then(r => r.json())
+      .then(d => { setTopics(d.topics ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (!loading && topics.length === 0) return null;
+
+  return (
+    <div className="border-b border-gray-800 px-4 md:px-6 py-4 shrink-0">
+      <div className="flex items-center gap-2 mb-3">
+        <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-amber-400">
+          <path d="M7.557 2.066A1 1 0 0 1 8.75 3v2.316l2.387-.795A1 1 0 0 1 12.369 5.8l-1.134 3.401 2.01 2.009a1 1 0 0 1-.848 1.704l-2.758-.46-.92 2.302a1 1 0 0 1-1.856-.021l-.84-2.521L4.28 13.6a1 1 0 0 1-1.273-1.273l1.366-3.415-1.948-.974A1 1 0 0 1 3 6.25h2.316l-.795-2.387A1 1 0 0 1 5.8 2.631l2.401.803-.644-1.368Z" />
+        </svg>
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Trending Today</span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mr-4 md:-mr-6 pr-4 md:pr-6 scrollbar-none">
+        {loading ? (
+          [1, 2, 3].map(i => (
+            <div key={i} className="shrink-0 w-56 h-28 rounded-xl bg-gray-800/60 animate-pulse" />
+          ))
+        ) : (
+          topics.map((t, i) => (
+            <div key={i} className="shrink-0 w-56 flex flex-col justify-between gap-3 rounded-xl border border-gray-800 bg-gray-900 p-3">
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600">{t.source}</span>
+                <p className="text-xs leading-relaxed text-gray-200">{t.proposition}</p>
+              </div>
+              <button
+                onClick={() => onStartDebate(t.proposition)}
+                className="w-full rounded-lg bg-indigo-600 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 transition-colors"
+              >
+                Start debate →
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Password Modal ─────────────────────────────────────────────────────────
 function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: string; onConfirm: (pw: string) => void; onCancel: () => void; error: string }) {
   const [pw, setPw] = useState("");
@@ -44,9 +94,11 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
 }
 
 // ─── Create Room Modal ──────────────────────────────────────────────────────
-function CreateRoomModal({ userId, onClose, onCreate }: { userId: string; onClose: () => void; onCreate: (name: string) => void }) {
+function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { userId: string; onClose: () => void; onCreate: (name: string) => void; initialProposition?: string }) {
   const [name, setName] = useState("");
-  const [proposition, setProposition] = useState("");
+  const [proposition, setProposition] = useState(initialProposition ?? "");
+
+  useEffect(() => { if (initialProposition) setProposition(initialProposition); }, [initialProposition]);
   const [stances, setStances] = useState<string[]>([]);
   const [isOpinionated, setIsOpinionated] = useState(false);
   const [stanceCooldown, setStanceCooldown] = useState(0);
@@ -261,7 +313,7 @@ interface BrowseRoom {
   _count: { messages: number; members: number };
 }
 
-function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId: string; onJoined: () => void; onCreateClick: () => void; onMenuClick?: () => void }) {
+function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId: string; onJoined: () => void; onCreateClick: (proposition?: string) => void; onMenuClick?: () => void }) {
   const router = useRouter();
   const [rooms, setRooms] = useState<BrowseRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -332,6 +384,8 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
           </button>
         </div>
       </div>
+
+      <TrendingStrip onStartDebate={(p) => onCreateClick(p)} />
 
       {/* Room list */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -413,8 +467,15 @@ export default function LobbyPage() {
 
   const [view, setView] = useState<"home" | "browse">("home");
   const [showCreate, setShowCreate] = useState(false);
+  const [pendingProposition, setPendingProposition] = useState("");
   const [sidebarKey, setSidebarKey] = useState(0);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  function openCreate(proposition?: string) {
+    setPendingProposition(proposition ?? "");
+    if (!proposition) setView("home");
+    setShowCreate(true);
+  }
 
   const username = (session?.user as any)?.username ?? session?.user?.name ?? "user";
   const userId: string = (session?.user as any)?.id ?? "";
@@ -431,7 +492,7 @@ export default function LobbyPage() {
         <BrowseRooms
           userId={userId}
           onJoined={() => setSidebarKey(k => k + 1)}
-          onCreateClick={() => { setView("home"); setShowCreate(true); }}
+          onCreateClick={openCreate}
           onMenuClick={() => setMobileSidebarOpen(true)}
         />
       ) : (
@@ -460,7 +521,7 @@ export default function LobbyPage() {
               className="rounded-xl border border-gray-700 px-5 py-2.5 text-sm font-semibold text-gray-300 hover:bg-gray-800 transition-colors">
               Debate Board
             </button>
-            <button onClick={() => setShowCreate(true)}
+            <button onClick={() => openCreate()}
               className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
               + Start a debate
             </button>
@@ -469,8 +530,12 @@ export default function LobbyPage() {
       )}
 
       {showCreate && (
-        <CreateRoomModal userId={userId} onClose={() => setShowCreate(false)}
-          onCreate={(name) => { setSidebarKey(k => k + 1); router.push(`/room/${name}`); }} />
+        <CreateRoomModal
+          userId={userId}
+          initialProposition={pendingProposition}
+          onClose={() => { setShowCreate(false); setPendingProposition(""); }}
+          onCreate={(name) => { setSidebarKey(k => k + 1); router.push(`/room/${name}`); }}
+        />
       )}
     </div>
   );
