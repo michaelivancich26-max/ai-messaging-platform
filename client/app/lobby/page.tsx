@@ -363,14 +363,20 @@ interface BrowseRoom {
   isFishbowl: boolean;
   fishbowlSeats: number | null;
   participantCount: number;
+  createdAt: string;
   _count: { messages: number; members: number };
 }
+
+type SortKey = "trending" | "active" | "members" | "newest";
+type TypeFilter = "all" | "official" | "fishbowl" | "private";
 
 function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId: string; onJoined: () => void; onCreateClick: (proposition?: string) => void; onMenuClick?: () => void }) {
   const router = useRouter();
   const [rooms, setRooms] = useState<BrowseRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortKey>("trending");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [authRoom, setAuthRoom] = useState<BrowseRoom | null>(null);
   const [authError, setAuthError] = useState("");
   const [joining, setJoining] = useState<string | null>(null);
@@ -417,8 +423,27 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
   }
 
   const filtered = rooms
-    .filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.description?.toLowerCase().includes(search.toLowerCase()) || r.proposition?.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => (b.name.startsWith("tr-") ? 1 : 0) - (a.name.startsWith("tr-") ? 1 : 0));
+    .filter(r => {
+      const q = search.toLowerCase();
+      const textMatch = !q || r.name.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.proposition?.toLowerCase().includes(q);
+      if (!textMatch) return false;
+      if (typeFilter === "official") return r.name.startsWith("tr-");
+      if (typeFilter === "fishbowl") return r.isFishbowl;
+      if (typeFilter === "private") return r.isPrivate;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === "trending") {
+        const aT = a.name.startsWith("tr-") ? 1 : 0;
+        const bT = b.name.startsWith("tr-") ? 1 : 0;
+        if (aT !== bT) return bT - aT;
+        return b._count.members - a._count.members;
+      }
+      if (sort === "active") return b._count.messages - a._count.messages;
+      if (sort === "members") return b._count.members - a._count.members;
+      if (sort === "newest") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return 0;
+    });
 
   return (
     <div className="flex flex-1 flex-col min-w-0">
@@ -437,6 +462,39 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
             className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors">
             + Start debate
           </button>
+        </div>
+      </div>
+
+      {/* Filter / sort bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-800 px-3 md:px-6 py-2 shrink-0">
+        {/* Sort pills */}
+        <div className="flex items-center gap-1">
+          {([ ["trending", "Trending"], ["active", "Active"], ["members", "Members"], ["newest", "Newest"] ] as [SortKey, string][]).map(([key, label]) => (
+            <button key={key} onClick={() => setSort(key)}
+              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                sort === key ? "bg-indigo-600 text-white" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Divider */}
+        <div className="h-4 w-px bg-gray-800" />
+        {/* Type filters */}
+        <div className="flex items-center gap-1">
+          {([ ["all", "All"], ["official", "Official"], ["fishbowl", "Fishbowl"], ["private", "Private"] ] as [TypeFilter, string][]).map(([key, label]) => (
+            <button key={key} onClick={() => setTypeFilter(key)}
+              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                typeFilter === key
+                  ? key === "official" ? "bg-amber-600 text-white"
+                  : key === "fishbowl" ? "bg-cyan-700 text-white"
+                  : key === "private" ? "bg-gray-600 text-white"
+                  : "bg-gray-700 text-white"
+                  : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+              }`}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
