@@ -379,11 +379,6 @@ export default function HomePage() {
         </button>
       </div>
 
-      {/* Bottom bar */}
-      <div className="flex shrink-0 items-center justify-center border-t border-gray-800/60 py-2.5 pb-safe">
-        <p className="text-[10px] text-gray-700">Tap your profile above to open Dashboard</p>
-      </div>
-
       {showDMPanel && <DMPanel userId={userId} onClose={() => setShowDMPanel(false)} />}
     </div>
   );
