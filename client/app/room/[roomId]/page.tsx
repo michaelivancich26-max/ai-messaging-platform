@@ -84,7 +84,7 @@ export default function RoomPage() {
   const sidebarChannelRef = useRef<{ id: string; name: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
-    (roomId.startsWith("dm-") || roomId.startsWith("arena-")) ? "chat" : "channels"
+    (roomId.startsWith("dm-") || roomId.startsWith("arena-") || roomId.startsWith("comp-")) ? "chat" : "channels"
   );
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -488,6 +488,34 @@ export default function RoomPage() {
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBotRoom, userId]);
+
+  // Competitive: load existing match result on mount (handles page reload after match ends)
+  useEffect(() => {
+    if (!isCompetitiveRoom || !userId) return;
+    fetch(`${SERVER}/api/competitive/match/${encodeURIComponent(roomId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.status === "complete" && data?.winnerId) {
+          setMatchResult({
+            winner: data.winnerId === userId ? "human" : "bot",
+            verdict: data.verdict ?? "",
+            scoreImpact: 0,
+            botId: "",
+            isCompetitive: true,
+            winnerId: data.winnerId,
+            challengerId: data.challengerId,
+            challengedId: data.challengedId,
+            challengerEloChange: data.challengerEloAfter - (data.challengerEloBefore ?? 1200),
+            challengedEloChange: data.challengedEloAfter - (data.challengedEloBefore ?? 1200),
+            challengerEloAfter: data.challengerEloAfter,
+            challengedEloAfter: data.challengedEloAfter,
+          });
+          setMatchState("ended");
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCompetitiveRoom, userId]);
 
   // Arena: exchanges — auto-trigger when limit reached
   useEffect(() => {
