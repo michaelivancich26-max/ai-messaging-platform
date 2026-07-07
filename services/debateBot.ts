@@ -272,12 +272,13 @@ export async function respondAsBot(
   const botStance = userStance === "affirmative" ? "AGAINST" : userStance === "negative" ? "FOR" : null;
 
   let contextBlock = "";
+  let botPriorArgs = "";
   try {
     const recentMsgs = await prisma.message.findMany({
       where: { roomId: roomDbId, channelId: channelId ?? null },
       include: { user: { select: { id: true, username: true } } },
       orderBy: { createdAt: "desc" },
-      take: 6,
+      take: 8,
     });
     recentMsgs.reverse();
     contextBlock = recentMsgs
@@ -286,6 +287,11 @@ export async function respondAsBot(
         const speaker = isBot ? config.name : (m.user?.username ?? "Opponent");
         return `${speaker}: ${m.content}`;
       })
+      .join("\n");
+    // Collect bot's own prior messages so we can explicitly forbid repetition
+    botPriorArgs = recentMsgs
+      .filter((m) => m.userId === botUser!.id)
+      .map((m) => `- ${(m.content as string).slice(0, 250)}`)
       .join("\n");
   } catch { /* proceed without context */ }
 
@@ -296,11 +302,14 @@ export async function respondAsBot(
   if (opening) {
     userMessage = [topicLine, stanceLine, "Make your opening argument. Begin directly with your argument — no preamble."].filter(Boolean).join("\n");
   } else {
+    const noRepeatBlock = botPriorArgs
+      ? `\nYou have already made these arguments in this debate — DO NOT restate, rephrase, or echo them:\n${botPriorArgs}\n\nYou MUST raise a completely new point you have not yet argued.`
+      : "";
     userMessage = [
       topicLine,
       stanceLine,
       contextBlock
-        ? `Recent exchange:\n\n${contextBlock}\n\nRespond directly to the last human argument above. Do not recap prior points. Do not hedge or qualify your position. Deliver one sharp, committed counter-argument and stop.`
+        ? `Recent exchange:\n\n${contextBlock}${noRepeatBlock}\n\nRespond ONLY to the last human message above. Do not recap prior points. Do not hedge. Deliver one sharp, committed counter-argument you have NOT made before and stop.`
         : humanContent,
     ].filter(Boolean).join("\n\n");
   }
