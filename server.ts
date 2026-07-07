@@ -596,7 +596,7 @@ io.on("connection", (socket) => {
               // Fetch the 3 most recent prior messages as context so the evaluator
               // can tell critiques and challenges apart from standalone factual claims.
               const priorMsgs = await (prisma as any).message.findMany({
-                where: { roomId: room.id, channelId: channelId ?? null, id: { not: message.id }, type: "human", deletedAt: null },
+                where: { roomId: room.id, channelId: channelId ?? null, id: { not: message.id }, senderType: SenderType.HUMAN },
                 orderBy: { createdAt: "desc" },
                 take: 3,
                 include: { user: { select: { username: true } } },
