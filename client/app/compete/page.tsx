@@ -269,7 +269,7 @@ export default function CompetePage() {
   }
   function loadLeaderboard() {
     fetch(`${SERVER}/api/leaderboard`)
-      .then(r => r.json()).then(setLeaderboard).catch(() => {});
+      .then(r => r.json()).then(data => setLeaderboard(Array.isArray(data) ? data : [])).catch(() => {});
   }
 
   useEffect(() => {

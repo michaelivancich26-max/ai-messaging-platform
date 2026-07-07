@@ -1671,21 +1671,21 @@ app.get("/api/leaderboard", async (req, res) => {
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT u.id, u.username, u.elo,
-         COALESCE(wins.count, 0) AS wins,
-         COALESCE(losses.count, 0) AS losses
+         COALESCE(wins.count, 0)::int AS wins,
+         COALESCE(losses.count, 0)::int AS losses
        FROM "User" u
        LEFT JOIN (
-         SELECT "winnerId" AS uid, COUNT(*) AS count FROM "CompetitiveMatch" WHERE status='complete' GROUP BY "winnerId"
+         SELECT "winnerId" AS uid, COUNT(*)::int AS count FROM "CompetitiveMatch" WHERE status='complete' GROUP BY "winnerId"
        ) wins ON wins.uid = u.id
        LEFT JOIN (
-         SELECT CASE WHEN "winnerId"!="challengerId" THEN "challengerId" ELSE "challengedId" END AS uid,
-                COUNT(*) AS count
+         SELECT CASE WHEN "winnerId" != "challengerId" THEN "challengerId" ELSE "challengedId" END AS uid,
+                COUNT(*)::int AS count
          FROM "CompetitiveMatch" WHERE status='complete' GROUP BY uid
        ) losses ON losses.uid = u.id
        WHERE u.elo != 1200 OR wins.count IS NOT NULL
        ORDER BY u.elo DESC LIMIT 25`,
     );
-    res.json(rows);
+    res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
   } catch (e) {
     console.error("[leaderboard]", e);
     res.status(500).json({ error: "Server error" });
