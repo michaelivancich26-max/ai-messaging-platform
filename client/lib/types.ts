@@ -81,6 +81,6 @@ export function parseAIContent(content: string): AIPayload {
   try {
     return JSON.parse(content) as AIPayload;
   } catch {
-    return { type: "factual", text: content };
+    return { type: "mention_response", text: content };
   }
 }

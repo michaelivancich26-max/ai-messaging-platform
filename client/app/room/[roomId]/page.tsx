@@ -681,7 +681,7 @@ export default function RoomPage() {
     } as any;
     setSidebarMessages(prev => [...prev, optimistic]);
     getSocket({ id: userId, username }).emit("sendMessage", {
-      roomId, userId, username, content, settings,
+      roomId, userId, username, content,
       channelId: sidebarChannelRef.current!.id,
     });
   }
@@ -697,7 +697,7 @@ export default function RoomPage() {
     } as any;
     setSpectatorChatMessages(prev => [...prev, optimistic]);
     getSocket({ id: userId, username }).emit("sendMessage", {
-      roomId, userId, username, content, settings,
+      roomId, userId, username, content,
       channelId: spectatorChatChannelRef.current,
     });
   }
@@ -1023,7 +1023,7 @@ export default function RoomPage() {
 
         {/* Single panel button — opens unified Room/Settings/AI panel */}
         <button
-          onClick={() => { setPanelTab("room"); setPanelOpen(v => !v); }}
+          onClick={() => { setPanelOpen(v => !v); }}
           className={`${(isOwner || isAdmin) && !roomId.startsWith("dm-") ? "ml-2" : (roomId.startsWith("dm-") ? "ml-auto" : "")} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors`}
           title="Room panel">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
