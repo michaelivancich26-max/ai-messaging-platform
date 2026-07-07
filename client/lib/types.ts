@@ -43,6 +43,28 @@ export interface ClaimInfo {
   status: ClaimStatus;
   reasoning?: string;
   challengeCount: number;
+  score?: number;
+  relevance?: number;
+  evidence?: number;
+  logic?: number;
+  impact?: number;
+}
+
+export interface ScoredClaim {
+  id: string;
+  messageId: string;
+  claimantId: string;
+  claimantName?: string;
+  text: string;
+  status: ClaimStatus;
+  reasoning?: string;
+  score?: number | null;
+  relevance?: number | null;
+  evidence?: number | null;
+  logic?: number | null;
+  impact?: number | null;
+  createdAt: string;
+  channelId?: string | null;
 }
 
 export interface CredScore {

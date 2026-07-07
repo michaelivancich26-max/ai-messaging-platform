@@ -18,9 +18,10 @@ interface Props {
   myLastSwitchedAt?: number | null;
   onSetPosition: (pos: string) => void;
   onSetDebateMode?: (mode: "open" | "structured") => void;
+  onDetailsClick?: () => void;
 }
 
-export default function DebateHeader({ proposition, stances, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, isOpinionated, stanceCooldown, myLastSwitchedAt, onSetPosition, onSetDebateMode }: Props) {
+export default function DebateHeader({ proposition, stances, positions, myPosition, credibilityScores, debateTurn, isOwner, isAdmin, isOpinionated, stanceCooldown, myLastSwitchedAt, onSetPosition, onSetDebateMode, onDetailsClick }: Props) {
   const [collapsed, setCollapsed] = useState(true);
 
   const stanceScores: Record<string, number> = {};
@@ -110,7 +111,20 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
 
         {/* Score bar — always visible, gray when no data */}
         <div className="mb-3">
-          {scoreBar}
+          <div className="flex items-center gap-2 mb-1">
+            <div className="flex-1">{scoreBar}</div>
+            {onDetailsClick && (
+              <button
+                onClick={onDetailsClick}
+                className="shrink-0 rounded p-0.5 text-gray-600 hover:text-indigo-400 transition-colors"
+                title="Score details & formula"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                  <path fillRule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Zm-6 3.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM7.293 5.293a1 1 0 1 1 1.414 1.414A1 1 0 0 0 7 7.75a.75.75 0 0 0 1.5 0 2.5 2.5 0 1 0-3.5-2.293.75.75 0 1 0 1.293.836Z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+          </div>
           {total > 0 && (
             <div className="flex gap-3 mt-1 flex-wrap">
               {stances.map((stance, i) => {

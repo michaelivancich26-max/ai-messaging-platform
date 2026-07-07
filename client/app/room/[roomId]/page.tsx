@@ -21,6 +21,7 @@ import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
 import SubDebateModal from "@/components/SubDebateModal";
+import ScoreBreakdownPanel from "@/components/ScoreBreakdownPanel";
 import type { RoomMeta } from "@/components/RoomPanel";
 import { getBotById } from "@/lib/bots";
 
@@ -32,6 +33,7 @@ export default function RoomPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab] = useState<"room" | "settings" | "ai">("room");
+  const [scorePanelOpen, setScorePanelOpen] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [summarizeModalOpen, setSummarizeModalOpen] = useState(false);
   const [vibeSearchOpen, setVibeSearchOpen] = useState(false);
@@ -164,8 +166,8 @@ export default function RoomPage() {
     socket.on("claimStaked", ({ claimId, messageId, status, claimantId, challengeCount }: { claimId: string; messageId: string; status: ClaimInfo["status"]; claimantId: string; challengeCount: number }) => {
       setClaims(prev => ({ ...prev, [messageId]: { id: claimId, messageId, claimantId, status, challengeCount } }));
     });
-    socket.on("claimVerdict", ({ claimId, messageId, status, reasoning, claimantId, challengeCount }: { claimId: string; messageId: string; status: ClaimInfo["status"]; reasoning: string; claimantId: string; challengeCount: number }) => {
-      setClaims(prev => ({ ...prev, [messageId]: { id: claimId, messageId, claimantId, status, reasoning, challengeCount } }));
+    socket.on("claimVerdict", ({ claimId, messageId, status, reasoning, claimantId, challengeCount, score, relevance, evidence, logic, impact }: { claimId: string; messageId: string; status: ClaimInfo["status"]; reasoning: string; claimantId: string; challengeCount: number; score?: number; relevance?: number; evidence?: number; logic?: number; impact?: number }) => {
+      setClaims(prev => ({ ...prev, [messageId]: { id: claimId, messageId, claimantId, status, reasoning, challengeCount, score, relevance, evidence, logic, impact } }));
     });
     socket.on("credibilityUpdate", (score: CredScore) => {
       setCredibilityScores(prev => ({ ...prev, [score.userId]: score }));
@@ -1118,6 +1120,7 @@ export default function RoomPage() {
           myLastSwitchedAt={myLastSwitchedAt}
           onSetPosition={setDebatePosition}
           onSetDebateMode={setDebateMode}
+          onDetailsClick={() => setScorePanelOpen(true)}
         />
       )}
 
@@ -1526,6 +1529,15 @@ export default function RoomPage() {
           onClose={() => setSubDebateModal(null)}
         />
       )}
+
+      <ScoreBreakdownPanel
+        open={scorePanelOpen}
+        onClose={() => setScorePanelOpen(false)}
+        roomName={roomId}
+        positions={activePositions}
+        credibilityScores={credibilityScores}
+        stances={activeStances}
+      />
 
       <RoomPanel
         open={panelOpen}

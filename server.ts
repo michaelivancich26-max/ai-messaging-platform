@@ -6,7 +6,7 @@ import { createClient } from "redis";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
-import { evaluateClaim, computeCredibility } from "./services/claimEvaluator";
+import { evaluateClaim, computeCredibility, SCORE_WEIGHTS } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, judgeMatch, scoreMatch } from "./services/debateBot";
@@ -593,12 +593,13 @@ io.on("connection", (socket) => {
               });
               io.to(emitTarget).emit("claimStaked", { claimId: claim.id, messageId: message.id, status: "PENDING", claimantId: user.id, challengeCount: 0 });
               const proposition = (room as any).proposition ?? null;
-              const { verdict, reasoning, relevance } = await evaluateClaim(content, "", proposition);
+              const { verdict, reasoning, relevance, evidence, logic, impact, score: claimScore } = await evaluateClaim(content, "", proposition);
               await (prisma as any).claim.update({
                 where: { id: claim.id },
                 data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
               });
-              io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId: message.id, status: verdict, reasoning, claimantId: user.id, challengeCount: 0 });
+              await prisma.$executeRawUnsafe(`UPDATE "Claim" SET evidence=$1,logic=$2,impact=$3,score=$4 WHERE id=$5`, evidence, logic, impact, claimScore, claim.id);
+              io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId: message.id, status: verdict, reasoning, claimantId: user.id, challengeCount: 0, score: claimScore, relevance, evidence, logic, impact });
               if (!isOpinionated) {
                 const cred = await computeCredibility(user.id, prisma);
                 io.to(emitTarget).emit("credibilityUpdate", cred);
@@ -863,12 +864,13 @@ io.on("connection", (socket) => {
       // Evaluate asynchronously
       try {
         const proposition = (room as any).proposition ?? null;
-        const { verdict, reasoning, relevance } = await evaluateClaim(text, "", proposition);
+        const { verdict, reasoning, relevance, evidence, logic, impact, score: claimScore } = await evaluateClaim(text, "", proposition);
         await (prisma as any).claim.update({
           where: { id: claim.id },
           data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
         });
-        io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId, status: verdict, reasoning, claimantId: socketUser.id, challengeCount: 0 });
+        await prisma.$executeRawUnsafe(`UPDATE "Claim" SET evidence=$1,logic=$2,impact=$3,score=$4 WHERE id=$5`, evidence, logic, impact, claimScore, claim.id);
+        io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId, status: verdict, reasoning, claimantId: socketUser.id, challengeCount: 0, score: claimScore, relevance, evidence, logic, impact });
         if (!isClaimOpinionated) {
           const cred = await computeCredibility(socketUser.id, prisma);
           io.to(emitTarget).emit("credibilityUpdate", cred);
@@ -899,7 +901,7 @@ io.on("connection", (socket) => {
       try {
         const claimRoom = await prisma.room.findUnique({ where: { id: claim.roomId } });
         const proposition = (claimRoom as any)?.proposition ?? null;
-        const { verdict, reasoning, relevance } = await evaluateClaim(
+        const { verdict, reasoning, relevance, evidence, logic, impact, score: claimScore } = await evaluateClaim(
           claim.text,
           `This claim has been challenged ${challenges.length} time(s). Be extra rigorous.`,
           proposition,
@@ -908,8 +910,9 @@ io.on("connection", (socket) => {
           where: { id: claimId },
           data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
         });
+        await prisma.$executeRawUnsafe(`UPDATE "Claim" SET evidence=$1,logic=$2,impact=$3,score=$4 WHERE id=$5`, evidence, logic, impact, claimScore, claimId);
         const cred = await computeCredibility(claim.claimantId, prisma);
-        io.to(emitTarget).emit("claimVerdict", { claimId, messageId: claim.messageId, status: verdict, reasoning, claimantId: claim.claimantId, challengeCount: challenges.length });
+        io.to(emitTarget).emit("claimVerdict", { claimId, messageId: claim.messageId, status: verdict, reasoning, claimantId: claim.claimantId, challengeCount: challenges.length, score: claimScore, relevance, evidence, logic, impact });
         io.to(emitTarget).emit("credibilityUpdate", cred);
       } catch (e) {
         console.error("[challengeClaim] evaluation error:", e);
@@ -2015,6 +2018,36 @@ app.post("/api/rooms", async (req, res) => {
   }
 });
 
+// GET /api/rooms/:name/claims — all evaluated claims with rubric scores
+app.get("/api/rooms/:name/claims", async (req, res) => {
+  try {
+    const room = await prisma.room.findUnique({ where: { name: req.params.name } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+    const claims = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT c.id, c."messageId", c."claimantId", c.text, c.status,
+              c.verdict AS reasoning, c.relevance, c.evidence, c.logic, c.impact, c.score,
+              c."createdAt", c."channelId", u.username AS "claimantName"
+       FROM "Claim" c
+       LEFT JOIN "User" u ON u.id = c."claimantId"
+       WHERE c."roomId" = $1 AND c.status != 'PENDING'
+       ORDER BY COALESCE(c.score, 0) DESC, c."createdAt" DESC
+       LIMIT 200`,
+      room.id,
+    );
+    res.json(claims.map(r => ({
+      ...r,
+      relevance: r.relevance !== null ? Number(r.relevance) : null,
+      evidence:  r.evidence  !== null ? Number(r.evidence)  : null,
+      logic:     r.logic     !== null ? Number(r.logic)     : null,
+      impact:    r.impact    !== null ? Number(r.impact)    : null,
+      score:     r.score     !== null ? Number(r.score)     : null,
+    })));
+  } catch (e) {
+    console.error("[claims]", e);
+    res.status(500).json({ error: "Failed to fetch claims" });
+  }
+});
+
 // GET /api/rooms/:name/channels — sections + channels tree
 // GET /api/channels/:id/messages — channel history for initial load
 app.get("/api/channels/:id/messages", async (req, res) => {
@@ -2867,6 +2900,17 @@ async function start() {
     console.log("[DB] UserPuzzleProgress table ready");
   } catch (e) {
     console.error("[DB] UserPuzzleProgress table setup failed:", e);
+  }
+
+  // Claim rubric columns (added after initial schema — safe to run repeatedly)
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Claim" ADD COLUMN IF NOT EXISTS "score"    DOUBLE PRECISION`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Claim" ADD COLUMN IF NOT EXISTS "evidence" INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Claim" ADD COLUMN IF NOT EXISTS "logic"    INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Claim" ADD COLUMN IF NOT EXISTS "impact"   INTEGER`);
+    console.log("[DB] Claim rubric columns ready");
+  } catch (e) {
+    console.error("[DB] Claim rubric columns setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
