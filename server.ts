@@ -1038,10 +1038,25 @@ io.on("connection", (socket) => {
     try {
       const turn = debateTurns.get(roomId);
       if (!turn || turn.mode !== "structured") return;
-      const room = await prisma.room.findUnique({ where: { name: roomId } });
-      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-      const canPass = room?.creatorId === socketUser.id || requestingUser?.isAdmin || turn.currentSpeakerId === socketUser.id;
-      if (!canPass) return;
+      const roomPresence = presence.get(roomId);
+      const uniqueUsers = roomPresence ? new Set(Array.from(roomPresence.values()).map(m => m.userId)) : new Set();
+      const multiUser = uniqueUsers.size > 1;
+
+      if (multiUser) {
+        // With multiple people present, only the current side may pass the turn
+        const roomPos = debatePositions.get(roomId);
+        const userSide = roomPos?.get(socketUser.id)?.position;
+        if (userSide !== turn.currentSide) {
+          socket.emit("error", { message: `Only a ${turn.currentSide} participant can pass the turn right now.` });
+          return;
+        }
+      } else {
+        // Solo — fall back to owner/admin/current speaker check
+        const room = await prisma.room.findUnique({ where: { name: roomId } });
+        const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+        const canPass = room?.creatorId === socketUser.id || requestingUser?.isAdmin || turn.currentSpeakerId === socketUser.id;
+        if (!canPass) return;
+      }
       const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
       const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
       debateTurns.set(roomId, newTurn);
