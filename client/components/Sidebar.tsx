@@ -148,18 +148,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
           </button>
         </div>
 
-        {/* Knowledge Graph */}
-        <div className="mb-2 px-2">
-          <button onClick={() => router.push("/graph")}
-            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-gray-500 hover:bg-gray-800 hover:text-amber-400 transition-colors ${collapsed ? "justify-center" : ""}`}
-            title="Knowledge Graph">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
-              <path fillRule="evenodd" d="M10 1a9 9 0 1 0 0 18A9 9 0 0 0 10 1ZM4.5 9.5a.75.75 0 0 0 0 1.5h3.69l-1.22 1.22a.75.75 0 1 0 1.06 1.06l2.5-2.5a.75.75 0 0 0 0-1.06l-2.5-2.5a.75.75 0 0 0-1.06 1.06l1.22 1.22H4.5Zm6.25-3.25a.75.75 0 0 1 .75-.75h.5a3 3 0 0 1 0 6h-.5a.75.75 0 0 1 0-1.5h.5a1.5 1.5 0 0 0 0-3h-.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" />
-            </svg>
-            {!collapsed && <span className="text-sm">Knowledge Graph</span>}
-          </button>
-        </div>
-
         {/* Rooms */}
         <div className="mb-1">
           {collapsed ? (
