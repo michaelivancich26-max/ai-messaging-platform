@@ -12,13 +12,10 @@ import PollCard, { type Poll } from "@/components/PollCard";
 import SummarizeModal from "@/components/SummarizeModal";
 import VibeSearch from "@/components/VibeSearch";
 import RoomPanel from "@/components/RoomPanel";
-import type { Settings } from "@/components/RoomPanel";
 import Sidebar from "@/components/Sidebar";
 import ArenaSidebar from "@/components/ArenaSidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
-import RoomGraph from "@/components/RoomGraph";
 import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
-import { parseAIContent } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
@@ -27,20 +24,14 @@ import SubDebateModal from "@/components/SubDebateModal";
 import type { RoomMeta } from "@/components/RoomPanel";
 import { getBotById } from "@/lib/bots";
 
-export type Annotation = { pronoun: string; referent: string };
-
-const DEFAULT_SETTINGS: Settings = { factualCorrection: true, ambiguityResolution: true };
-
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const router = useRouter();
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [annotations, setAnnotations] = useState<Record<string, Annotation>>({});
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<"room" | "settings" | "ai">("room");
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [panelTab] = useState<"room" | "settings" | "ai">("room");
   const [summarizing, setSummarizing] = useState(false);
   const [summarizeModalOpen, setSummarizeModalOpen] = useState(false);
   const [vibeSearchOpen, setVibeSearchOpen] = useState(false);
@@ -55,7 +46,6 @@ export default function RoomPage() {
   const [streamingMsgs, setStreamingMsgs] = useState<Map<string, { text: string; sarcasm: boolean; isMention?: boolean }>>(new Map());
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [channelRefresh, setChannelRefresh] = useState(0);
-  const [roomGraphOpen, setRoomGraphOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pollSuggestion, setPollSuggestion] = useState<{ question: string; options: string[] } | null>(null);
   const [activePolls, setActivePolls] = useState<Poll[]>([]);
@@ -269,47 +259,12 @@ export default function RoomPage() {
     }
 
     socket.on("history", (history: ChatMessage[]) => {
-      const restoredAnnotations: Record<string, { pronoun: string; referent: string }> = {};
-      const visibleMessages: ChatMessage[] = [];
-
-      for (const msg of history) {
-        if (msg.type === "ai_interjection") {
-          const payload = parseAIContent(msg.content);
-          if (payload.type === "ambiguity") {
-            const target = [...visibleMessages].reverse().find(
-              (m) => m.type === "human" && m.content.toLowerCase().includes(payload.pronoun.toLowerCase())
-            );
-            if (target) restoredAnnotations[target.id] = { pronoun: payload.pronoun, referent: payload.referent };
-            continue;
-          }
-        }
-        visibleMessages.push(msg);
-      }
-
-      setMessages(visibleMessages);
-      setAnnotations(restoredAnnotations);
+      setMessages(history);
     });
 
-    // Channel-specific history: only apply if still viewing that channel (prevents stale overwrites on fast navigation)
     socket.on("channelHistory", ({ channelId, messages: history }: { channelId: string; messages: ChatMessage[] }) => {
       if (activeChannelRef.current?.id !== channelId) return;
-      const restoredAnnotations: Record<string, { pronoun: string; referent: string }> = {};
-      const visibleMessages: ChatMessage[] = [];
-      for (const msg of history) {
-        if (msg.type === "ai_interjection") {
-          const payload = parseAIContent(msg.content);
-          if (payload.type === "ambiguity") {
-            const target = [...visibleMessages].reverse().find(
-              (m) => m.type === "human" && m.content.toLowerCase().includes(payload.pronoun.toLowerCase())
-            );
-            if (target) restoredAnnotations[target.id] = { pronoun: payload.pronoun, referent: payload.referent };
-            continue;
-          }
-        }
-        visibleMessages.push(msg);
-      }
-      setMessages(visibleMessages);
-      setAnnotations(restoredAnnotations);
+      setMessages(history);
     });
 
     socket.on("message", (msg: ChatMessage) => {
@@ -332,21 +287,6 @@ export default function RoomPage() {
           return [...prev, msg];
         });
         return;
-      }
-      if (msg.type === "ai_interjection") {
-        const payload = parseAIContent(msg.content);
-        if (payload.type === "ambiguity") {
-          setMessages((prev) => {
-            const target = [...prev].reverse().find(
-              (m) => m.type === "human" && m.content.toLowerCase().includes(payload.pronoun.toLowerCase())
-            );
-            if (target) {
-              setAnnotations((a) => ({ ...a, [target.id]: { pronoun: payload.pronoun, referent: payload.referent } }));
-            }
-            return prev;
-          });
-          return;
-        }
       }
       setMessages((prev) => {
         // Replace optimistic temp message from same user with matching content
@@ -634,25 +574,7 @@ export default function RoomPage() {
     // Fetch history via HTTP — reliable regardless of socket timing
     fetch(`${SERVER}/api/channels/${channel.id}/messages`)
       .then(r => r.json())
-      .then((msgs: ChatMessage[]) => {
-        const restoredAnnotations: Record<string, { pronoun: string; referent: string }> = {};
-        const visible: ChatMessage[] = [];
-        for (const msg of msgs) {
-          if (msg.type === "ai_interjection") {
-            const payload = parseAIContent(msg.content);
-            if (payload.type === "ambiguity") {
-              const target = [...visible].reverse().find(
-                m => m.type === "human" && m.content.toLowerCase().includes(payload.pronoun.toLowerCase())
-              );
-              if (target) restoredAnnotations[target.id] = { pronoun: payload.pronoun, referent: payload.referent };
-              continue;
-            }
-          }
-          visible.push(msg);
-        }
-        setMessages(visible);
-        setAnnotations(restoredAnnotations);
-      })
+      .then((msgs: ChatMessage[]) => setMessages(msgs))
       .catch(() => {});
   }
 
@@ -866,7 +788,7 @@ export default function RoomPage() {
     setMessages((prev) => [...prev, optimistic]);
 
     const s = getSocket({ id: userId, username });
-    s.emit("sendMessage", { roomId, userId, username, content, settings, channelId: activeChannel?.id });
+    s.emit("sendMessage", { roomId, userId, username, content, channelId: activeChannel?.id });
   }
 
   function handleReact(messageId: string, emoji: string) {
@@ -971,22 +893,11 @@ export default function RoomPage() {
               activeChannelId={activeChannel?.id ?? null}
               canEdit={isOwner || isAdmin}
               userId={userId}
-              onSelectChannel={(ch) => { setRoomGraphOpen(false); selectChannel(ch); setMobileView("chat"); }}
+              onSelectChannel={(ch) => { selectChannel(ch); setMobileView("chat"); }}
               refreshTrigger={channelRefresh}
-              graphActive={roomGraphOpen}
-              onGraphClick={() => { setRoomGraphOpen(v => !v); setMobileView("chat"); }}
             />
           </div>
         </div>
-      )}
-
-      {/* Per-room knowledge graph panel */}
-      {roomGraphOpen && !roomId.startsWith("dm-") && roomMeta && (
-        <RoomGraph
-          roomName={roomId}
-          roomDbId={roomMeta.id}
-          onClose={() => setRoomGraphOpen(false)}
-        />
       )}
 
       <div className={`
@@ -1481,7 +1392,7 @@ export default function RoomPage() {
                   </div>
                 </div>
               )}
-              <ChatWindow messages={messages} currentUsername={username} currentUserId={userId} isAdmin={isAdmin} annotations={annotations} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={isOpinionated ? undefined : stakeClaim} onChallengeClaim={isOpinionated ? undefined : challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} onReact={handleReact} onEdit={handleEditMessage} onDelete={handleDeleteMessage} />
+              <ChatWindow messages={messages} currentUsername={username} currentUserId={userId} isAdmin={isAdmin} highlightedId={highlightedId} messageRefs={messageRefs} streamingMsgs={streamingMsgs} claims={claims} credibilityScores={credibilityScores} positions={activePositions} stances={activeStances} onStakeClaim={isOpinionated ? undefined : stakeClaim} onChallengeClaim={isOpinionated ? undefined : challengeClaim} onUserClick={(uid, uname) => setProfileModal({ userId: uid, username: uname })} onSubDebate={(msgId, content) => setSubDebateModal({ messageId: msgId, content })} onReact={handleReact} onEdit={handleEditMessage} onDelete={handleDeleteMessage} />
               <div ref={bottomRef} />
             </>
           )}
@@ -1631,8 +1542,6 @@ export default function RoomPage() {
         onRevokeSeat={revokeSeat}
         onMetaUpdate={(meta) => setRoomMeta(meta)}
         onDelete={(isOwner || isAdmin) ? deleteRoom : undefined}
-        settings={settings}
-        onSettingsChange={setSettings}
       />
       </div>
     </div>

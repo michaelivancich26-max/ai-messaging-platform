@@ -484,8 +484,8 @@ io.on("connection", (socket) => {
 
   socket.on(
     "sendMessage",
-    async (payload: { roomId: string; userId: string; username: string; content: string; channelId?: string; settings?: { factualCorrection: boolean; ambiguityResolution: boolean } }) => {
-      const { roomId, userId, username, settings, channelId } = payload;
+    async (payload: { roomId: string; userId: string; username: string; content: string; channelId?: string }) => {
+      const { roomId, userId, username, channelId } = payload;
       const rawContent = payload.content?.trim().replace(/\0/g, "") ?? "";
       if (!rawContent) return;
 
@@ -613,7 +613,7 @@ io.on("connection", (socket) => {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));
           await redis.lTrim(windowKey, 0, WINDOW_SIZE - 1);
-          const aiDeps = { redis, io, prisma, settings: settings ?? { factualCorrection: true, ambiguityResolution: true }, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name, channelId: channelId ?? null };
+          const aiDeps = { redis, io, prisma, emitRoom: emitTarget, aiPersona: room.aiPersona ?? undefined, roomName: room.name, channelId: channelId ?? null };
           if (!isOpinionated && !(room as any).isBotRoom) scheduleAI(channelId ?? roomId, aiDeps);
           if (/@claude\b/i.test(content)) {
             respondToMention(content, channelId ?? roomId, aiDeps);
@@ -2438,111 +2438,6 @@ app.patch("/api/notifications/read", async (req, res) => {
   }
 });
 
-// GET /api/graph — knowledge graph (filtered to userId's joined rooms when provided; roomId scopes to one room)
-app.get("/api/graph", async (req, res) => {
-  try {
-    const userId = req.query.userId as string | undefined;
-    const scopeRoomId = req.query.roomId as string | undefined;  // DB room id for per-room graph
-
-    // Build room id filter
-    let roomIdFilter: string[] | undefined;
-    if (scopeRoomId) {
-      roomIdFilter = [scopeRoomId];
-    } else if (userId) {
-      const memberships = await prisma.roomMember.findMany({ where: { userId }, select: { roomId: true } });
-      // Only apply filter when the user actually has memberships; an empty array would return nothing
-      if (memberships.length > 0) roomIdFilter = memberships.map(m => m.roomId);
-    }
-
-    const roomWhere = roomIdFilter ? { id: { in: roomIdFilter }, isDM: false } : { isDM: false };
-    const nodeWhere = roomIdFilter ? { roomId: { in: roomIdFilter } } : {};
-    const edgeWhere = roomIdFilter ? { roomId: { in: roomIdFilter } } : {};
-
-    type CountRow = { nodeId: string; count: bigint };
-    const [rawNodes, edges, rooms] = await Promise.all([
-      prisma.graphNode.findMany({ where: nodeWhere, orderBy: { createdAt: "asc" } }),
-      prisma.graphEdge.findMany({ where: edgeWhere, orderBy: { createdAt: "asc" } }),
-      prisma.room.findMany({ where: roomWhere, select: { id: true, name: true } }),
-    ]);
-
-    // Person nodes are global — pull in any person node referenced by these edges
-    // that may live in a different room (cross-room deduplication side-effect)
-    let crossRoomPersonNodes: typeof rawNodes = [];
-    if (roomIdFilter) {
-      const edgeNodeIds = new Set(edges.flatMap(e => [e.fromNodeId, e.toNodeId]));
-      if (edgeNodeIds.size > 0) {
-        crossRoomPersonNodes = await prisma.graphNode.findMany({
-          where: {
-            id: { in: [...edgeNodeIds] },
-            type: "person",
-            NOT: { roomId: { in: roomIdFilter } },
-          },
-          orderBy: { createdAt: "asc" },
-        });
-      }
-    }
-
-    // Merge all nodes then deduplicate person nodes by label (they're global — same person = same node)
-    const allNodes = [...rawNodes, ...crossRoomPersonNodes];
-    const personCanonical = new Map<string, string>(); // label.toLowerCase() → canonical id
-    const idRemap = new Map<string, string>();          // duplicate id → canonical id
-    for (const n of allNodes) {
-      if (n.type !== "person") continue;
-      const key = n.label.toLowerCase().trim();
-      if (personCanonical.has(key)) {
-        idRemap.set(n.id, personCanonical.get(key)!);
-      } else {
-        personCanonical.set(key, n.id);
-      }
-    }
-
-    // Remap edge endpoints to canonical person ids, drop self-loops
-    const dedupedEdges = edges
-      .map(e => ({
-        ...e,
-        fromNodeId: idRemap.get(e.fromNodeId) ?? e.fromNodeId,
-        toNodeId: idRemap.get(e.toNodeId) ?? e.toNodeId,
-      }))
-      .filter(e => e.fromNodeId !== e.toNodeId);
-
-    // GraphNodeMessage may not exist yet on some deployments — degrade gracefully
-    let counts: CountRow[] = [];
-    try {
-      counts = await prisma.$queryRaw<CountRow[]>`SELECT "nodeId", COUNT(*) AS count FROM "GraphNodeMessage" GROUP BY "nodeId"`;
-    } catch (err) {
-      console.error("[Graph] GraphNodeMessage count query failed:", err);
-    }
-    const countMap = new Map(counts.map((r) => [r.nodeId, Number(r.count)]));
-    // Sum correction counts for any remapped duplicates into their canonical node
-    for (const [dupId, canonId] of idRemap) {
-      const dupCount = countMap.get(dupId) ?? 0;
-      if (dupCount > 0) countMap.set(canonId, (countMap.get(canonId) ?? 0) + dupCount);
-    }
-    const nodes = allNodes
-      .filter(n => !idRemap.has(n.id))
-      .map(n => ({ ...n, correctionCount: countMap.get(n.id) ?? 0 }));
-    res.json({ nodes, edges: dedupedEdges, rooms });
-  } catch (err) {
-    console.error("[Graph] Error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-// GET /api/graph/nodes/:id/messages — AI correction cards linked to a graph node
-app.get("/api/graph/nodes/:id/messages", async (req, res) => {
-  try {
-    const nodeId = req.params.id;
-    const messages = await prisma.$queryRaw<Record<string, unknown>[]>`
-      SELECT m.* FROM "Message" m
-      JOIN "GraphNodeMessage" gnm ON gnm."messageId" = m.id
-      WHERE gnm."nodeId" = ${nodeId}
-      ORDER BY gnm."createdAt" DESC
-    `;
-    res.json(messages);
-  } catch {
-    res.status(500).json({ error: "Server error" });
-  }
-});
 
 const PORT = process.env.PORT ?? 3001;
 

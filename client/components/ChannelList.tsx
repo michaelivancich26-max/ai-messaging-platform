@@ -28,13 +28,11 @@ interface Props {
   userId: string;
   onSelectChannel: (channel: Channel) => void;
   refreshTrigger?: number;
-  graphActive?: boolean;
-  onGraphClick?: () => void;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
-export default function ChannelList({ roomName, activeChannelId, canEdit, userId, onSelectChannel, refreshTrigger, graphActive, onGraphClick }: Props) {
+export default function ChannelList({ roomName, activeChannelId, canEdit, userId, onSelectChannel, refreshTrigger }: Props) {
   const [sections, setSections] = useState<Section[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [sidebarChs, setSidebarChs] = useState<Channel[]>([]);
@@ -180,22 +178,6 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-gray-900 py-2" style={{ minWidth: 0 }}>
-
-      {/* Knowledge Graph pseudo-channel */}
-      {onGraphClick && (
-        <div className="mb-1 px-1">
-          <button
-            onClick={onGraphClick}
-            className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors
-              ${graphActive ? "bg-amber-900/40 text-amber-300 font-medium" : "text-gray-400 hover:bg-gray-800 hover:text-amber-300"}`}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-              className={`h-3.5 w-3.5 shrink-0 ${graphActive ? "text-amber-400" : "text-gray-500"}`}>
-              <path fillRule="evenodd" d="M10 1a9 9 0 1 0 0 18A9 9 0 0 0 10 1ZM4.5 9.5a.75.75 0 0 0 0 1.5h3.69l-1.22 1.22a.75.75 0 1 0 1.06 1.06l2.5-2.5a.75.75 0 0 0 0-1.06l-2.5-2.5a.75.75 0 0 0-1.06 1.06l1.22 1.22H4.5Zm6.25-3.25a.75.75 0 0 1 .75-.75h.5a3 3 0 0 1 0 6h-.5a.75.75 0 0 1 0-1.5h.5a1.5 1.5 0 0 0 0-3h-.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" />
-            </svg>
-            <span className="truncate">knowledge graph</span>
-          </button>
-        </div>
-      )}
 
       {/* Unsectioned channels */}
       <div className="mb-1">

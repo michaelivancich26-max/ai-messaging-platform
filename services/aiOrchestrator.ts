@@ -11,37 +11,20 @@ const COOLDOWN_KEY = (roomId: string) => `chat:${roomId}:ai-cooldown`;
 const SCAN_INTERVAL_MS = 20_000;
 const SCAN_COOLDOWN_SEC = 30;
 const MIN_WINDOW_MESSAGES = 3;
-const STREAM_CHUNK_SIZE = 3;   // characters per emit
-const STREAM_DELAY_MS = 18;    // ms between chunks (~55 chars/sec — readable typing speed)
+const STREAM_CHUNK_SIZE = 3;
+const STREAM_DELAY_MS = 18;
 
 type Deps = {
   redis: RedisClientType | ReturnType<typeof import("redis").createClient>;
   io: Server;
   prisma: PrismaClient;
-  settings: { factualCorrection: boolean; ambiguityResolution: boolean };
   emitRoom?: string;
   aiPersona?: string;
-  roomName: string; // actual room slug for DB lookups (roomId key may be a channelId cuid)
-  channelId?: string | null; // channel to attach saved AI messages to (so they appear in channel history)
+  roomName: string;
+  channelId?: string | null;
 };
 
-type Issue =
-  | { type: "factual"; text: string; sarcasm: boolean }
-  | { type: "ambiguity"; pronoun: string; referent: string; quote: string }
-  | { type: "mention_response"; text: string };
-
-type AIResponse = {
-  issues: Array<{
-    type: "FACTUAL_UNCERTAINTY" | "RESOLVE_AMBIGUITY" | "SUGGEST_POLL";
-    sarcasm?: boolean;
-    factual_correction?: string;
-    ambiguity?: { pronoun: string; referent: string; quote: string };
-    poll?: { question: string; options: string[] };
-    relatedEntities?: string[];
-  }>;
-  entities?: Array<{ name: string; type: "person" | "place" | "topic" | "concept" }>;
-  relations?: Array<{ from: string; to: string; label: string }>;
-};
+type Issue = { type: "mention_response"; text: string };
 
 const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -57,39 +40,12 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-async function linkMessageToEntities(
-  messageId: string,
-  roomId: string,
-  relatedEntities: string[],
-  prisma: PrismaClient,
-) {
-  if (!relatedEntities?.length) return;
-  for (const label of relatedEntities) {
-    const trimmed = label.trim().slice(0, 100);
-    // Try room-scoped node first; fall back to any person node with this label (cross-room)
-    let node = await prisma.graphNode.findUnique({
-      where: { label_roomId: { label: trimmed, roomId } },
-    });
-    if (!node) {
-      node = await prisma.graphNode.findFirst({ where: { label: trimmed, type: "person" } });
-    }
-    if (!node) continue;
-    // Raw upsert — bypasses generated-client relation types which may be stale on Railway
-    await prisma.$executeRaw`
-      INSERT INTO "GraphNodeMessage" (id, "nodeId", "messageId", "createdAt")
-      VALUES (gen_random_uuid()::text, ${node.id}, ${messageId}, NOW())
-      ON CONFLICT ("nodeId", "messageId") DO NOTHING
-    `;
-  }
-}
-
 async function streamAndSave(
   payload: Issue,
   roomId: string,
   prisma: PrismaClient,
   io: Server,
   emitRoom: string,
-  relatedEntities: string[] = [],
   channelId?: string | null,
 ) {
   const room = await prisma.room.findUnique({ where: { name: roomId } });
@@ -103,19 +59,10 @@ async function streamAndSave(
     channelId: channelId ?? null,
   };
 
-  if (payload.type === "ambiguity") {
-    const msg = await prisma.message.create({ data: msgData });
-    await linkMessageToEntities(msg.id, room.id, relatedEntities, prisma);
-    io.to(emitRoom).emit("message", { ...msg, type: "ai_interjection" });
-    return;
-  }
-
   const tempId = `ai-stream-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const text = payload.text;
-  const isMention = payload.type === "mention_response";
-  const sarcasm = payload.type === "factual" ? payload.sarcasm : false;
 
-  io.to(emitRoom).emit("aiStreamStart", { tempId, sarcasm, isMention });
+  io.to(emitRoom).emit("aiStreamStart", { tempId, sarcasm: false, isMention: true });
 
   for (let i = 0; i < text.length; i += STREAM_CHUNK_SIZE) {
     io.to(emitRoom).emit("aiStreamChunk", { tempId, chunk: text.slice(i, i + STREAM_CHUNK_SIZE) });
@@ -123,17 +70,11 @@ async function streamAndSave(
   }
 
   const msg = await prisma.message.create({ data: msgData });
-  await linkMessageToEntities(msg.id, room.id, relatedEntities, prisma);
-
   io.to(emitRoom).emit("aiStreamEnd", { tempId, message: { ...msg, type: "ai_interjection" } });
 }
 
-async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, aiPersona, roomName, channelId }: Deps) {
+async function runScan(roomId: string, { redis, io, prisma, emitRoom }: Deps) {
   pendingTimers.delete(roomId);
-
-  const wantFactual = settings.factualCorrection;
-  const wantAmbiguity = settings.ambiguityResolution;
-  if (!wantFactual && !wantAmbiguity) return;
 
   const messageCount = await (redis as any).lLen(WINDOW_KEY(roomId));
   if (messageCount < MIN_WINDOW_MESSAGES) return;
@@ -141,145 +82,45 @@ async function runScan(roomId: string, { redis, io, prisma, settings, emitRoom, 
   const context = await getChatContext(roomId, redis);
   if (!context.trim()) return;
 
-  const personaLine = aiPersona
-    ? `You are playing the role of: ${aiPersona}. Stay in character in your corrections and tone, but be blunt and concise — one sentence max.`
-    : "You are a fact-checking system. No personality. No hedging. No preamble.";
-
   const systemPrompt = [
-    personaLine,
-    "Scan ALL messages below and return ONLY valid JSON with this exact shape:",
-    '{ "issues": [], "entities": [], "relations": [] }',
+    "You are a debate moderation assistant.",
+    "Scan the conversation and return ONLY valid JSON: { \"issues\": [] }",
     "",
-    "\"issues\" — each element is one of:",
-    wantFactual  ? '- { "type": "FACTUAL_UNCERTAINTY", "sarcasm": boolean, "factual_correction": "<one blunt sentence stating the correct fact, no softening, no \'actually\', no apology>", "relatedEntities": ["<entity name>", ...] }' : "",
-    wantAmbiguity ? '- { "type": "RESOLVE_AMBIGUITY", "ambiguity": { "pronoun": "<exact word>", "referent": "<what it refers to>", "quote": "<full message text>" }, "relatedEntities": ["<entity name>", ...] }' : "",
+    "\"issues\" — only one type allowed:",
     '- { "type": "SUGGEST_POLL", "poll": { "question": "<concise poll question>", "options": ["<option 1>", "<option 2>"] } }',
     "",
-    "FACTUAL_UNCERTAINTY: a message contains a demonstrably incorrect factual claim. Only flag clear, verifiable errors — not opinions or estimates. Set sarcasm:true if the original claim was intentionally ironic. Write the correction as a raw fact: e.g. \"Mount Everest is 8,849 m tall.\" not \"Actually, I think you'll find...\"",
-    "RESOLVE_AMBIGUITY: a pronoun whose referent is unclear but resolvable from context.",
-    "SUGGEST_POLL: the group is actively debating between 2-4 specific options and a vote would help. Only suggest when the debate is live and unresolved. Extract the real options being discussed (2-4 max). Never suggest a poll for hypotheticals or resolved topics.",
-    "relatedEntities: names from the \"entities\" array that this specific issue is about. Use exact same names.",
+    "SUGGEST_POLL: the group is actively debating between 2-4 specific options and a vote would help. Only suggest when the debate is live and unresolved. Extract the real options (2-4 max). Never suggest for hypotheticals or resolved topics.",
     "",
-    "\"entities\" — named things explicitly mentioned: people, places, topics, or concepts. Each:",
-    '- { "name": "<1-3 word label>", "type": "person" | "place" | "topic" | "concept" }',
-    "Only include clearly named entities. Skip pronouns, generic words, and filler.",
-    "",
-    "\"relations\" — connections between two entities you extracted:",
-    '- { "from": "<entity name>", "to": "<entity name>", "label": "<short verb phrase>" }',
-    "Only create relations where both entities appear in \"entities\".",
-    "",
-    'Return { "issues": [], "entities": [], "relations": [] } if nothing applies.',
-  ].filter(Boolean).join("\n");
+    'Return { "issues": [] } if nothing applies.',
+  ].join("\n");
 
-  let parsed: AIResponse;
   try {
     const response = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 512,
+      max_tokens: 256,
       system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: `CONVERSATION:\n${context}` }],
     } as any);
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
-    console.log("[AI] Scan response:", raw);
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return;
-    parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed.issues)) return;
+
+    await (redis as any).del(WINDOW_KEY(roomId));
+    await (redis as any).set(COOLDOWN_KEY(roomId), "1", { EX: SCAN_COOLDOWN_SEC });
+
+    for (const issue of parsed.issues) {
+      if (issue.type === "SUGGEST_POLL" && issue.poll?.question && issue.poll.options?.length >= 2) {
+        io.to(emitRoom ?? roomId).emit("pollSuggested", {
+          question: issue.poll.question,
+          options: issue.poll.options.slice(0, 4),
+        });
+      }
+    }
   } catch (e) {
     console.error("[AI] Scan error:", e);
-    return;
-  }
-
-  // Clear the window and set per-room cooldown
-  await (redis as any).del(WINDOW_KEY(roomId));
-  await (redis as any).set(COOLDOWN_KEY(roomId), "1", { EX: SCAN_COOLDOWN_SEC });
-
-  console.log(`[AI] Found ${parsed.issues.length} issue(s) in room ${roomId}`);
-
-  // Persist graph entities first so nodes exist when we link corrections to them
-  if (parsed.entities?.length || parsed.relations?.length) {
-    await persistGraph(roomName, parsed.entities ?? [], parsed.relations ?? [], prisma, io);
-  }
-
-  // Stream issues sequentially so bubbles don't all start at once
-  for (const issue of parsed.issues) {
-    if (issue.type === "SUGGEST_POLL" && issue.poll?.question && issue.poll.options?.length >= 2) {
-      io.to(emitRoom ?? roomId).emit("pollSuggested", {
-        question: issue.poll.question,
-        options: issue.poll.options.slice(0, 4),
-      });
-      continue;
-    }
-    let payload: Issue | null = null;
-    if (issue.type === "FACTUAL_UNCERTAINTY" && wantFactual && issue.factual_correction) {
-      payload = { type: "factual", text: issue.factual_correction, sarcasm: issue.sarcasm ?? false };
-    } else if (issue.type === "RESOLVE_AMBIGUITY" && wantAmbiguity && issue.ambiguity) {
-      payload = { type: "ambiguity", ...issue.ambiguity };
-    }
-    if (payload) await streamAndSave(payload, roomName, prisma, io, emitRoom ?? roomId, issue.relatedEntities ?? [], channelId);
-  }
-}
-
-async function persistGraph(
-  roomName: string,
-  entities: NonNullable<AIResponse["entities"]>,
-  relations: NonNullable<AIResponse["relations"]>,
-  prisma: PrismaClient,
-  io: Server,
-) {
-  try {
-    const room = await prisma.room.findUnique({ where: { name: roomName } });
-    if (!room) return;
-
-    // Upsert nodes (deduped by label+roomId, except persons which are global)
-    const nodeMap = new Map<string, string>(); // label → id
-    for (const e of entities) {
-      if (!e.name?.trim()) continue;
-      const label = e.name.trim().slice(0, 100);
-      let node;
-      if (e.type === "person") {
-        // People are global — reuse any existing node with this label across all rooms
-        const existing = await prisma.graphNode.findFirst({
-          where: { label, type: "person" },
-        });
-        if (existing) {
-          node = existing;
-        } else {
-          node = await prisma.graphNode.create({
-            data: { label, type: "person", roomId: room.id },
-          });
-        }
-      } else {
-        node = await prisma.graphNode.upsert({
-          where: { label_roomId: { label, roomId: room.id } },
-          update: {},
-          create: { label, type: e.type ?? "concept", roomId: room.id },
-        });
-      }
-      nodeMap.set(label.toLowerCase(), node.id);
-    }
-
-    // Create edges where both endpoints exist
-    for (const r of relations) {
-      const fromId = nodeMap.get(r.from?.trim().toLowerCase());
-      const toId = nodeMap.get(r.to?.trim().toLowerCase());
-      if (!fromId || !toId || fromId === toId) continue;
-      // Skip duplicate edges (same from/to/label in same room)
-      const exists = await prisma.graphEdge.findFirst({
-        where: { fromNodeId: fromId, toNodeId: toId, label: r.label.slice(0, 100), roomId: room.id },
-      });
-      if (!exists) {
-        await prisma.graphEdge.create({
-          data: { fromNodeId: fromId, toNodeId: toId, label: r.label.slice(0, 100), roomId: room.id },
-        });
-      }
-    }
-
-    console.log(`[Graph] Persisted ${nodeMap.size} nodes, ${relations.length} relation(s) for room ${roomName}`);
-    if (nodeMap.size > 0) io.emit("graphUpdate");
-  } catch (err) {
-    console.error("[Graph] Persist error:", err);
   }
 }
 
@@ -311,7 +152,7 @@ export async function respondToMention(question: string, roomId: string, deps: D
         const poll = JSON.parse(match[0]);
         if (poll.question && Array.isArray(poll.options) && poll.options.length >= 2) {
           io.to(emitTarget).emit("pollSuggested", { question: poll.question, options: poll.options.slice(0, 4) });
-          await streamAndSave({ type: "mention_response", text: `Poll ready: "${poll.question}"` }, roomName, prisma, io, emitTarget, [], channelId);
+          await streamAndSave({ type: "mention_response", text: `Poll ready: "${poll.question}"` }, roomName, prisma, io, emitTarget, channelId);
           return;
         }
       }
@@ -320,7 +161,6 @@ export async function respondToMention(question: string, roomId: string, deps: D
     }
   }
 
-  // Conversational response
   const personaLine = aiPersona
     ? `You are playing the role of: ${aiPersona}. Stay in character.`
     : "You are @Claude, a helpful AI assistant participating in a chat room.";
@@ -340,7 +180,7 @@ export async function respondToMention(question: string, roomId: string, deps: D
       messages: [{ role: "user", content: question }],
     });
     const text = response.content[0].type === "text" ? response.content[0].text.trim() : "I'm here! How can I help?";
-    await streamAndSave({ type: "mention_response", text }, roomName, prisma, io, emitTarget, [], channelId);
+    await streamAndSave({ type: "mention_response", text }, roomName, prisma, io, emitTarget, channelId);
   } catch (e) {
     console.error("[AI] Mention response error:", e);
   }

@@ -9,8 +9,6 @@ interface RoomMeta {
   maxMembers: number | null; creatorId: string | null; aiPersona: string | null; stances?: string[] | null;
   isOpinionated?: boolean; stanceCooldown?: number; isFishbowl?: boolean; fishbowlSeats?: number | null;
 }
-interface Settings { factualCorrection: boolean; ambiguityResolution: boolean; }
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -24,35 +22,17 @@ interface Props {
   onKick: (userId: string) => void;
   onMetaUpdate: (meta: RoomMeta) => void;
   onDelete?: () => void;
-  settings: Settings;
-  onSettingsChange: (s: Settings) => void;
   onGrantSeat?: (userId: string) => void;
   onRevokeSeat?: (userId: string) => void;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
-function Toggle({ enabled, onChange, label, description }: {
-  enabled: boolean; onChange: (v: boolean) => void; label: string; description: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <p className="text-sm text-gray-200">{label}</p>
-        <p className="text-xs text-gray-500 leading-snug">{description}</p>
-      </div>
-      <button onClick={() => onChange(!enabled)}
-        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${enabled ? "bg-indigo-600" : "bg-gray-700"}`}>
-        <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
-      </button>
-    </div>
-  );
-}
 
 export default function RoomPanel({
   open, onClose, tab: initialTab = "room",
   roomId, meta, onlineMembers, currentUserId, isOwner, isAdmin,
-  onKick, onMetaUpdate, onDelete, settings, onSettingsChange, onGrantSeat, onRevokeSeat,
+  onKick, onMetaUpdate, onDelete, onGrantSeat, onRevokeSeat,
 }: Props) {
   const canEdit = isOwner || isAdmin;
   const [tab, setTab] = useState<"room" | "settings" | "ai">(initialTab);
@@ -384,21 +364,9 @@ export default function RoomPanel({
           {/* ── AI tab ── */}
           {tab === "ai" && (
             <div className="px-4 py-2">
-              <p className="pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">Interjections</p>
-              <div className="divide-y divide-gray-800/60">
-                <Toggle enabled={settings.factualCorrection}
-                  onChange={v => onSettingsChange({ ...settings, factualCorrection: v })}
-                  label="Factual correction"
-                  description="Flags demonstrably wrong claims with a one-sentence fact." />
-                <Toggle enabled={settings.ambiguityResolution}
-                  onChange={v => onSettingsChange({ ...settings, ambiguityResolution: v })}
-                  label="Ambiguity resolution"
-                  description="Highlights pronouns with unclear referents on hover." />
-              </div>
-
               {canEdit && (
                 <>
-                  <p className="pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">Persona</p>
+                  <p className="pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">@Claude Persona</p>
                   <textarea value={editPersona} onChange={e => setEditPersona(e.target.value)}
                     maxLength={500} rows={3}
                     placeholder="e.g. A Victorian professor who quotes Shakespeare when disappointed."
@@ -437,4 +405,4 @@ export default function RoomPanel({
   );
 }
 
-export type { Settings, RoomMeta };
+export type { RoomMeta };
