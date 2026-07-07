@@ -816,6 +816,20 @@ io.on("connection", (socket) => {
       });
       const emitTarget = poll.channelId ? `channel:${poll.channelId}` : room?.name ?? poll.roomId;
       io.to(emitTarget).emit("pollUpdated", updated);
+
+      // Auto-apply debate mode when the structured debate vote closes
+      if (room && poll.question === "Should this debate be structured?") {
+        const voteCounts: Record<string, number> = {};
+        for (const v of updated.votes) voteCounts[v.option] = (voteCounts[v.option] ?? 0) + 1;
+        const winner = poll.options.reduce((a: string, b: string) => (voteCounts[b] ?? 0) > (voteCounts[a] ?? 0) ? b : a, poll.options[0]);
+        const mode = winner === "Structured" ? "structured" : "open";
+        const turn: DebateTurnState = mode === "structured"
+          ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
+          : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
+        debateTurns.set(room.name, turn);
+        redis.set(`debate:turn:${room.name}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
+        io.to(room.name).emit("debateTurnUpdate", turn);
+      }
     } catch (err) {
       console.error("[closePoll]", err);
     }
@@ -1629,18 +1643,22 @@ Headlines:\n${list}`;
 
         const existingChannels = await prisma.channel.count({ where: { roomId: room.id } });
         if (existingChannels === 0) {
+          await prisma.$executeRawUnsafe(`UPDATE "Room" SET "stanceCooldown" = 60 WHERE "id" = $1`, room.id).catch(() => {});
           const [debateSection, resourceSection] = await Promise.all([
             prisma.section.create({ data: { name: "Debate", roomId: room.id, order: 0 } }),
             prisma.section.create({ data: { name: "Resources", roomId: room.id, order: 1 } }),
           ]);
+          const generalChannel = await (prisma as any).channel.create({ data: { name: "general", roomId: room.id, sectionId: debateSection.id, order: 0 } });
           await (prisma as any).channel.createMany({
             data: [
-              { name: "general",   roomId: room.id, sectionId: debateSection.id,   order: 0 },
               { name: "for",       roomId: room.id, sectionId: debateSection.id,   order: 1 },
               { name: "against",   roomId: room.id, sectionId: debateSection.id,   order: 2 },
               { name: "evidence",  roomId: room.id, sectionId: resourceSection.id, order: 0 },
               { name: "off-topic", roomId: room.id, sectionId: resourceSection.id, order: 1 },
             ],
+          });
+          await (prisma as any).poll.create({
+            data: { roomId: room.id, channelId: generalChannel.id, question: "Should this debate be structured?", options: ["Structured", "Open"], createdBy: "system" },
           });
         }
 
@@ -1976,10 +1994,16 @@ app.post("/api/rooms", async (req, res) => {
       }
     }
     // Auto-create default "general" channel for every new room
-    await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
+    const generalChannel = await prisma.channel.create({ data: { name: "general", roomId: room.id, order: 0 } });
     // Auto-create spectator-chat channel for fishbowl rooms
     if (isFishbowl) {
       await (prisma as any).channel.create({ data: { name: "spectator-chat", roomId: room.id, order: 999, isSidebar: true, isSpectatorChat: true } });
+    }
+    // Auto-create structured debate vote for public rooms
+    if (!isPrivate) {
+      await (prisma as any).poll.create({
+        data: { roomId: room.id, channelId: generalChannel.id, question: "Should this debate be structured?", options: ["Structured", "Open"], createdBy: creatorId ?? "system" },
+      });
     }
     // Auto-join the creator as a PARTICIPANT
     if (creatorId) {
