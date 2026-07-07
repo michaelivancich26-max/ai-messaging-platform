@@ -582,6 +582,33 @@ io.on("connection", (socket) => {
           respondAsBot(room.id, room.name, (room as any).botId as string, content, channelId ?? null, io, prisma);
         }
 
+        // Auto-stake every human message as a claim (skip DMs, images, sidebar, spectator chat)
+        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg && !room.isDM) {
+          (async () => {
+            try {
+              const existing = await (prisma as any).claim.findFirst({ where: { messageId: message.id } });
+              if (existing) return;
+              const claim = await (prisma as any).claim.create({
+                data: { messageId: message.id, roomId: room.id, channelId: channelId ?? null, claimantId: user.id, text: content.slice(0, 500), status: "PENDING" },
+              });
+              io.to(emitTarget).emit("claimStaked", { claimId: claim.id, messageId: message.id, status: "PENDING", claimantId: user.id, challengeCount: 0 });
+              const proposition = (room as any).proposition ?? null;
+              const { verdict, reasoning, relevance } = await evaluateClaim(content, "", proposition);
+              await (prisma as any).claim.update({
+                where: { id: claim.id },
+                data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
+              });
+              io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId: message.id, status: verdict, reasoning, claimantId: user.id, challengeCount: 0 });
+              if (!isOpinionated) {
+                const cred = await computeCredibility(user.id, prisma);
+                io.to(emitTarget).emit("credibilityUpdate", cred);
+              }
+            } catch (e) {
+              console.error("[auto-stake]", e);
+            }
+          })();
+        }
+
         if (!isImage && !isSpectatorChatMsg) {
           const windowKey = WINDOW_KEY(channelId ?? roomId);
           await redis.lPush(windowKey, JSON.stringify({ role: "human", content, username }));

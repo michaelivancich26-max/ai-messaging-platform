@@ -277,7 +277,7 @@ export async function respondAsBot(
       where: { roomId: roomDbId, channelId: channelId ?? null },
       include: { user: { select: { id: true, username: true } } },
       orderBy: { createdAt: "desc" },
-      take: 14,
+      take: 6,
     });
     recentMsgs.reverse();
     contextBlock = recentMsgs
@@ -299,7 +299,9 @@ export async function respondAsBot(
     userMessage = [
       topicLine,
       stanceLine,
-      contextBlock ? `Debate conversation so far:\n\n${contextBlock}\n\nRespond to the last argument from the human.` : humanContent,
+      contextBlock
+        ? `Recent exchange:\n\n${contextBlock}\n\nRespond directly to the last human argument above. Do not recap prior points. Do not hedge or qualify your position. Deliver one sharp, committed counter-argument and stop.`
+        : humanContent,
     ].filter(Boolean).join("\n\n");
   }
 
