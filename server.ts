@@ -593,7 +593,18 @@ io.on("connection", (socket) => {
               });
               io.to(emitTarget).emit("claimStaked", { claimId: claim.id, messageId: message.id, status: "PENDING", claimantId: user.id, challengeCount: 0 });
               const proposition = (room as any).proposition ?? null;
-              const { verdict, reasoning, relevance, evidence, logic, impact, score: claimScore } = await evaluateClaim(content, "", proposition);
+              // Fetch the 3 most recent prior messages as context so the evaluator
+              // can tell critiques and challenges apart from standalone factual claims.
+              const priorMsgs = await (prisma as any).message.findMany({
+                where: { roomId: room.id, channelId: channelId ?? null, id: { not: message.id }, type: "human", deletedAt: null },
+                orderBy: { createdAt: "desc" },
+                take: 3,
+                include: { user: { select: { username: true } } },
+              });
+              const priorContext = (priorMsgs as any[]).reverse()
+                .map((m: any) => `${m.user?.username ?? "User"}: ${(m.content as string).slice(0, 300)}`)
+                .join("\n");
+              const { verdict, reasoning, relevance, evidence, logic, impact, score: claimScore } = await evaluateClaim(content, priorContext, proposition);
               await (prisma as any).claim.update({
                 where: { id: claim.id },
                 data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
