@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Server } from "socket.io";
 import type { PrismaClient } from "@prisma/client";
 import { SenderType } from "@prisma/client";
+import { evaluateClaim, computeCredibility } from "./claimEvaluator";
 
 const anthropic = new Anthropic();
 
@@ -349,6 +350,34 @@ export async function respondAsBot(
       include: { user: true },
     });
     io.to(emitTarget).emit("message", { ...msg, type: "human" });
+
+    // Fire-and-forget claim stake so rubric scores accumulate for judging
+    ;(async () => {
+      try {
+        const claim = await (prisma as any).claim.create({
+          data: {
+            messageId: msg.id,
+            roomId: roomDbId,
+            channelId: channelId ?? null,
+            claimantId: botUser!.id,
+            text: responseText.slice(0, 1000),
+            status: "PENDING",
+          },
+        });
+        io.to(emitTarget).emit("claimStaked", { claimId: claim.id, messageId: msg.id, status: "PENDING", claimantId: botUser!.id, challengeCount: 0 });
+        const { verdict, reasoning, relevance, evidence, logic, impact, score: claimScore } = await evaluateClaim(responseText, "", topic);
+        await (prisma as any).claim.update({
+          where: { id: claim.id },
+          data: { status: verdict, verdict: reasoning, relevance, updatedAt: new Date() },
+        });
+        await prisma.$executeRawUnsafe(`UPDATE "Claim" SET evidence=$1,logic=$2,impact=$3,score=$4 WHERE id=$5`, evidence, logic, impact, claimScore, claim.id);
+        io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId: msg.id, status: verdict, reasoning, claimantId: botUser!.id, challengeCount: 0, score: claimScore, relevance, evidence, logic, impact });
+        const cred = await computeCredibility(botUser!.id, prisma);
+        io.to(emitTarget).emit("credibilityUpdate", cred);
+      } catch (e) {
+        console.error(`[Bot:${config.id}] claim stake error:`, e);
+      }
+    })();
   } catch (e) {
     console.error(`[Bot:${config.id}] Message save error:`, e);
   }
@@ -416,11 +445,36 @@ export async function judgeMatch(
     const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
     const jsonStart = raw.indexOf("{");
     const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
-    // Only override winner from Claude if no forcedWinner was supplied
     if (!forcedWinner && (parsed.winner === "human" || parsed.winner === "bot")) winner = parsed.winner;
     if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
   } catch (e) {
     console.error("[Judge] Haiku error:", e);
+  }
+
+  // Rubric-score comparison: average claim scores per side are the tiebreaker
+  // (and the primary signal for short debates where AI tends to be inconclusive)
+  if (!forcedWinner) {
+    try {
+      const scoreRows = await prisma.$queryRawUnsafe<{ claimant_id: string; avg_score: number }[]>(
+        `SELECT "claimantId" AS claimant_id, AVG(score) AS avg_score
+         FROM "Claim" WHERE "roomId" = $1 AND score IS NOT NULL
+         GROUP BY "claimantId"`,
+        roomDbId,
+      );
+      const botRow    = scoreRows.find(r => r.claimant_id === botUser?.id);
+      const humanRow  = scoreRows.find(r => r.claimant_id !== botUser?.id);
+      if (botRow && humanRow) {
+        const botAvg   = Math.round(Number(botRow.avg_score));
+        const humanAvg = Math.round(Number(humanRow.avg_score));
+        winner = humanAvg >= botAvg ? "human" : "bot";
+        const rubricLine = `Average claim score — You: ${humanAvg}/100 · ${config.name}: ${botAvg}/100.`;
+        verdict = verdict === "The debate was inconclusive."
+          ? rubricLine
+          : `${rubricLine} ${verdict}`;
+      }
+    } catch (e) {
+      console.error("[Judge] rubric score error:", e);
+    }
   }
 
   const scoreImpact = winner === "human" ? (TIER_BONUS[config.tier] ?? 1.0) : -LOSS_PENALTY;
