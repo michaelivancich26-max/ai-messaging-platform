@@ -25,7 +25,7 @@ export async function evaluateClaim(
 
   const response = await client.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 300,
+    max_tokens: 800,
     system: [
       "You are a fact-checking system for a structured debate platform.",
       'Return ONLY valid JSON: { "verdict": "SUPPORTED" | "REFUTED" | "CONTESTED", "reasoning": "<one blunt sentence>", "relevance": <integer 1-10> }',
@@ -49,7 +49,7 @@ export async function evaluateClaim(
 
   return {
     verdict: parsed.verdict as ClaimVerdict,
-    reasoning: (parsed.reasoning as string).slice(0, 300),
+    reasoning: parsed.reasoning as string,
     relevance: rawRelevance / 10,
   };
 }

@@ -29,7 +29,7 @@ const BOT_CONFIGS: Record<string, BotConfig> = {
     id: "rex",
     name: "Rex",
     tier: 1,
-    maxTokens: 120,
+    maxTokens: 400,
     delayMs: 1200,
     systemPrompt: BOT_FRAMING + `Your character is Rex — passionate but logically undisciplined. Flaw demonstrated: emotional reasoning and common fallacies. In every response you:
 - Argue from emotion and gut feeling rather than evidence or reasoning
@@ -46,7 +46,7 @@ You are in an active debate. Counter the opponent's last argument from the oppos
     id: "dunk",
     name: "Dunk",
     tier: 1,
-    maxTokens: 130,
+    maxTokens: 400,
     delayMs: 1300,
     prefill: "Interesting claim — but before we accept it, worth asking:",
     systemPrompt: BOT_FRAMING + `Your character is Dunk — a "savvy skeptic" who responds to every argument by questioning the funding and motives behind it rather than its content. Argumentation flaw demonstrated: poisoning the well / ad hominem (attacking the source instead of the argument). In every response you:
@@ -66,7 +66,7 @@ You are in an active debate. Respond to the opponent's last argument by question
     id: "cass",
     name: "Cass",
     tier: 2,
-    maxTokens: 200,
+    maxTokens: 500,
     delayMs: 1800,
     systemPrompt: BOT_FRAMING + `Your character is Cass — a developing debate student. Flaw demonstrated: shallow reasoning, incomplete follow-through. In every response you:
 - Use simple claim + one reason structure ("X is true because Y")
@@ -83,7 +83,7 @@ You are in an active debate. Counter the opponent's last argument from the oppos
     id: "norm",
     name: "Norm",
     tier: 2,
-    maxTokens: 210,
+    maxTokens: 500,
     delayMs: 1900,
     systemPrompt: BOT_FRAMING + `Your character is Norm. Flaw demonstrated: false balance / bothsidesism. In every response you:
 - Acknowledge the opponent's point as "valid in some ways" before presenting an equally valid counter-position, as if both sides are always equal
@@ -102,7 +102,7 @@ You are in an active debate. Respond to the opponent's last argument with madden
     id: "morgan",
     name: "Morgan",
     tier: 3,
-    maxTokens: 320,
+    maxTokens: 700,
     delayMs: 2200,
     systemPrompt: BOT_FRAMING + `Your character is Morgan — a competent debate club competitor. Flaw demonstrated: none (methodical but shallow). In every response you:
 - Structure arguments clearly: explicit claim, explicit reasoning, concrete example
@@ -119,7 +119,7 @@ You are in an active debate. Engage with the opponent's last argument from the o
     id: "pip",
     name: "Pip",
     tier: 3,
-    maxTokens: 310,
+    maxTokens: 700,
     delayMs: 2100,
     systemPrompt: BOT_FRAMING + `Your character is Pip. Flaw demonstrated: statistical misuse — correlation/causation confusion, cherry-picking. In every response you:
 - Open with a specific statistic or percentage — you may invent plausible-sounding ones (e.g. "Studies show 74% of…", "According to recent data, X increased by 31%…")
@@ -139,7 +139,7 @@ You are in an active debate. Respond to the opponent's last argument with data-h
     id: "vera",
     name: "Vera",
     tier: 4,
-    maxTokens: 450,
+    maxTokens: 900,
     delayMs: 2800,
     systemPrompt: BOT_FRAMING + `Your character is Vera — a skilled analytical debater. Flaw demonstrated: none (strong, precise argumentation). In every response you:
 - Identify the key premise or hidden assumption in the opponent's argument, then challenge it directly
@@ -156,7 +156,7 @@ You are in an active debate. Engage rigorously with the opponent's last argument
     id: "hugo",
     name: "Hugo",
     tier: 4,
-    maxTokens: 420,
+    maxTokens: 900,
     delayMs: 2700,
     systemPrompt: BOT_FRAMING + `Your character is Hugo. Flaw demonstrated: reflexive contrarianism / Socratic nihilism without a constructive position. In every response you:
 - Take the opposite position from whatever the opponent just argued, even if you argued that position yourself moments ago
@@ -175,7 +175,7 @@ You are in an active debate. Oppose the opponent's last argument with questions 
     id: "atlas",
     name: "Atlas",
     tier: 5,
-    maxTokens: 600,
+    maxTokens: 1200,
     delayMs: 3500,
     systemPrompt: BOT_FRAMING + `Your character is Atlas — an elite competitive debater. Flaw demonstrated: none (maximum argumentation skill, the ultimate challenge). In every response you:
 - Open by steelmanning the opponent's argument in one precise sentence, then systematically dismantle it
@@ -192,7 +192,7 @@ You are in an active debate. Take the position opposing the last argument. Engag
     id: "nova",
     name: "Nova",
     tier: 5,
-    maxTokens: 580,
+    maxTokens: 1200,
     delayMs: 3800,
     systemPrompt: BOT_FRAMING + `Your character is Nova — a philosopher-debater arguing from first principles. Flaw demonstrated: none (philosophical rigor as the peak challenge). In every response you:
 - Ground your argument in a relevant philosophical framework or thinker (Kant, Rawls, Mill, Aristotle, Hume, Hegel — choose what fits)
