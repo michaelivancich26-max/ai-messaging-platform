@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 type View = "login" | "signup" | "forgot";
 
 export default function AuthPage() {
   const router = useRouter();
+  const { status } = useSession();
   const [view, setView] = useState<View>("login");
   const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
@@ -16,6 +17,11 @@ export default function AuthPage() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
   const [signupDone, setSignupDone] = useState(false);
+
+  // Already signed in? Skip the login screen and go straight to the app.
+  useEffect(() => {
+    if (status === "authenticated") router.replace("/home");
+  }, [status, router]);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -77,6 +83,16 @@ export default function AuthPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // While the session resolves — or once we know the user is signed in and are
+  // redirecting — show a placeholder instead of flashing the login form.
+  if (status === "loading" || status === "authenticated") {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </main>
+    );
   }
 
   // ── Forgot password view ──────────────────────────────────────────────────
