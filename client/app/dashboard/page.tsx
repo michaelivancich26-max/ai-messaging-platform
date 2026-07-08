@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
+import { MedalsPanel, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
@@ -17,6 +18,8 @@ interface Stats {
   arenaWins: number;
   arenaLosses: number;
   arenaBonus: number;
+  dailyStreak?: number;
+  longestStreak?: number;
 }
 
 // ─── Veritas Score Panel ─────────────────────────────────────────────────────
@@ -101,6 +104,8 @@ export default function DashboardPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [cred, setCred] = useState<CredScore | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [medals, setMedals] = useState<Medal[]>([]);
+  const [claimAverages, setClaimAverages] = useState<ClaimAverages | null>(null);
   const [email, setEmail] = useState("");
   const [emailVerified, setEmailVerified] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -136,6 +141,8 @@ export default function DashboardPage() {
         if (data.emailVerified) setEmailVerified(data.emailVerified);
         if (data.createdAt) setCreatedAt(data.createdAt);
         if (data.stats) setStats(data.stats);
+        if (Array.isArray(data.medals)) setMedals(data.medals);
+        if (data.claimAverages) setClaimAverages(data.claimAverages);
       })
       .catch(() => {});
   }, [status, userId]);
@@ -262,14 +269,25 @@ export default function DashboardPage() {
             </div>
 
             {/* ── Stats row ── */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <StatCard value={stats?.debateCount ?? "—"} label="Debates joined" />
               <StatCard value={stats?.messageCount ?? "—"} label="Messages sent" />
               <StatCard value={stats?.arenaMatchCount ?? "—"} label="Arena matches" />
+              <StatCard
+                value={stats?.dailyStreak != null ? `${stats.dailyStreak}🔥` : "—"}
+                label="Day streak"
+                sub={stats?.longestStreak ? `best ${stats.longestStreak}` : undefined}
+              />
             </div>
 
             {/* ── Veritas Score ── */}
             {cred && <VeritasScorePanel cred={cred} arenaBonus={stats?.arenaBonus ?? 0} />}
+
+            {/* ── Medals ── */}
+            {medals.length > 0 && <MedalsPanel medals={medals} />}
+
+            {/* ── Rubric averages ── */}
+            {claimAverages && <RubricAverages avg={claimAverages} />}
 
             {/* ── Arena overview ── */}
             {(stats?.arenaMatchCount ?? 0) > 0 && (

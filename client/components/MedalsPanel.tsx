@@ -1,0 +1,209 @@
+"use client";
+
+import { useMemo } from "react";
+
+export type MedalTier = "bronze" | "silver" | "gold" | "platinum" | "diamond";
+
+export interface Medal {
+  id: string;
+  groupId: string;
+  group: string;
+  name: string;
+  description: string;
+  icon: string;
+  tier: MedalTier;
+  order: number;
+  target: number;
+  value: number;
+  unit: string;
+  earned: boolean;
+  progress: number;
+}
+
+const TIER_STYLE: Record<MedalTier, { text: string; bg: string; ring: string; bar: string; label: string }> = {
+  bronze:   { text: "text-amber-300",  bg: "bg-amber-950/50",  ring: "ring-amber-700/50",  bar: "bg-amber-500",  label: "Bronze"   },
+  silver:   { text: "text-slate-200",  bg: "bg-slate-700/40",  ring: "ring-slate-400/40",  bar: "bg-slate-300",  label: "Silver"   },
+  gold:     { text: "text-yellow-300", bg: "bg-yellow-950/50", ring: "ring-yellow-600/50", bar: "bg-yellow-400", label: "Gold"     },
+  platinum: { text: "text-cyan-200",   bg: "bg-cyan-950/50",   ring: "ring-cyan-500/40",   bar: "bg-cyan-300",   label: "Platinum" },
+  diamond:  { text: "text-indigo-200", bg: "bg-indigo-950/60", ring: "ring-indigo-400/50", bar: "bg-indigo-300", label: "Diamond"  },
+};
+
+interface GroupView {
+  groupId: string;
+  group: string;
+  icon: string;
+  unit: string;
+  tiers: Medal[];               // sorted by order
+  earnedTiers: Medal[];
+  highest: Medal | null;        // highest earned
+  next: Medal | null;           // next locked tier
+  value: number;
+}
+
+function buildGroups(medals: Medal[]): GroupView[] {
+  const byGroup = new Map<string, Medal[]>();
+  for (const m of medals) {
+    if (!byGroup.has(m.groupId)) byGroup.set(m.groupId, []);
+    byGroup.get(m.groupId)!.push(m);
+  }
+  const groups: GroupView[] = [];
+  for (const [groupId, tiers] of byGroup) {
+    tiers.sort((a, b) => a.order - b.order);
+    const earnedTiers = tiers.filter(t => t.earned);
+    const highest = earnedTiers.length ? earnedTiers[earnedTiers.length - 1] : null;
+    const next = tiers.find(t => !t.earned) ?? null;
+    groups.push({
+      groupId, group: tiers[0].group, icon: tiers[0].icon, unit: tiers[0].unit,
+      tiers, earnedTiers, highest, next, value: tiers[0].value,
+    });
+  }
+  // Groups with earned medals first, then by closeness to the next medal
+  groups.sort((a, b) => {
+    if ((b.earnedTiers.length > 0 ? 1 : 0) !== (a.earnedTiers.length > 0 ? 1 : 0))
+      return (b.earnedTiers.length > 0 ? 1 : 0) - (a.earnedTiers.length > 0 ? 1 : 0);
+    if (b.earnedTiers.length !== a.earnedTiers.length) return b.earnedTiers.length - a.earnedTiers.length;
+    return (b.next?.progress ?? 0) - (a.next?.progress ?? 0);
+  });
+  return groups;
+}
+
+function fmt(n: number): string {
+  return n >= 1000 ? n.toLocaleString() : `${n}`;
+}
+
+export function MedalsPanel({ medals }: { medals: Medal[] }) {
+  const groups = useMemo(() => buildGroups(medals), [medals]);
+  const earned = useMemo(() => medals.filter(m => m.earned), [medals]);
+
+  if (!medals.length) return null;
+
+  return (
+    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Medals</p>
+        <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs font-semibold text-gray-300 tabular-nums">
+          {earned.length} <span className="text-gray-600">/ {medals.length}</span>
+        </span>
+      </div>
+
+      {/* Earned showcase */}
+      {earned.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {earned.map(m => {
+            const s = TIER_STYLE[m.tier];
+            return (
+              <div
+                key={m.id}
+                title={`${m.name} — ${m.description}`}
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${s.bg} ${s.text} ${s.ring}`}
+              >
+                <span className="text-sm leading-none">{m.icon}</span>
+                <span>{m.name}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-xl bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
+          No medals yet — debate, stake claims, and win matches to start earning them.
+        </p>
+      )}
+
+      {/* Progression ladders */}
+      <div className="space-y-2.5 border-t border-gray-800 pt-4">
+        {groups.map(g => {
+          const s = g.highest ? TIER_STYLE[g.highest.tier] : null;
+          const nextTarget = g.next?.target ?? g.highest?.target ?? 1;
+          const pct = g.next ? Math.round(Math.min(1, g.value / nextTarget) * 100) : 100;
+          return (
+            <div key={g.groupId} className="flex items-center gap-3">
+              {/* Medal disc */}
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg ring-1 ${
+                s ? `${s.bg} ${s.ring}` : "bg-gray-800/60 ring-gray-700/50 grayscale opacity-60"
+              }`}>
+                {g.icon}
+              </div>
+
+              {/* Info */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-gray-200">{g.group}</span>
+                  {g.highest && <span className={`shrink-0 text-[10px] font-semibold uppercase ${s!.text}`}>{TIER_STYLE[g.highest.tier].label}</span>}
+                </div>
+                {g.next ? (
+                  <>
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800">
+                        <div className={`h-full rounded-full ${TIER_STYLE[g.next.tier].bar} transition-all`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="shrink-0 text-[10px] tabular-nums text-gray-500">
+                        {fmt(g.value)}/{fmt(nextTarget)}{g.unit === "%" ? "%" : ""}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-[10px] text-gray-600">Next: {g.next.name} — {g.next.description}</p>
+                  </>
+                ) : (
+                  <p className="mt-0.5 text-[10px] font-semibold text-emerald-400">Maxed out — all tiers earned</p>
+                )}
+              </div>
+
+              {/* Tier pips */}
+              <div className="flex shrink-0 items-center gap-1">
+                {g.tiers.map(t => (
+                  <span
+                    key={t.id}
+                    title={`${TIER_STYLE[t.tier].label}: ${t.description}`}
+                    className={`h-2 w-2 rounded-full ${t.earned ? TIER_STYLE[t.tier].bar : "bg-gray-700"}`}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export interface ClaimAverages {
+  score: number; accuracy: number; relevance: number; evidence: number; logic: number; impact: number; rated: number;
+}
+
+export function RubricAverages({ avg }: { avg: ClaimAverages }) {
+  const dims: { label: string; value: number; color: string }[] = [
+    { label: "Accuracy",  value: avg.accuracy,  color: "bg-emerald-500" },
+    { label: "Relevance", value: avg.relevance, color: "bg-indigo-500"  },
+    { label: "Evidence",  value: avg.evidence,  color: "bg-violet-500"  },
+    { label: "Logic",     value: avg.logic,     color: "bg-sky-500"     },
+    { label: "Impact",    value: avg.impact,    color: "bg-amber-500"   },
+  ];
+  return (
+    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rubric Averages</p>
+        <span className="text-xs text-gray-500">
+          {avg.rated > 0
+            ? <>avg <span className="font-bold text-gray-200 tabular-nums">{avg.score}</span><span className="text-gray-600">/100</span> over {avg.rated} claim{avg.rated === 1 ? "" : "s"}</>
+            : "No rated claims yet"}
+        </span>
+      </div>
+      {avg.rated > 0 ? (
+        <div className="space-y-2.5">
+          {dims.map(d => (
+            <div key={d.label} className="flex items-center gap-3">
+              <span className="w-20 shrink-0 text-xs text-gray-400">{d.label}</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-800">
+                <div className={`h-full rounded-full ${d.color} transition-all`} style={{ width: `${Math.min(100, (d.value / 10) * 100)}%` }} />
+              </div>
+              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-gray-400">{d.value.toFixed(1)}<span className="text-gray-600">/10</span></span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-xl bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
+          Stake claims in debates to build your category averages.
+        </p>
+      )}
+    </div>
+  );
+}

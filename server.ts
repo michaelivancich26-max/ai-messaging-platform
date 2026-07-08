@@ -10,6 +10,7 @@ import { evaluateClaim, computeCredibility, SCORE_WEIGHTS } from "./services/cla
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, judgeMatch, scoreMatch } from "./services/debateBot";
+import { computeMedals, type MedalStats } from "./services/medals";
 import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -509,6 +510,7 @@ io.on("connection", (socket) => {
             data: { username, email: `${username}@chat.local`, password: "" },
           }).catch(() => prisma.user.findUniqueOrThrow({ where: { username } }));
         }
+        bumpDailyStreak(user.id).catch(() => {});
 
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) { socket.emit("roomDeleted"); return; }
@@ -615,6 +617,7 @@ io.on("connection", (socket) => {
                 const cred = await computeCredibility(user.id, prisma);
                 io.to(emitTarget).emit("credibilityUpdate", cred);
               }
+              updateUserClaimStats(user.id).catch(() => {});
             } catch (e) {
               console.error("[auto-stake]", e);
             }
@@ -886,6 +889,7 @@ io.on("connection", (socket) => {
           const cred = await computeCredibility(socketUser.id, prisma);
           io.to(emitTarget).emit("credibilityUpdate", cred);
         }
+        updateUserClaimStats(socketUser.id).catch(() => {});
       } catch (e) {
         console.error("[stakeClaim] evaluation error:", e);
       }
@@ -925,6 +929,7 @@ io.on("connection", (socket) => {
         const cred = await computeCredibility(claim.claimantId, prisma);
         io.to(emitTarget).emit("claimVerdict", { claimId, messageId: claim.messageId, status: verdict, reasoning, claimantId: claim.claimantId, challengeCount: challenges.length, score: claimScore, relevance, evidence, logic, impact });
         io.to(emitTarget).emit("credibilityUpdate", cred);
+        updateUserClaimStats(claim.claimantId).catch(() => {});
       } catch (e) {
         console.error("[challengeClaim] evaluation error:", e);
       }
@@ -1254,6 +1259,64 @@ function calcElo(ratingA: number, ratingB: number, aWon: boolean, K = 32): { new
     newA: Math.round(ratingA + K * (score - expected)),
     newB: Math.round(ratingB + K * ((1 - score) - (1 - expected))),
   };
+}
+
+// Recompute and persist a user's per-category rubric averages from their claims.
+// Fire-and-forget after each claim evaluation; feeds the profile + medals.
+async function updateUserClaimStats(userId: string): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "User" u SET
+         "avgClaimScore" = COALESCE(a.avg_score, 0),
+         "avgAccuracy"   = COALESCE(a.avg_accuracy, 0),
+         "avgRelevance"  = COALESCE(a.avg_relevance, 0),
+         "avgEvidence"   = COALESCE(a.avg_evidence, 0),
+         "avgLogic"      = COALESCE(a.avg_logic, 0),
+         "avgImpact"     = COALESCE(a.avg_impact, 0),
+         "claimsRated"   = COALESCE(a.n, 0)
+       FROM (
+         SELECT
+           AVG("score")                                                                     AS avg_score,
+           AVG(CASE status WHEN 'SUPPORTED' THEN 10 WHEN 'CONTESTED' THEN 5 ELSE 0 END)     AS avg_accuracy,
+           AVG("relevance" * 10)                                                            AS avg_relevance,
+           AVG("evidence")                                                                  AS avg_evidence,
+           AVG("logic")                                                                     AS avg_logic,
+           AVG("impact")                                                                    AS avg_impact,
+           COUNT(*)                                                                         AS n
+         FROM "Claim"
+         WHERE "claimantId" = $1 AND status != 'PENDING' AND "score" IS NOT NULL
+       ) a
+       WHERE u.id = $1`,
+      userId,
+    );
+  } catch (e) {
+    console.error("[updateUserClaimStats]", e);
+  }
+}
+
+// Bump a user's daily activity streak. Called on message send (fire-and-forget).
+// Same day → no change; consecutive day → +1; gap → reset to 1. Tracks longest.
+async function bumpDailyStreak(userId: string): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "User" u SET
+         "dailyStreak"   = ns.new_streak,
+         "longestStreak" = GREATEST(u."longestStreak", ns.new_streak),
+         "lastActiveDay" = CURRENT_DATE
+       FROM (
+         SELECT CASE
+           WHEN "lastActiveDay" = CURRENT_DATE - 1 THEN "dailyStreak" + 1
+           WHEN "lastActiveDay" = CURRENT_DATE      THEN "dailyStreak"
+           ELSE 1
+         END AS new_streak
+         FROM "User" WHERE id = $1
+       ) ns
+       WHERE u.id = $1 AND (u."lastActiveDay" IS DISTINCT FROM CURRENT_DATE)`,
+      userId,
+    );
+  } catch (e) {
+    console.error("[bumpDailyStreak]", e);
+  }
 }
 
 // GET /api/challenges — list open challenges (optionally excluding the requesting user's own)
@@ -2297,19 +2360,33 @@ app.get("/api/users/:id/profile", async (req, res) => {
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    const eloRows = await prisma.$queryRawUnsafe<{ elo: number }[]>(
-      `SELECT elo FROM "User" WHERE id = $1`, uid,
-    ).catch(() => [{ elo: 1200 }]);
-    const elo = eloRows[0]?.elo ?? 1200;
+    const uRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT elo, "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
+              "claimsRated", "dailyStreak", "longestStreak"
+       FROM "User" WHERE id = $1`, uid,
+    ).catch(() => [] as any[]);
+    const u0 = uRows[0] ?? {};
+    const elo = Number(u0.elo ?? 1200);
+    const claimAverages = {
+      score:     Math.round(Number(u0.avgClaimScore ?? 0) * 10) / 10,
+      accuracy:  Math.round(Number(u0.avgAccuracy   ?? 0) * 10) / 10,
+      relevance: Math.round(Number(u0.avgRelevance  ?? 0) * 10) / 10,
+      evidence:  Math.round(Number(u0.avgEvidence   ?? 0) * 10) / 10,
+      logic:     Math.round(Number(u0.avgLogic      ?? 0) * 10) / 10,
+      impact:    Math.round(Number(u0.avgImpact     ?? 0) * 10) / 10,
+      rated:     Number(u0.claimsRated ?? 0),
+    };
+    const dailyStreak = Number(u0.dailyStreak ?? 0);
+    const longestStreak = Number(u0.longestStreak ?? 0);
 
-    const [cred, debateRows, messageRows, arenaRows, arenaStats] = await Promise.all([
+    const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows] = await Promise.all([
       computeCredibility(uid, prisma).catch(() => null),
       prisma.$queryRawUnsafe<{ count: bigint }[]>(
         `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
         uid,
       ).catch(() => [{ count: 0n }]),
       prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) AS count FROM "Message" WHERE "senderId" = $1`,
+        `SELECT COUNT(*) AS count FROM "Message" WHERE "userId" = $1`,
         uid,
       ).catch(() => [{ count: 0n }]),
       prisma.$queryRawUnsafe<{ count: bigint }[]>(
@@ -2324,18 +2401,63 @@ app.get("/api/users/:id/profile", async (req, res) => {
          FROM "ArenaMatch" WHERE "userId" = $1`,
         uid,
       ).catch(() => [{ wins: 0n, losses: 0n, bonus: 0 }]),
+      prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(DISTINCT "botId") AS count FROM "ArenaMatch" WHERE "userId" = $1 AND "winner" = 'human'`,
+        uid,
+      ).catch(() => [{ count: 0n }]),
+      prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(*) AS count FROM "TeamMatch"
+         WHERE status = 'complete' AND (
+           (jsonb_exists("teamA"::jsonb, $1) AND "winningSide" = 'A') OR
+           (jsonb_exists("teamB"::jsonb, $1) AND "winningSide" = 'B')
+         )`,
+        uid,
+      ).catch(() => [{ count: 0n }]),
+      prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(*) AS count FROM "CompetitiveMatch" WHERE status = 'complete' AND "winnerId" = $1`,
+        uid,
+      ).catch(() => [{ count: 0n }]),
     ]);
     const as = arenaStats[0] as any;
+    const arenaWins = Number(as?.wins ?? 0);
+    const arenaLosses = Number(as?.losses ?? 0);
     const stats = {
       debateCount: Number((debateRows[0] as any)?.count ?? 0),
       messageCount: Number((messageRows[0] as any)?.count ?? 0),
       arenaMatchCount: Number((arenaRows[0] as any)?.count ?? 0),
-      arenaWins: Number(as?.wins ?? 0),
-      arenaLosses: Number(as?.losses ?? 0),
+      arenaWins,
+      arenaLosses,
       arenaBonus: Math.round(Number(as?.bonus ?? 0) * 10) / 10,
+      dailyStreak,
+      longestStreak,
     };
-    res.json({ ...user, elo, stats, ...(cred ? { cred } : {}) });
-  } catch {
+
+    const accountAgeDays = Math.floor((Date.now() - new Date(user.createdAt).getTime()) / 86400000);
+    const medalStats: MedalStats = {
+      elo,
+      arenaWins,
+      arenaMatches: arenaWins + arenaLosses,
+      botsDefeated: Number((botsRows[0] as any)?.count ?? 0),
+      totalBots: BOT_IDS.length,
+      longestStreak,
+      currentStreak: dailyStreak,
+      veritasScore: cred?.score ?? 0,
+      supported: cred?.supported ?? 0,
+      contested: cred?.contested ?? 0,
+      refuted: cred?.refuted ?? 0,
+      totalClaims: cred?.total ?? 0,
+      avgClaimScore: claimAverages.score,
+      debateCount: stats.debateCount,
+      messageCount: stats.messageCount,
+      teamWins: Number((teamWinRows[0] as any)?.count ?? 0),
+      competitiveWins: Number((compWinRows[0] as any)?.count ?? 0),
+      accountAgeDays,
+    };
+    const medals = computeMedals(medalStats);
+
+    res.json({ ...user, elo, stats, claimAverages, medals, ...(cred ? { cred } : {}) });
+  } catch (e) {
+    console.error("[profile GET]", e);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -3331,6 +3453,20 @@ async function start() {
     console.log("[DB] User.elo column ready");
   } catch (e) {
     console.error("[DB] User.elo setup failed:", e);
+  }
+
+  // Per-category rubric averages + daily activity streak (for profile + medals)
+  try {
+    for (const col of ["avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact"]) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "${col}" DOUBLE PRECISION NOT NULL DEFAULT 0`);
+    }
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "claimsRated" INTEGER NOT NULL DEFAULT 0`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dailyStreak" INTEGER NOT NULL DEFAULT 0`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "longestStreak" INTEGER NOT NULL DEFAULT 0`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveDay" DATE`);
+    console.log("[DB] User rubric-average + streak columns ready");
+  } catch (e) {
+    console.error("[DB] User rubric-average/streak setup failed:", e);
   }
 
   try {
