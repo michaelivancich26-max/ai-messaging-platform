@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 export type MedalTier = "bronze" | "silver" | "gold" | "platinum" | "diamond";
 
@@ -19,6 +19,8 @@ export interface Medal {
   earned: boolean;
   progress: number;
 }
+
+const TIER_RANK: Record<MedalTier, number> = { bronze: 1, silver: 2, gold: 3, platinum: 4, diamond: 5 };
 
 const TIER_STYLE: Record<MedalTier, { text: string; bg: string; ring: string; bar: string; label: string }> = {
   bronze:   { text: "text-amber-300",  bg: "bg-amber-950/50",  ring: "ring-amber-700/50",  bar: "bg-amber-500",  label: "Bronze"   },
@@ -161,6 +163,167 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Featured medal showcase (with owner editing) ──────────────────────────────
+
+const MAX_FEATURED = 6;
+
+function MedalCard({ medal }: { medal: Medal }) {
+  const s = TIER_STYLE[medal.tier];
+  return (
+    <div
+      title={`${medal.name} — ${medal.description}`}
+      className={`flex min-w-[80px] flex-1 flex-col items-center gap-1 rounded-xl px-2.5 py-3 ring-1 ${s.bg} ${s.ring}`}
+    >
+      <span className="text-2xl leading-none">{medal.icon}</span>
+      <span className={`text-center text-[11px] font-semibold leading-tight ${s.text}`}>{medal.name}</span>
+      <span className="text-[9px] uppercase tracking-wider text-gray-500">{s.label}</span>
+    </div>
+  );
+}
+
+function MedalPicker({
+  earned, initial, onClose, onSave,
+}: {
+  earned: Medal[]; initial: string[]; onClose: () => void; onSave: (ids: string[]) => void | Promise<void>;
+}) {
+  const [sel, setSel] = useState<string[]>(initial.filter(id => earned.some(m => m.id === id)).slice(0, MAX_FEATURED));
+  const [saving, setSaving] = useState(false);
+
+  function toggle(id: string) {
+    setSel(s => s.includes(id) ? s.filter(x => x !== id) : (s.length < MAX_FEATURED ? [...s, id] : s));
+  }
+  async function save() {
+    setSaving(true);
+    try { await onSave(sel); onClose(); } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-gray-900 ring-1 ring-gray-800" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-gray-800 px-5 py-4">
+          <h2 className="flex-1 text-sm font-bold text-white">Choose featured medals</h2>
+          <span className="rounded-full bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-400 tabular-nums">{sel.length}/{MAX_FEATURED}</span>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300">✕</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {earned.length === 0 ? (
+            <p className="py-10 text-center text-xs text-gray-500">You haven't earned any medals yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {earned.map(m => {
+                const s = TIER_STYLE[m.tier];
+                const on = sel.includes(m.id);
+                const atCap = !on && sel.length >= MAX_FEATURED;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => toggle(m.id)}
+                    disabled={atCap}
+                    className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${
+                      on ? `${s.bg} ${s.ring} ring-1 border-transparent` : "border-gray-800 hover:border-gray-700"
+                    }`}
+                  >
+                    <span className="text-lg leading-none">{m.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate text-[11px] font-semibold ${on ? s.text : "text-gray-300"}`}>{m.name}</span>
+                      <span className="block text-[9px] uppercase tracking-wider text-gray-600">{s.label}</span>
+                    </span>
+                    {on && (
+                      <svg viewBox="0 0 16 16" fill="currentColor" className={`h-3.5 w-3.5 shrink-0 ${s.text}`}>
+                        <path fillRule="evenodd" d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.75 10.19l5.97-5.97a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 border-t border-gray-800 px-5 py-4">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">
+            {saving ? "Saving…" : "Save showcase"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function MedalShowcase({
+  medals, featuredIds, editable = false, onSave, emptyHint,
+}: {
+  medals: Medal[];
+  featuredIds: string[];
+  editable?: boolean;
+  onSave?: (ids: string[]) => void | Promise<void>;
+  emptyHint?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const earned = useMemo(() => medals.filter(m => m.earned), [medals]);
+
+  const displayed = useMemo(() => {
+    const byId = new Map(medals.map(m => [m.id, m]));
+    const chosen = featuredIds.map(id => byId.get(id)).filter((m): m is Medal => !!m && m.earned);
+    if (chosen.length) return chosen;
+    // Auto: highest earned tier per group, best tiers first
+    const byGroup = new Map<string, Medal>();
+    for (const m of earned) {
+      const cur = byGroup.get(m.groupId);
+      if (!cur || TIER_RANK[m.tier] > TIER_RANK[cur.tier]) byGroup.set(m.groupId, m);
+    }
+    return [...byGroup.values()].sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier]).slice(0, MAX_FEATURED);
+  }, [featuredIds, medals, earned]);
+
+  if (earned.length === 0 && !editable) {
+    return emptyHint ? (
+      <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5">
+        <p className="text-center text-xs text-gray-500">{emptyHint}</p>
+      </div>
+    ) : null;
+  }
+
+  return (
+    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          {featuredIds.length ? "Featured Medals" : "Top Medals"}
+        </p>
+        {editable && (
+          <button
+            onClick={() => setEditing(true)}
+            className="flex items-center gap-1 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z" />
+            </svg>
+            Edit
+          </button>
+        )}
+      </div>
+
+      {displayed.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {displayed.map(m => <MedalCard key={m.id} medal={m} />)}
+        </div>
+      ) : (
+        <p className="rounded-xl bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
+          {editable ? "No medals earned yet — earn some, then feature your favorites here." : (emptyHint ?? "No medals yet.")}
+        </p>
+      )}
+
+      {editing && (
+        <MedalPicker
+          earned={earned}
+          initial={featuredIds}
+          onClose={() => setEditing(false)}
+          onSave={(ids) => onSave?.(ids)}
+        />
+      )}
     </div>
   );
 }

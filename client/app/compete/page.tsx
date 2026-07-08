@@ -471,14 +471,18 @@ export default function CompetePage() {
                   const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
                   const isMe = entry.id === userId;
                   return (
-                    <div key={entry.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-800 last:border-0 ${isMe ? "bg-violet-950/30" : ""}`}>
+                    <button
+                      key={entry.id}
+                      onClick={() => router.push(`/u/${encodeURIComponent(entry.username)}`)}
+                      className={`flex w-full items-center gap-3 px-4 py-3 border-b border-gray-800 last:border-0 text-left transition-colors hover:bg-gray-800/50 ${isMe ? "bg-violet-950/30" : ""}`}
+                    >
                       <span className="w-6 text-center text-xs text-gray-500">{medal ?? `${i + 1}`}</span>
                       <span className={`flex-1 text-sm font-medium ${isMe ? "text-violet-300" : "text-gray-200"}`}>
                         {entry.username}{isMe && <span className="ml-1 text-xs text-gray-500">(you)</span>}
                       </span>
                       <span className="text-xs text-gray-500">{Number(entry.wins)}W {Number(entry.losses)}L</span>
                       <EloBadge elo={entry.elo} />
-                    </div>
+                    </button>
                   );
                 })
               )}

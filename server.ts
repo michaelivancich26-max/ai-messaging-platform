@@ -2351,120 +2351,156 @@ app.post("/api/arena-judge", async (req, res) => {
   }
 });
 
-// GET /api/users/:id/profile
+// Build the full profile payload (stats, medals, rubric averages) for a user.
+// `includePrivate` controls whether account fields (email) are returned.
+async function buildProfilePayload(
+  user: { id: string; username: string; email: string; emailVerified: Date | null; bio: string | null; avatarUrl: string | null; createdAt: Date },
+  includePrivate: boolean,
+) {
+  const uid = user.id;
+  const uRows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT elo, "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
+            "claimsRated", "dailyStreak", "longestStreak", "featuredMedals"
+     FROM "User" WHERE id = $1`, uid,
+  ).catch(() => [] as any[]);
+  const u0 = uRows[0] ?? {};
+  const elo = Number(u0.elo ?? 1200);
+  const claimAverages = {
+    score:     Math.round(Number(u0.avgClaimScore ?? 0) * 10) / 10,
+    accuracy:  Math.round(Number(u0.avgAccuracy   ?? 0) * 10) / 10,
+    relevance: Math.round(Number(u0.avgRelevance  ?? 0) * 10) / 10,
+    evidence:  Math.round(Number(u0.avgEvidence   ?? 0) * 10) / 10,
+    logic:     Math.round(Number(u0.avgLogic      ?? 0) * 10) / 10,
+    impact:    Math.round(Number(u0.avgImpact     ?? 0) * 10) / 10,
+    rated:     Number(u0.claimsRated ?? 0),
+  };
+  const dailyStreak = Number(u0.dailyStreak ?? 0);
+  const longestStreak = Number(u0.longestStreak ?? 0);
+
+  const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows] = await Promise.all([
+    computeCredibility(uid, prisma).catch(() => null),
+    prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
+      uid,
+    ).catch(() => [{ count: 0n }]),
+    prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) AS count FROM "Message" WHERE "userId" = $1`,
+      uid,
+    ).catch(() => [{ count: 0n }]),
+    prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isBotRoom" = true`,
+      uid,
+    ).catch(() => [{ count: 0n }]),
+    prisma.$queryRawUnsafe<{ wins: bigint; losses: bigint; bonus: number }[]>(
+      `SELECT
+        COALESCE(SUM(CASE WHEN "winner"='human' THEN 1 ELSE 0 END),0) AS wins,
+        COALESCE(SUM(CASE WHEN "winner"='bot'   THEN 1 ELSE 0 END),0) AS losses,
+        COALESCE(SUM("scoreImpact"),0) AS bonus
+       FROM "ArenaMatch" WHERE "userId" = $1`,
+      uid,
+    ).catch(() => [{ wins: 0n, losses: 0n, bonus: 0 }]),
+    prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(DISTINCT "botId") AS count FROM "ArenaMatch" WHERE "userId" = $1 AND "winner" = 'human'`,
+      uid,
+    ).catch(() => [{ count: 0n }]),
+    prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) AS count FROM "TeamMatch"
+       WHERE status = 'complete' AND (
+         (jsonb_exists("teamA"::jsonb, $1) AND "winningSide" = 'A') OR
+         (jsonb_exists("teamB"::jsonb, $1) AND "winningSide" = 'B')
+       )`,
+      uid,
+    ).catch(() => [{ count: 0n }]),
+    prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) AS count FROM "CompetitiveMatch" WHERE status = 'complete' AND "winnerId" = $1`,
+      uid,
+    ).catch(() => [{ count: 0n }]),
+  ]);
+  const as = arenaStats[0] as any;
+  const arenaWins = Number(as?.wins ?? 0);
+  const arenaLosses = Number(as?.losses ?? 0);
+  const stats = {
+    debateCount: Number((debateRows[0] as any)?.count ?? 0),
+    messageCount: Number((messageRows[0] as any)?.count ?? 0),
+    arenaMatchCount: Number((arenaRows[0] as any)?.count ?? 0),
+    arenaWins,
+    arenaLosses,
+    arenaBonus: Math.round(Number(as?.bonus ?? 0) * 10) / 10,
+    dailyStreak,
+    longestStreak,
+  };
+
+  const accountAgeDays = Math.floor((Date.now() - new Date(user.createdAt).getTime()) / 86400000);
+  const medalStats: MedalStats = {
+    elo,
+    arenaWins,
+    arenaMatches: arenaWins + arenaLosses,
+    botsDefeated: Number((botsRows[0] as any)?.count ?? 0),
+    totalBots: BOT_IDS.length,
+    longestStreak,
+    currentStreak: dailyStreak,
+    veritasScore: cred?.score ?? 0,
+    supported: cred?.supported ?? 0,
+    contested: cred?.contested ?? 0,
+    refuted: cred?.refuted ?? 0,
+    totalClaims: cred?.total ?? 0,
+    avgClaimScore: claimAverages.score,
+    debateCount: stats.debateCount,
+    messageCount: stats.messageCount,
+    teamWins: Number((teamWinRows[0] as any)?.count ?? 0),
+    competitiveWins: Number((compWinRows[0] as any)?.count ?? 0),
+    accountAgeDays,
+  };
+  const medals = computeMedals(medalStats);
+
+  // Featured medals: only surface ones the user has actually earned
+  const earnedIds = new Set(medals.filter(m => m.earned).map(m => m.id));
+  let featuredMedals: string[] = [];
+  try {
+    const raw = JSON.parse(u0.featuredMedals ?? "[]");
+    if (Array.isArray(raw)) featuredMedals = raw.filter((id: any) => typeof id === "string" && earnedIds.has(id)).slice(0, 6);
+  } catch { /* no featured selection */ }
+
+  const publicUser = includePrivate
+    ? user
+    : { id: user.id, username: user.username, bio: user.bio, avatarUrl: user.avatarUrl, createdAt: user.createdAt };
+
+  return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, ...(cred ? { cred } : {}) };
+}
+
+// GET /api/users/:id/profile — full profile (includes account fields)
 app.get("/api/users/:id/profile", async (req, res) => {
   try {
-    const uid = req.params.id;
     const user = await prisma.user.findUnique({
-      where: { id: uid },
+      where: { id: req.params.id },
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    const uRows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT elo, "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
-              "claimsRated", "dailyStreak", "longestStreak"
-       FROM "User" WHERE id = $1`, uid,
-    ).catch(() => [] as any[]);
-    const u0 = uRows[0] ?? {};
-    const elo = Number(u0.elo ?? 1200);
-    const claimAverages = {
-      score:     Math.round(Number(u0.avgClaimScore ?? 0) * 10) / 10,
-      accuracy:  Math.round(Number(u0.avgAccuracy   ?? 0) * 10) / 10,
-      relevance: Math.round(Number(u0.avgRelevance  ?? 0) * 10) / 10,
-      evidence:  Math.round(Number(u0.avgEvidence   ?? 0) * 10) / 10,
-      logic:     Math.round(Number(u0.avgLogic      ?? 0) * 10) / 10,
-      impact:    Math.round(Number(u0.avgImpact     ?? 0) * 10) / 10,
-      rated:     Number(u0.claimsRated ?? 0),
-    };
-    const dailyStreak = Number(u0.dailyStreak ?? 0);
-    const longestStreak = Number(u0.longestStreak ?? 0);
-
-    const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows] = await Promise.all([
-      computeCredibility(uid, prisma).catch(() => null),
-      prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
-        uid,
-      ).catch(() => [{ count: 0n }]),
-      prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) AS count FROM "Message" WHERE "userId" = $1`,
-        uid,
-      ).catch(() => [{ count: 0n }]),
-      prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isBotRoom" = true`,
-        uid,
-      ).catch(() => [{ count: 0n }]),
-      prisma.$queryRawUnsafe<{ wins: bigint; losses: bigint; bonus: number }[]>(
-        `SELECT
-          COALESCE(SUM(CASE WHEN "winner"='human' THEN 1 ELSE 0 END),0) AS wins,
-          COALESCE(SUM(CASE WHEN "winner"='bot'   THEN 1 ELSE 0 END),0) AS losses,
-          COALESCE(SUM("scoreImpact"),0) AS bonus
-         FROM "ArenaMatch" WHERE "userId" = $1`,
-        uid,
-      ).catch(() => [{ wins: 0n, losses: 0n, bonus: 0 }]),
-      prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(DISTINCT "botId") AS count FROM "ArenaMatch" WHERE "userId" = $1 AND "winner" = 'human'`,
-        uid,
-      ).catch(() => [{ count: 0n }]),
-      prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) AS count FROM "TeamMatch"
-         WHERE status = 'complete' AND (
-           (jsonb_exists("teamA"::jsonb, $1) AND "winningSide" = 'A') OR
-           (jsonb_exists("teamB"::jsonb, $1) AND "winningSide" = 'B')
-         )`,
-        uid,
-      ).catch(() => [{ count: 0n }]),
-      prisma.$queryRawUnsafe<{ count: bigint }[]>(
-        `SELECT COUNT(*) AS count FROM "CompetitiveMatch" WHERE status = 'complete' AND "winnerId" = $1`,
-        uid,
-      ).catch(() => [{ count: 0n }]),
-    ]);
-    const as = arenaStats[0] as any;
-    const arenaWins = Number(as?.wins ?? 0);
-    const arenaLosses = Number(as?.losses ?? 0);
-    const stats = {
-      debateCount: Number((debateRows[0] as any)?.count ?? 0),
-      messageCount: Number((messageRows[0] as any)?.count ?? 0),
-      arenaMatchCount: Number((arenaRows[0] as any)?.count ?? 0),
-      arenaWins,
-      arenaLosses,
-      arenaBonus: Math.round(Number(as?.bonus ?? 0) * 10) / 10,
-      dailyStreak,
-      longestStreak,
-    };
-
-    const accountAgeDays = Math.floor((Date.now() - new Date(user.createdAt).getTime()) / 86400000);
-    const medalStats: MedalStats = {
-      elo,
-      arenaWins,
-      arenaMatches: arenaWins + arenaLosses,
-      botsDefeated: Number((botsRows[0] as any)?.count ?? 0),
-      totalBots: BOT_IDS.length,
-      longestStreak,
-      currentStreak: dailyStreak,
-      veritasScore: cred?.score ?? 0,
-      supported: cred?.supported ?? 0,
-      contested: cred?.contested ?? 0,
-      refuted: cred?.refuted ?? 0,
-      totalClaims: cred?.total ?? 0,
-      avgClaimScore: claimAverages.score,
-      debateCount: stats.debateCount,
-      messageCount: stats.messageCount,
-      teamWins: Number((teamWinRows[0] as any)?.count ?? 0),
-      competitiveWins: Number((compWinRows[0] as any)?.count ?? 0),
-      accountAgeDays,
-    };
-    const medals = computeMedals(medalStats);
-
-    res.json({ ...user, elo, stats, claimAverages, medals, ...(cred ? { cred } : {}) });
+    res.json(await buildProfilePayload(user, true));
   } catch (e) {
     console.error("[profile GET]", e);
     res.status(500).json({ error: "Server error" });
   }
 });
 
+// GET /api/users/by-name/:username/profile — public profile (no account fields)
+app.get("/api/users/by-name/:username/profile", async (req, res) => {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { username: { equals: req.params.username, mode: "insensitive" } },
+      select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
+    });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(await buildProfilePayload(user, false));
+  } catch (e) {
+    console.error("[public profile GET]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // PATCH /api/users/:id/profile
 app.patch("/api/users/:id/profile", async (req, res) => {
-  const { bio, avatarUrl } = req.body as { bio?: string; avatarUrl?: string };
+  const { bio, avatarUrl, featuredMedals } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[] };
   try {
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -2474,6 +2510,15 @@ app.patch("/api/users/:id/profile", async (req, res) => {
       },
       select: { id: true, username: true, bio: true, avatarUrl: true },
     });
+    // Featured medals are stored on a raw column; cap at 6 and keep only strings
+    if (featuredMedals !== undefined) {
+      const clean = Array.isArray(featuredMedals)
+        ? featuredMedals.filter(id => typeof id === "string").slice(0, 6)
+        : [];
+      await prisma.$executeRawUnsafe(
+        `UPDATE "User" SET "featuredMedals" = $1 WHERE id = $2`, JSON.stringify(clean), req.params.id,
+      );
+    }
     res.json(user);
   } catch {
     res.status(500).json({ error: "Server error" });
@@ -3464,6 +3509,7 @@ async function start() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dailyStreak" INTEGER NOT NULL DEFAULT 0`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "longestStreak" INTEGER NOT NULL DEFAULT 0`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveDay" DATE`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "featuredMedals" TEXT`);
     console.log("[DB] User rubric-average + streak columns ready");
   } catch (e) {
     console.error("[DB] User rubric-average/streak setup failed:", e);

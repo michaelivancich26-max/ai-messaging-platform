@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
-import { MedalsPanel, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
+import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
@@ -105,6 +105,7 @@ export default function DashboardPage() {
   const [cred, setCred] = useState<CredScore | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [medals, setMedals] = useState<Medal[]>([]);
+  const [featuredMedals, setFeaturedMedals] = useState<string[]>([]);
   const [claimAverages, setClaimAverages] = useState<ClaimAverages | null>(null);
   const [email, setEmail] = useState("");
   const [emailVerified, setEmailVerified] = useState<string | null>(null);
@@ -142,6 +143,7 @@ export default function DashboardPage() {
         if (data.createdAt) setCreatedAt(data.createdAt);
         if (data.stats) setStats(data.stats);
         if (Array.isArray(data.medals)) setMedals(data.medals);
+        if (Array.isArray(data.featuredMedals)) setFeaturedMedals(data.featuredMedals);
         if (data.claimAverages) setClaimAverages(data.claimAverages);
       })
       .catch(() => {});
@@ -168,6 +170,16 @@ export default function DashboardPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally { setSaving(false); }
+  }
+
+  async function saveFeatured(ids: string[]) {
+    setFeaturedMedals(ids);
+    if (!userId) return;
+    await fetch(`${SERVER}/api/users/${userId}/profile`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ featuredMedals: ids }),
+    }).catch(() => {});
   }
 
   async function saveEmail() {
@@ -282,6 +294,11 @@ export default function DashboardPage() {
 
             {/* ── Veritas Score ── */}
             {cred && <VeritasScorePanel cred={cred} arenaBonus={stats?.arenaBonus ?? 0} />}
+
+            {/* ── Featured medal showcase (editable) ── */}
+            {medals.length > 0 && (
+              <MedalShowcase medals={medals} featuredIds={featuredMedals} editable onSave={saveFeatured} />
+            )}
 
             {/* ── Medals ── */}
             {medals.length > 0 && <MedalsPanel medals={medals} />}
