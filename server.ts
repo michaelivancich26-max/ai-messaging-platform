@@ -1265,6 +1265,7 @@ app.get("/api/challenges", async (req, res) => {
           `SELECT c.*, u.username, u.elo FROM "Challenge" c
            JOIN "User" u ON c."userId" = u.id
            WHERE c.status = 'open' AND c."userId" != $1
+             AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)
            ORDER BY c."createdAt" DESC LIMIT 50`,
           excludeUserId,
         )
@@ -1272,6 +1273,7 @@ app.get("/api/challenges", async (req, res) => {
           `SELECT c.*, u.username, u.elo FROM "Challenge" c
            JOIN "User" u ON c."userId" = u.id
            WHERE c.status = 'open'
+             AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)
            ORDER BY c."createdAt" DESC LIMIT 50`,
         );
     res.json(rows);
@@ -1290,6 +1292,7 @@ app.get("/api/challenges/mine", async (req, res) => {
       `SELECT c.*, u.username, u.elo FROM "Challenge" c
        JOIN "User" u ON c."userId" = u.id
        WHERE c."userId" = $1
+         AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)
        ORDER BY c."createdAt" DESC LIMIT 50`,
       userId,
     );
@@ -1524,6 +1527,486 @@ app.get("/api/competitive/match/:roomName", async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: "Not found" });
     res.json(rows[0]);
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── Team competitive matches (pre-formed teams, 1v1–3v3) ─────────────────────
+
+const OPP_STANCE = (s: string) => (s === "affirmative" ? "negative" : "affirmative");
+
+// Count accepted + invited members on a side
+async function teamCounts(challengeId: string): Promise<{ A: { accepted: number; total: number }; B: { accepted: number; total: number } }> {
+  const rows = await prisma.$queryRawUnsafe<{ side: string; status: string; n: number }[]>(
+    `SELECT side, status, COUNT(*)::int AS n FROM "ChallengeMember" WHERE "challengeId" = $1 GROUP BY side, status`,
+    challengeId,
+  );
+  const out = { A: { accepted: 0, total: 0 }, B: { accepted: 0, total: 0 } };
+  for (const r of rows) {
+    const side = r.side === "A" ? out.A : out.B;
+    side.total += Number(r.n);
+    if (r.status === "accepted") side.accepted += Number(r.n);
+  }
+  return out;
+}
+
+// When both sides have `teamSize` accepted members, create the room + TeamMatch and notify.
+async function startTeamMatchIfReady(challengeId: string): Promise<string | null> {
+  const chRows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM "Challenge" WHERE id = $1 LIMIT 1`, challengeId,
+  );
+  if (chRows.length === 0) return null;
+  const ch = chRows[0];
+  if (ch.status === "matched") return null;
+  const size = Number(ch.teamSize ?? 1);
+
+  const members = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM "ChallengeMember" WHERE "challengeId" = $1 AND status = 'accepted' ORDER BY "createdAt" ASC`,
+    challengeId,
+  );
+  const teamA = members.filter((m) => m.side === "A").map((m) => m.userId);
+  const teamB = members.filter((m) => m.side === "B").map((m) => m.userId);
+  if (teamA.length < size || teamB.length < size) return null;
+
+  // Build room
+  const shortId = Date.now().toString(36).slice(-5);
+  const roomName = `comp-t${challengeId.slice(-5)}-${shortId}`;
+  const wc = (() => { try { return JSON.parse(ch.winCondition); } catch { return { type: "exchanges", limit: 10 }; } })();
+  const sideAStance = ch.stance as string;
+  const matchConfig = JSON.stringify({
+    isCompetitive: true,
+    isTeam: true,
+    challengeId,
+    topic: ch.claim,
+    teamSize: size,
+    sideAStance,
+    sideBStance: OPP_STANCE(sideAStance),
+    teamA,
+    teamB,
+    ...wc,
+  });
+
+  const captainA = members.find((m) => m.side === "A" && m.role === "captain")?.userId ?? teamA[0];
+  const room = await prisma.room.create({ data: { name: roomName, isPrivate: false, creatorId: captainA } } as any);
+  await prisma.$executeRawUnsafe(`UPDATE "Room" SET "matchConfig" = $1 WHERE "id" = $2`, matchConfig, room.id);
+  await prisma.roomMember.createMany({
+    data: [...teamA, ...teamB].map((uid) => ({ userId: uid, roomId: room.id })),
+    skipDuplicates: true,
+  } as any);
+
+  // Snapshot ELO for all members
+  const allIds = [...teamA, ...teamB];
+  const eloRows = await prisma.$queryRawUnsafe<{ id: string; elo: number }[]>(
+    `SELECT id, elo FROM "User" WHERE id = ANY($1::text[])`, allIds,
+  );
+  const eloBefore: Record<string, number> = {};
+  for (const uid of allIds) eloBefore[uid] = eloRows.find((r) => r.id === uid)?.elo ?? 1200;
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "TeamMatch"
+       ("id","challengeId","roomName","topic","teamSize","sideAStance","teamA","teamB","eloBefore")
+     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8)`,
+    challengeId, roomName, ch.claim, size, sideAStance,
+    JSON.stringify(teamA), JSON.stringify(teamB), JSON.stringify(eloBefore),
+  );
+  await prisma.$executeRawUnsafe(`UPDATE "Challenge" SET status = 'matched' WHERE id = $1`, challengeId);
+
+  // Notify all members their match is ready
+  for (const uid of allIds) {
+    const sids = userSockets.get(uid);
+    if (!sids) continue;
+    for (const sid of sids) io.to(sid).emit("teamMatchStarted", { roomName, topic: ch.claim });
+  }
+  return roomName;
+}
+
+// POST /api/team/challenges — create a pre-formed team challenge (captain of side A)
+app.post("/api/team/challenges", async (req, res) => {
+  try {
+    const { userId, topic, stance, teamSize, winCondition } = req.body as {
+      userId: string; topic: string; stance: "affirmative" | "negative"; teamSize: number; winCondition: object;
+    };
+    if (!userId || !topic?.trim() || !stance || !winCondition) {
+      return res.status(400).json({ error: "userId, topic, stance, and winCondition required" });
+    }
+    const size = Math.min(3, Math.max(1, Number(teamSize) || 1));
+    // Solo team (size 1) is immediately open; larger teams start in 'forming' while the captain invites
+    const status = size === 1 ? "open" : "forming";
+    const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `INSERT INTO "Challenge" ("id","userId","claim","stance","winCondition","teamSize","status")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6) RETURNING "id"`,
+      userId, topic.trim(), stance, JSON.stringify(winCondition), size, status,
+    );
+    const challengeId = rows[0].id;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ChallengeMember" ("id","challengeId","userId","side","role","status")
+       VALUES (gen_random_uuid()::text,$1,$2,'A','captain','accepted')`,
+      challengeId, userId,
+    );
+    res.json({ id: challengeId, status });
+  } catch (e) {
+    console.error("[team create]", e);
+    res.status(500).json({ error: "Failed to create team challenge" });
+  }
+});
+
+// POST /api/team/challenges/:id/invite — captain invites a user to their side
+app.post("/api/team/challenges/:id/invite", async (req, res) => {
+  try {
+    const { userId, targetUsername } = req.body as { userId: string; targetUsername: string };
+    const { id: challengeId } = req.params;
+    if (!userId || !targetUsername?.trim()) return res.status(400).json({ error: "userId and targetUsername required" });
+
+    const chRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "Challenge" WHERE id = $1 LIMIT 1`, challengeId);
+    if (chRows.length === 0) return res.status(404).json({ error: "Challenge not found" });
+    const ch = chRows[0];
+    const size = Number(ch.teamSize ?? 1);
+
+    const meRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "ChallengeMember" WHERE "challengeId" = $1 AND "userId" = $2 AND role = 'captain' LIMIT 1`,
+      challengeId, userId,
+    );
+    if (meRows.length === 0) return res.status(403).json({ error: "Only the team captain can invite" });
+    const side = meRows[0].side as string;
+
+    const counts = await teamCounts(challengeId);
+    const sideCount = side === "A" ? counts.A.total : counts.B.total;
+    if (sideCount >= size) return res.status(400).json({ error: "Your team is already full" });
+
+    const target = await prisma.user.findFirst({
+      where: { username: { equals: targetUsername.trim(), mode: "insensitive" } },
+      select: { id: true, username: true },
+    });
+    if (!target) return res.status(404).json({ error: "User not found" });
+    if (target.id === userId) return res.status(400).json({ error: "You're already on the team" });
+
+    const dupe = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "ChallengeMember" WHERE "challengeId" = $1 AND "userId" = $2 LIMIT 1`, challengeId, target.id,
+    );
+    if (dupe.length > 0) return res.status(400).json({ error: "That user is already invited or on a team" });
+
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ChallengeMember" ("id","challengeId","userId","side","role","status")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,'member','invited')`,
+      challengeId, target.id, side,
+    );
+
+    const captain = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+    try {
+      const notif = await (prisma as any).notification.create({
+        data: {
+          userId: target.id, type: "team_invite", fromUserId: userId,
+          fromUsername: captain?.username ?? "A captain",
+          content: ch.claim, roomName: challengeId,
+        },
+      });
+      deliverNotification(target.id, notif);
+    } catch { /* notification best-effort */ }
+
+    res.json({ ok: true, invited: target.username });
+  } catch (e) {
+    console.error("[team invite]", e);
+    res.status(500).json({ error: "Failed to send invite" });
+  }
+});
+
+// POST /api/team/challenges/:id/respond — invitee accepts or declines
+app.post("/api/team/challenges/:id/respond", async (req, res) => {
+  try {
+    const { userId, accepted } = req.body as { userId: string; accepted: boolean };
+    const { id: challengeId } = req.params;
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const memRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "ChallengeMember" WHERE "challengeId" = $1 AND "userId" = $2 AND status = 'invited' LIMIT 1`,
+      challengeId, userId,
+    );
+    if (memRows.length === 0) return res.status(404).json({ error: "No pending invite" });
+
+    if (!accepted) {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM "ChallengeMember" WHERE "challengeId" = $1 AND "userId" = $2 AND status = 'invited'`,
+        challengeId, userId,
+      );
+      return res.json({ ok: true, declined: true });
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "ChallengeMember" SET status = 'accepted' WHERE "challengeId" = $1 AND "userId" = $2`,
+      challengeId, userId,
+    );
+
+    // Advance challenge status as sides fill
+    const chRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "Challenge" WHERE id = $1 LIMIT 1`, challengeId);
+    const ch = chRows[0];
+    const size = Number(ch?.teamSize ?? 1);
+    const counts = await teamCounts(challengeId);
+    if (ch?.status === "forming" && counts.A.accepted >= size) {
+      await prisma.$executeRawUnsafe(`UPDATE "Challenge" SET status = 'open' WHERE id = $1`, challengeId);
+    }
+    const roomName = await startTeamMatchIfReady(challengeId);
+    res.json({ ok: true, roomName });
+  } catch (e) {
+    console.error("[team respond]", e);
+    res.status(500).json({ error: "Failed to respond" });
+  }
+});
+
+// POST /api/team/challenges/:id/accept — an opposing captain accepts an open team challenge
+app.post("/api/team/challenges/:id/accept", async (req, res) => {
+  try {
+    const { userId } = req.body as { userId: string };
+    const { id: challengeId } = req.params;
+    if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const chRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "Challenge" WHERE id = $1 AND status = 'open' LIMIT 1`, challengeId,
+    );
+    if (chRows.length === 0) return res.status(404).json({ error: "Challenge not available" });
+    const ch = chRows[0];
+    const size = Number(ch.teamSize ?? 1);
+
+    const already = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "ChallengeMember" WHERE "challengeId" = $1 AND "userId" = $2 LIMIT 1`, challengeId, userId,
+    );
+    if (already.length > 0) return res.status(400).json({ error: "You're already in this match" });
+
+    await prisma.$executeRawUnsafe(`UPDATE "Challenge" SET status = 'filling' WHERE id = $1`, challengeId);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ChallengeMember" ("id","challengeId","userId","side","role","status")
+       VALUES (gen_random_uuid()::text,$1,$2,'B','captain','accepted')`,
+      challengeId, userId,
+    );
+
+    const roomName = await startTeamMatchIfReady(challengeId); // instant for 1v1
+    res.json({ ok: true, status: "filling", roomName });
+  } catch (e) {
+    console.error("[team accept]", e);
+    res.status(500).json({ error: "Failed to accept" });
+  }
+});
+
+// DELETE /api/team/challenges/:id — captain A cancels a challenge that hasn't matched
+app.delete("/api/team/challenges/:id", async (req, res) => {
+  try {
+    const { userId } = req.body as { userId: string };
+    const { id: challengeId } = req.params;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Challenge" SET status = 'cancelled'
+       WHERE id = $1 AND "userId" = $2 AND status IN ('forming','open','filling')`,
+      challengeId, userId,
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to cancel" });
+  }
+});
+
+// GET /api/team/challenges — open team challenges looking for an opponent (exclude mine)
+app.get("/api/team/challenges", async (req, res) => {
+  try {
+    const excludeUserId = (req.query.excludeUserId as string) ?? null;
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT c.id, c.claim, c.stance, c."winCondition", c."teamSize", c."createdAt",
+              u.id AS "captainId", u.username AS "captainName", u.elo AS "captainElo"
+       FROM "Challenge" c JOIN "User" u ON c."userId" = u.id
+       WHERE c.status = 'open'
+         AND EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)
+         ${excludeUserId ? `AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m2 WHERE m2."challengeId" = c.id AND m2."userId" = $1)` : ``}
+       ORDER BY c."createdAt" DESC LIMIT 50`,
+      ...(excludeUserId ? [excludeUserId] : []),
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error("[team challenges GET]", e);
+    res.status(500).json({ error: "Failed to fetch team challenges" });
+  }
+});
+
+// GET /api/team/invites?userId= — pending team invites for a user
+app.get("/api/team/invites", async (req, res) => {
+  try {
+    const { userId } = req.query as { userId: string };
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT m.id AS "memberId", m.side, m."challengeId", c.claim, c.stance, c."teamSize",
+              cap.username AS "captainName", cap.elo AS "captainElo"
+       FROM "ChallengeMember" m
+       JOIN "Challenge" c ON m."challengeId" = c.id
+       JOIN "User" cap ON c."userId" = cap.id
+       WHERE m."userId" = $1 AND m.status = 'invited' AND c.status IN ('forming','open','filling')
+       ORDER BY m."createdAt" DESC`,
+      userId,
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error("[team invites GET]", e);
+    res.status(500).json({ error: "Failed to fetch invites" });
+  }
+});
+
+// GET /api/team/mine?userId= — challenges the user is part of (any side/role)
+app.get("/api/team/mine", async (req, res) => {
+  try {
+    const { userId } = req.query as { userId: string };
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT c.id, c.claim, c.stance, c."winCondition", c."teamSize", c.status, c."createdAt",
+              m.side AS "mySide", m.role AS "myRole",
+              t."roomName"
+       FROM "ChallengeMember" m
+       JOIN "Challenge" c ON m."challengeId" = c.id
+       LEFT JOIN "TeamMatch" t ON t."challengeId" = c.id
+       WHERE m."userId" = $1 AND m.status = 'accepted' AND c.status != 'cancelled'
+       ORDER BY c."createdAt" DESC LIMIT 50`,
+      userId,
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error("[team mine GET]", e);
+    res.status(500).json({ error: "Failed to fetch your team matches" });
+  }
+});
+
+// GET /api/team/challenges/:id — full roster for the lobby view
+app.get("/api/team/challenges/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const chRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT c.*, u.username AS "captainName" FROM "Challenge" c JOIN "User" u ON c."userId" = u.id WHERE c.id = $1 LIMIT 1`, id,
+    );
+    if (chRows.length === 0) return res.status(404).json({ error: "Not found" });
+    const members = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT m.side, m.role, m.status, u.id AS "userId", u.username, u.elo
+       FROM "ChallengeMember" m JOIN "User" u ON m."userId" = u.id
+       WHERE m."challengeId" = $1 ORDER BY m."createdAt" ASC`, id,
+    );
+    const ch = chRows[0];
+    let wc: any = null;
+    try { wc = JSON.parse(ch.winCondition); } catch { /* ignore */ }
+    res.json({
+      id: ch.id, topic: ch.claim, stance: ch.stance, teamSize: Number(ch.teamSize ?? 1),
+      status: ch.status, winCondition: wc, captainName: ch.captainName,
+      sideA: members.filter((m) => m.side === "A"),
+      sideB: members.filter((m) => m.side === "B"),
+    });
+  } catch (e) {
+    console.error("[team roster GET]", e);
+    res.status(500).json({ error: "Failed to fetch roster" });
+  }
+});
+
+// POST /api/team/complete — team-aware AI judge + ELO (idempotent)
+app.post("/api/team/complete", async (req, res) => {
+  try {
+    const { roomName, forfeitUserId } = req.body as { roomName: string; forfeitUserId?: string };
+    if (!roomName) return res.status(400).json({ error: "roomName required" });
+
+    const matchRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "TeamMatch" WHERE "roomName" = $1 LIMIT 1`, roomName,
+    );
+    if (matchRows.length === 0) return res.status(404).json({ error: "Team match not found" });
+    const match = matchRows[0];
+
+    const teamA: string[] = JSON.parse(match.teamA);
+    const teamB: string[] = JSON.parse(match.teamB);
+    const eloBefore: Record<string, number> = JSON.parse(match.eloBefore ?? "{}");
+
+    // Idempotent
+    if (match.status === "complete") {
+      const eloAfter: Record<string, number> = JSON.parse(match.eloAfter ?? "{}");
+      return res.json({ isTeam: true, winningSide: match.winningSide, verdict: match.verdict, teamA, teamB, eloBefore, eloAfter, sideAStance: match.sideAStance, topic: match.topic });
+    }
+
+    const roomRow = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
+    if (!roomRow) return res.status(404).json({ error: "Room not found" });
+
+    const messages = await prisma.message.findMany({
+      where: { roomId: roomRow.id },
+      include: { user: { select: { id: true, username: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 60,
+    });
+    const sideOf = (uid: string) => (teamA.includes(uid) ? "A" : teamB.includes(uid) ? "B" : "?");
+    const transcript = messages
+      .map((m) => `[Team ${sideOf(m.userId ?? "")}] ${m.user?.username ?? "User"}: ${m.content}`)
+      .join("\n");
+
+    let winningSide: "A" | "B" = "A";
+    let verdict = "The debate was inconclusive.";
+
+    if (forfeitUserId) {
+      // Forfeiting side loses
+      winningSide = teamA.includes(forfeitUserId) ? "B" : "A";
+      verdict = "A team forfeited the match.";
+    } else {
+      try {
+        const Anthropic = (await import("@anthropic-ai/sdk")).default;
+        const anthropic = new Anthropic();
+        const judgePrompt =
+          `You are an impartial debate judge for a team debate on the proposition: "${match.topic}". ` +
+          `Team A argued ${match.sideAStance}; Team B argued ${OPP_STANCE(match.sideAStance)}. ` +
+          `Based on logic, evidence quality, and persuasion across all members, decide which team argued better. ` +
+          `Return ONLY valid JSON: {"winningSide":"A" or "B","verdict":"one concise sentence"}\n\nTranscript:\n${transcript}`;
+        const response = await anthropic.messages.create({
+          model: "claude-haiku-4-5", max_tokens: 150,
+          messages: [{ role: "user", content: judgePrompt }],
+        });
+        const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+        const jsonStart = raw.indexOf("{");
+        const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
+        if (parsed.winningSide === "A" || parsed.winningSide === "B") winningSide = parsed.winningSide;
+        if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
+      } catch (e) {
+        console.error("[team judge]", e);
+      }
+    }
+
+    // ELO: each member rated against the opposing team's average
+    const avg = (ids: string[]) => ids.reduce((s, id) => s + (eloBefore[id] ?? 1200), 0) / Math.max(1, ids.length);
+    const avgA = avg(teamA);
+    const avgB = avg(teamB);
+    const eloAfter: Record<string, number> = {};
+    for (const uid of teamA) {
+      const { newA } = calcElo(eloBefore[uid] ?? 1200, avgB, winningSide === "A");
+      eloAfter[uid] = newA;
+    }
+    for (const uid of teamB) {
+      const { newA } = calcElo(eloBefore[uid] ?? 1200, avgA, winningSide === "B");
+      eloAfter[uid] = newA;
+    }
+    for (const uid of [...teamA, ...teamB]) {
+      await prisma.$executeRawUnsafe(`UPDATE "User" SET elo = $1 WHERE id = $2`, eloAfter[uid], uid);
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "TeamMatch" SET status='complete', "winningSide"=$1, verdict=$2, "eloAfter"=$3, "completedAt"=NOW()
+       WHERE "roomName"=$4`,
+      winningSide, verdict, JSON.stringify(eloAfter), roomName,
+    );
+
+    res.json({ isTeam: true, winningSide, verdict, teamA, teamB, eloBefore, eloAfter, sideAStance: match.sideAStance, topic: match.topic });
+  } catch (e) {
+    console.error("[team complete]", e);
+    res.status(500).json({ error: "Failed to complete team match" });
+  }
+});
+
+// GET /api/team/match/:roomName — fetch team match result (for reload)
+app.get("/api/team/match/:roomName", async (req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "TeamMatch" WHERE "roomName" = $1 LIMIT 1`, req.params.roomName,
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Not found" });
+    const m = rows[0];
+    res.json({
+      isTeam: true, status: m.status, winningSide: m.winningSide, verdict: m.verdict,
+      teamA: JSON.parse(m.teamA), teamB: JSON.parse(m.teamB),
+      eloBefore: JSON.parse(m.eloBefore ?? "{}"), eloAfter: JSON.parse(m.eloAfter ?? "{}"),
+      sideAStance: m.sideAStance, topic: m.topic,
+    });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
@@ -2895,6 +3378,47 @@ async function start() {
     console.log("[DB] CompetitiveMatch table ready");
   } catch (e) {
     console.error("[DB] CompetitiveMatch table setup failed:", e);
+  }
+
+  // ── Team competitive: pre-formed teams (invite friends, 1v1–3v3) ──────────────
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Challenge" ADD COLUMN IF NOT EXISTS "teamSize" INTEGER NOT NULL DEFAULT 1`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ChallengeMember" (
+        "id"          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "challengeId" TEXT NOT NULL,
+        "userId"      TEXT NOT NULL,
+        "side"        TEXT NOT NULL,                        -- 'A' | 'B'
+        "role"        TEXT NOT NULL DEFAULT 'member',       -- 'captain' | 'member'
+        "status"      TEXT NOT NULL DEFAULT 'invited',      -- 'invited' | 'accepted'
+        "createdAt"   TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE ("challengeId","userId")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ChallengeMember_challengeId_idx" ON "ChallengeMember"("challengeId")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ChallengeMember_user_status_idx" ON "ChallengeMember"("userId","status")`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "TeamMatch" (
+        "id"          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "challengeId" TEXT NOT NULL,
+        "roomName"    TEXT NOT NULL UNIQUE,
+        "topic"       TEXT NOT NULL,
+        "teamSize"    INTEGER NOT NULL,
+        "sideAStance" TEXT NOT NULL,
+        "teamA"       TEXT NOT NULL,                        -- JSON array of userIds
+        "teamB"       TEXT NOT NULL,                        -- JSON array of userIds
+        "status"      TEXT NOT NULL DEFAULT 'active',       -- 'active' | 'complete'
+        "winningSide" TEXT,                                 -- 'A' | 'B'
+        "verdict"     TEXT,
+        "eloBefore"   TEXT,                                 -- JSON map userId -> elo
+        "eloAfter"    TEXT,                                 -- JSON map userId -> elo
+        "createdAt"   TIMESTAMP NOT NULL DEFAULT NOW(),
+        "completedAt" TIMESTAMP
+      )
+    `);
+    console.log("[DB] Team competitive tables ready");
+  } catch (e) {
+    console.error("[DB] Team competitive table setup failed:", e);
   }
 
   try {

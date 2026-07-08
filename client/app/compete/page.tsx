@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import TeamMatches from "@/components/TeamMatches";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -248,7 +249,7 @@ export default function CompetePage() {
   const router = useRouter();
   const userId = (session?.user as any)?.id ?? "";
 
-  const [tab, setTab] = useState<"board" | "mine" | "leaderboard">("board");
+  const [tab, setTab] = useState<"board" | "teams" | "mine" | "leaderboard">("board");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [myChallenges, setMyChallenges] = useState<Challenge[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -382,7 +383,7 @@ export default function CompetePage() {
 
       {/* Tabs */}
       <div className="flex shrink-0 border-b border-gray-800">
-        {([["board", "Open Challenges"], ["mine", "My Challenges"], ["leaderboard", "Leaderboard"]] as const).map(([key, label]) => (
+        {([["board", "1v1 Challenges"], ["teams", "Team Matches"], ["mine", "My Challenges"], ["leaderboard", "Leaderboard"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => { setTab(key); if (key === "board") loadBoard(); if (key === "mine") loadMine(); if (key === "leaderboard") loadLeaderboard(); }}
@@ -400,6 +401,9 @@ export default function CompetePage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
+
+        {/* Team matches */}
+        {tab === "teams" && <TeamMatches userId={userId} username={myUsername} />}
 
         {/* Open challenges board */}
         {tab === "board" && (

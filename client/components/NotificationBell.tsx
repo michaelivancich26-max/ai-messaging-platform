@@ -88,6 +88,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
   }
 
   const pending = notifs.filter(n => n.type === "invite" && !n.resolved);
+  const teamInvites = notifs.filter(n => n.type === "team_invite");
   const mentions = notifs.filter(n => n.type === "mention");
   const resolvedInvites = notifs.filter(n => n.type === "invite" && n.resolved);
 
@@ -174,6 +175,31 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                 })}
               </div>
             )}
+
+            {/* Team invites — resolved from the Compete → Team Matches tab */}
+            {teamInvites.map(n => (
+              <div
+                key={n.id}
+                onClick={() => { router.push("/compete"); setOpen(false); }}
+                className={`cursor-pointer px-4 py-3 hover:bg-gray-800/60 transition-colors ${!n.read ? "bg-indigo-950/20" : ""}`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-violet-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                      <path d="M5.5 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1 13.5a4.5 4.5 0 0 1 9 0 .5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5ZM11 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM11.5 8.5a3.5 3.5 0 0 1 3.5 3.5.5.5 0 0 1-.5.5h-3.05a5.47 5.47 0 0 0-.9-3.86c.27-.09.56-.14.85-.14Z" />
+                    </svg>
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-200">
+                      <span className="font-semibold">{n.fromUsername}</span>
+                      {" invited you to their debate team"}
+                    </p>
+                    {n.content && <p className="mt-0.5 truncate text-[11px] text-gray-500">"{n.content}"</p>}
+                    <p className="mt-1 text-[11px] font-semibold text-violet-400">Open Compete → Team Matches →</p>
+                  </div>
+                </div>
+              </div>
+            ))}
 
             {/* Mentions */}
             {mentions.map(n => (

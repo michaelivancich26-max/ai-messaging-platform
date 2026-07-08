@@ -100,6 +100,13 @@ export default function RoomPage() {
     challengedEloChange?: number;
     challengerEloAfter?: number;
     challengedEloAfter?: number;
+    // team fields
+    isTeam?: boolean;
+    winningSide?: "A" | "B";
+    teamA?: string[];
+    teamB?: string[];
+    eloBefore?: Record<string, number>;
+    eloAfter?: Record<string, number>;
   } | null>(null);
   const [propositionScore, setPropositionScore] = useState(50); // 0=bot winning, 100=human winning
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // seconds remaining
@@ -397,11 +404,25 @@ export default function RoomPage() {
       topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean;
       isCompetitive?: boolean; challengerId?: string; challengedId?: string;
       challengerStance?: string; challengedStance?: string;
+      isTeam?: boolean; teamSize?: number; teamA?: string[]; teamB?: string[];
+      sideAStance?: "affirmative" | "negative"; sideBStance?: "affirmative" | "negative";
     }; }
     catch { return null; }
   })();
+  const isTeamMatch = !!parsedMatchConfig?.isTeam;
+  const myTeamSide: "A" | "B" | null = (() => {
+    if (!isTeamMatch || !parsedMatchConfig || !userId) return null;
+    if (parsedMatchConfig.teamA?.includes(userId)) return "A";
+    if (parsedMatchConfig.teamB?.includes(userId)) return "B";
+    return null;
+  })();
   const myStanceInMatch: string | null = (() => {
     if (!isCompetitiveRoom || !parsedMatchConfig || !userId) return null;
+    if (isTeamMatch) {
+      if (myTeamSide === "A") return parsedMatchConfig.sideAStance ?? null;
+      if (myTeamSide === "B") return parsedMatchConfig.sideBStance ?? null;
+      return null;
+    }
     if (parsedMatchConfig.challengerId === userId) return parsedMatchConfig.challengerStance ?? null;
     if (parsedMatchConfig.challengedId === userId) return parsedMatchConfig.challengedStance ?? null;
     return null;
@@ -414,6 +435,10 @@ export default function RoomPage() {
   const myTurnCount = (isBotRoom || isCompetitiveRoom)
     ? messages.filter((m) => (m as any).userId === userId).length
     : 0;
+  // Team matches count exchanges across both teams, not per-user
+  const matchExchangeCount = isTeamMatch
+    ? messages.filter((m) => (m as any).userId).length
+    : myTurnCount;
 
 
   // Arena: load existing match result on mount (handles page reload after match ends)
@@ -459,12 +484,27 @@ export default function RoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCompetitiveRoom, userId]);
 
+  // Team: load existing match result on mount (handles page reload after match ends)
+  useEffect(() => {
+    if (!isTeamMatch || !userId) return;
+    fetch(`${SERVER}/api/team/match/${encodeURIComponent(roomId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.status === "complete" && data?.winningSide) {
+          setMatchResult({ ...data, winner: "human", verdict: data.verdict ?? "", scoreImpact: 0, botId: "", isCompetitive: true });
+          setMatchState("ended");
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeamMatch, userId]);
+
   // Arena: exchanges — auto-trigger when limit reached
   useEffect(() => {
     if (!(isBotRoom || isCompetitiveRoom) || matchState !== "active" || winCondition.type !== "exchanges") return;
-    if (myTurnCount >= winCondition.limit) triggerJudge(false);
+    if (matchExchangeCount >= winCondition.limit) triggerJudge(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myTurnCount, matchState, isBotRoom, isCompetitiveRoom, winCondition.type, (winCondition as any).limit]);
+  }, [matchExchangeCount, matchState, isBotRoom, isCompetitiveRoom, winCondition.type, (winCondition as any).limit]);
 
   // Arena: time — countdown and auto-trigger when expired
   useEffect(() => {
@@ -509,7 +549,18 @@ export default function RoomPage() {
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
     setMatchState("judging");
     try {
-      if (isCompetitiveRoom) {
+      if (isTeamMatch) {
+        const res = await fetch(`${SERVER}/api/team/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomName: roomId, forfeitUserId: forfeit ? userId : undefined }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMatchResult({ ...data, isCompetitive: true, isTeam: true });
+          setMatchState("ended");
+        } else { setMatchState("active"); }
+      } else if (isCompetitiveRoom) {
         const res = await fetch(`${SERVER}/api/competitive/complete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1258,6 +1309,45 @@ export default function RoomPage() {
         <div className={`relative flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
           {/* Match result overlay */}
           {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && (() => {
+            if (matchResult.isTeam) {
+              const won = myTeamSide != null && myTeamSide === matchResult.winningSide;
+              const myEloAfter = (matchResult.eloAfter ?? {})[userId] ?? 0;
+              const myEloBefore = (matchResult.eloBefore ?? {})[userId] ?? myEloAfter;
+              const myEloChange = myEloAfter - myEloBefore;
+              return (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
+                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
+                      {won ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-400">
+                          <circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/>
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-400">
+                          <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/>
+                        </svg>
+                      )}
+                    </div>
+                    <div>
+                      <h2 className={`text-2xl font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                        {won ? "Your Team Won!" : "Your Team Lost"}
+                      </h2>
+                      <p className="mt-0.5 text-xs text-gray-500">Team {matchResult.winningSide} takes it</p>
+                    </div>
+                    <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
+                    <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Your ELO Change</p>
+                      <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {myEloChange >= 0 ? "+" : ""}{myEloChange} → {myEloAfter}
+                      </p>
+                    </div>
+                    <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
+                      Return to Compete
+                    </button>
+                  </div>
+                </div>
+              );
+            }
             if (isCompetitiveRoom) {
               const won = matchResult.winnerId === userId;
               const myEloChange = (matchResult.challengerId === userId

@@ -86,7 +86,7 @@ export interface DebateTurnState {
 
 export interface AppNotification {
   id: string;
-  type: "invite" | "mention";
+  type: "invite" | "mention" | "team_invite";
   roomId?: string | null;
   roomName?: string | null;
   channelId?: string | null;
