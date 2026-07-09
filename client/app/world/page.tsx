@@ -9,14 +9,16 @@ import {
   SKIN, HAIR_COLOR, SHIRT, PANTS, HAIR_STYLE_COUNT, HATS,
   type Appearance, type Dir,
 } from "@/lib/avatar";
-import { BUILDINGS, WORLD_W, WORLD_H, SPAWN, hitsBuilding, drawWorldTo } from "@/lib/worldMap";
+import { BUILDINGS, WORLD_W, WORLD_H, SPAWN, isBlocked, drawWorldTo, drawCanopies, drawAmbient } from "@/lib/worldMap";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
-const SCALE = 3;             // screen px per logical px
-const SPEED = 95;           // logical px / second
+const SCALE = 4;             // screen px per world px
+const CELL = SCALE / 2;      // screen px per sprite cell (32x48 grid on a 16x24 world footprint)
+const SPEED = 120;           // world px / second
 const MOVE_EMIT_MS = 90;
-const DOOR_DIST = 34;
-const WATCH_DIST = 40;
+const DOOR_DIST = 38;
+const WATCH_DIST = 42;
+const MM_W = 176, MM_H = 132;
 
 interface Other { x: number; y: number; tx: number; ty: number; dir: Dir; anim: number; app: Appearance; username: string }
 type Prompt =
@@ -35,12 +37,12 @@ function Customizer({ app, onChange, onClose, onSave }: {
   useEffect(() => {
     const c = pv.current; if (!c) return;
     const ctx = c.getContext("2d"); if (!ctx) return;
-    let raf = 0; let t0 = performance.now();
+    let raf = 0; const t0 = performance.now();
     const loop = (t: number) => {
       ctx.imageSmoothingEnabled = false;
       ctx.clearRect(0, 0, c.width, c.height);
-      const frame = Math.floor((t - t0) / 260) % 2;
-      drawCharacter(ctx, 22, 8, 7, app, dir, frame);
+      const frame = Math.floor((t - t0) / 150) % 4;
+      drawCharacter(ctx, 4, 4, 4, app, dir, frame);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -72,8 +74,8 @@ function Customizer({ app, onChange, onClose, onSave }: {
         </div>
         <div className="flex gap-4">
           <div className="flex flex-col items-center gap-2">
-            <div className="rounded-xl bg-emerald-950 p-2 ring-1 ring-emerald-800/50" style={{ imageRendering: "pixelated" } as any}>
-              <canvas ref={pv} width={112} height={180} style={{ imageRendering: "pixelated" }} />
+            <div className="rounded-xl bg-emerald-950 p-2 ring-1 ring-emerald-800/50">
+              <canvas ref={pv} width={144} height={204} style={{ imageRendering: "pixelated" }} />
             </div>
             <div className="flex gap-1">
               {(["down", "left", "right", "up"] as Dir[]).map(d => (
@@ -120,6 +122,8 @@ export default function WorldPage() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgRef = useRef<HTMLCanvasElement | null>(null);
+  const fgRef = useRef<HTMLCanvasElement | null>(null);
+  const miniRef = useRef<HTMLCanvasElement | null>(null);
   const sizeRef = useRef({ w: 0, h: 0 });
   const meRef = useRef({ x: SPAWN.x, y: SPAWN.y, dir: "down" as Dir, anim: 0, moving: false });
   const appRef = useRef<Appearance | null>(null);
@@ -130,13 +134,29 @@ export default function WorldPage() {
   const promptRef = useRef<Prompt>(null);
   const liveRef = useRef<Map<string, string>>(new Map());
 
-  // Build the static world once (offscreen)
+  // Bake the static world + canopy overlay + minimap once
   useEffect(() => {
-    const c = document.createElement("canvas");
-    c.width = WORLD_W; c.height = WORLD_H;
-    const ctx = c.getContext("2d");
-    if (ctx) drawWorldTo(ctx);
-    bgRef.current = c;
+    const bg = document.createElement("canvas");
+    bg.width = WORLD_W; bg.height = WORLD_H;
+    const bctx = bg.getContext("2d");
+    if (bctx) drawWorldTo(bctx);
+    bgRef.current = bg;
+
+    const fg = document.createElement("canvas");
+    fg.width = WORLD_W; fg.height = WORLD_H;
+    const fctx = fg.getContext("2d");
+    if (fctx) drawCanopies(fctx);
+    fgRef.current = fg;
+
+    const mini = document.createElement("canvas");
+    mini.width = MM_W; mini.height = MM_H;
+    const mctx = mini.getContext("2d");
+    if (mctx) {
+      mctx.imageSmoothingEnabled = true;
+      mctx.drawImage(bg, 0, 0, MM_W, MM_H);
+      mctx.drawImage(fg, 0, 0, MM_W, MM_H);
+    }
+    miniRef.current = mini;
   }, []);
 
   // Load my saved appearance (or a default from my name)
@@ -165,7 +185,6 @@ export default function WorldPage() {
   useEffect(() => {
     if (status !== "authenticated" || !userId || !appearance) return;
     const socket = getSocket({ id: userId, username });
-    const seed = username || userId;
 
     const addOther = (p: any) => {
       if (p.userId === userId) return;
@@ -224,7 +243,7 @@ export default function WorldPage() {
     const rect = c.getBoundingClientRect();
     const wx = camRef.current.x + (e.clientX - rect.left) / SCALE;
     const wy = camRef.current.y + (e.clientY - rect.top) / SCALE;
-    targetRef.current = { x: Math.max(6, Math.min(WORLD_W - 6, wx)), y: Math.max(6, Math.min(WORLD_H - 6, wy)) };
+    targetRef.current = { x: Math.max(8, Math.min(WORLD_W - 8, wx)), y: Math.max(8, Math.min(WORLD_H - 8, wy)) };
     keysRef.current.clear(); setHint(false);
   }, []);
 
@@ -254,7 +273,7 @@ export default function WorldPage() {
 
     const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      const c = canvasRef.current, bg = bgRef.current, ctx = c?.getContext("2d");
+      const c = canvasRef.current, bg = bgRef.current, fg = fgRef.current, ctx = c?.getContext("2d");
       const me = meRef.current;
 
       // ── Move me ──
@@ -273,8 +292,8 @@ export default function WorldPage() {
         if (Math.abs(vx) > Math.abs(vy)) me.dir = vx < 0 ? "left" : "right";
         else me.dir = vy < 0 ? "up" : "down";
         const nx = me.x + vx * SPEED * dt, ny = me.y + vy * SPEED * dt;
-        if (!hitsBuilding(nx, me.y)) me.x = nx;
-        if (!hitsBuilding(me.x, ny)) me.y = ny;
+        if (!isBlocked(nx, me.y)) me.x = nx;
+        if (!isBlocked(me.x, ny)) me.y = ny;
         me.anim += dt;
       } else me.anim = 0;
 
@@ -286,41 +305,70 @@ export default function WorldPage() {
       camRef.current = { x: camX, y: camY };
 
       // ── Render ──
-      if (ctx && c && bg) {
+      if (ctx && c && bg && fg) {
         ctx.clearRect(0, 0, cssW, cssH);
         ctx.imageSmoothingEnabled = false;
-        // world
         ctx.drawImage(bg, camX, camY, visW, visH, 0, 0, cssW, cssH);
 
-        // building name banners
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.font = "bold 11px ui-sans-serif, system-ui";
-        for (const b of BUILDINGS) {
-          const sx = (b.x + b.w / 2 - camX) * SCALE, sy = (b.y + 15 - camY) * SCALE;
-          ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.fillText(b.name, sx, sy);
-        }
-
-        // characters — advance & lerp others, then paint back-to-front by y
+        // characters — advance & lerp others, painter-sort by y
         const drawList: { y: number; fn: () => void }[] = [];
         for (const [uid, o] of othersRef.current) {
           const dx = o.tx - o.x, dy = o.ty - o.y, dist = Math.hypot(dx, dy);
           const moving = dist > 0.6;
           if (moving) { const k = Math.min(1, dt * 12); o.x += dx * k; o.y += dy * k; o.anim += dt; } else o.anim = 0;
           const sx = (o.x - camX) * SCALE, sy = (o.y - camY) * SCALE;
-          if (sx < -80 || sx > cssW + 80 || sy < -100 || sy > cssH + 100) continue;
-          const frame = moving ? Math.floor(o.anim * 7) % 2 : 0;
+          if (sx < -90 || sx > cssW + 90 || sy < -120 || sy > cssH + 120) continue;
+          const frame = moving ? Math.floor(o.anim * 8) % 4 : 0;
           const live = liveRef.current.has(uid);
           drawList.push({ y: o.y, fn: () => paintChar(ctx, sx, sy, o.app, o.dir, frame, o.username, live) });
         }
-        // me
         {
           const sx = (me.x - camX) * SCALE, sy = (me.y - camY) * SCALE;
-          const frame = me.moving ? Math.floor(me.anim * 7) % 2 : 0;
+          const frame = me.moving ? Math.floor(me.anim * 8) % 4 : 0;
           const app = appRef.current;
           if (app) drawList.push({ y: me.y, fn: () => paintChar(ctx, sx, sy, app, me.dir, frame, "You", false, true) });
         }
         drawList.sort((a, b) => a.y - b.y);
         for (const d of drawList) d.fn();
+
+        // canopy overlay — walk behind trees
+        ctx.drawImage(fg, camX, camY, visW, visH, 0, 0, cssW, cssH);
+
+        // fireflies, glows, water sparkle, vignette
+        drawAmbient(ctx, camX, camY, now, cssW, cssH, SCALE);
+
+        // building name plates
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = "bold 12px ui-sans-serif, system-ui";
+        for (const b of BUILDINGS) {
+          const lx = (b.label.x - camX) * SCALE, ly = (b.label.y - camY) * SCALE;
+          if (lx < -160 || lx > cssW + 160 || ly < -40 || ly > cssH + 40) continue;
+          const tw = ctx.measureText(b.name).width;
+          ctx.fillStyle = "rgba(12,10,26,0.72)";
+          ctx.fillRect(lx - tw / 2 - 8, ly - 10, tw + 16, 20);
+          ctx.fillStyle = "rgba(255,255,255,0.95)";
+          ctx.fillText(b.name, lx, ly);
+        }
+
+        // minimap
+        const mini = miniRef.current;
+        if (mini) {
+          const mx = cssW - MM_W - 12, my = cssH - MM_H - 12;
+          ctx.globalAlpha = 0.92;
+          ctx.fillStyle = "rgba(10,8,22,0.72)";
+          ctx.fillRect(mx - 3, my - 3, MM_W + 6, MM_H + 6);
+          ctx.drawImage(mini, mx, my);
+          ctx.strokeStyle = "rgba(255,255,255,0.45)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(mx + (camX / WORLD_W) * MM_W, my + (camY / WORLD_H) * MM_H, (visW / WORLD_W) * MM_W, (visH / WORLD_H) * MM_H);
+          for (const [uid, o] of othersRef.current) {
+            ctx.fillStyle = liveRef.current.has(uid) ? "#ef4444" : "#f4f4f5";
+            ctx.fillRect(mx + (o.x / WORLD_W) * MM_W - 1, my + (o.y / WORLD_H) * MM_H - 1, 2, 2);
+          }
+          ctx.fillStyle = "#a5b4fc";
+          ctx.fillRect(mx + (me.x / WORLD_W) * MM_W - 1.5, my + (me.y / WORLD_H) * MM_H - 1.5, 3, 3);
+          ctx.globalAlpha = 1;
+        }
       }
 
       // ── Emit my position (throttled) ──
@@ -360,11 +408,11 @@ export default function WorldPage() {
   }
 
   if (status === "loading") {
-    return <div className="flex h-full items-center justify-center bg-emerald-950 text-emerald-200/70 text-sm">Loading the campus…</div>;
+    return <div className="flex h-full items-center justify-center bg-emerald-950 text-emerald-200/70 text-sm">Entering the grove…</div>;
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-emerald-950 select-none">
+    <div className="relative h-full w-full overflow-hidden bg-[#0d2b1e] select-none">
       <canvas ref={canvasRef} onClick={onCanvasClick} className="absolute inset-0 h-full w-full cursor-pointer" style={{ imageRendering: "pixelated" }} />
 
       {/* Top bar */}
@@ -373,7 +421,7 @@ export default function WorldPage() {
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
           Home
         </button>
-        <div className="rounded-xl bg-black/45 px-3 py-2 text-xs text-gray-300 backdrop-blur"><span className="font-semibold text-emerald-400">{count}</span> on campus</div>
+        <div className="rounded-xl bg-black/45 px-3 py-2 text-xs text-gray-300 backdrop-blur"><span className="font-semibold text-emerald-400">{count}</span> in the grove</div>
         <button onClick={() => setCustomize(true)} className="pointer-events-auto ml-auto flex items-center gap-1.5 rounded-xl bg-indigo-600/90 px-3 py-2 text-xs font-semibold text-white backdrop-blur hover:bg-indigo-500">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M8 1a3.5 3.5 0 0 0-3.5 3.5c0 .9.34 1.72.9 2.35C3.4 7.9 2 9.9 2 12.5V14h12v-1.5c0-2.6-1.4-4.6-3.4-5.65.56-.63.9-1.45.9-2.35A3.5 3.5 0 0 0 8 1Z" /></svg>
           Customize
@@ -415,16 +463,16 @@ export default function WorldPage() {
 }
 
 // Draw a character sprite + floating name/badge in screen space.
+// (screenX, screenY) = the character's feet position on screen.
 function paintChar(
   ctx: CanvasRenderingContext2D, screenX: number, screenY: number,
   app: Appearance, dir: Dir, frame: number, name: string, live: boolean, isMe = false,
 ) {
-  const sx = screenX - 8 * SCALE, sy = screenY - 22 * SCALE;
-  drawCharacter(ctx, sx, sy, SCALE, app, dir, frame);
-  // name label
+  const sx = screenX - 16 * CELL, sy = screenY - 46 * CELL;
+  drawCharacter(ctx, sx, sy, CELL, app, dir, frame);
   ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  ctx.font = `bold 11px ui-sans-serif, system-ui`;
-  const ly = sy - 4;
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  const ly = sy - 6;
   ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(name, screenX, ly);
   ctx.fillStyle = isMe ? "#a5b4fc" : "#f3f4f6"; ctx.fillText(name, screenX, ly);
   if (live) {
