@@ -1,23 +1,29 @@
-// Composable flat-vector avatar engine.
+// Composable flat-vector avatar engine — full-body characters.
 //
-// A character is a head-and-shoulders "bust" drawn as clean SVG shapes inside a
-// soft circular backdrop: backdrop → shoulders/shirt → neck → hair(back) →
-// ears → head → face → hair(front) → hat. Each layer is chosen by an index into
-// a palette/style list, so cosmetics (new hair, hats, accessories) are added by
+// A character is a standing figure drawn as clean SVG shapes: backdrop →
+// ground shadow → legs/bottom → torso → arms → head module (hair, face, hat).
+// The head module is authored once in a local head-space and scaled onto the
+// body, so the same face art drives both the full-body render and the square
+// "bust" crop used in chat.
+//
+// Every visual is chosen by an index into a palette/style list, so cosmetics
+// (outfits, hair, hats, and future capes/shoes/accessories) are added by
 // extending these lists and the per-layer shape code — the Appearance shape
-// stays stable, so saved configs keep working across restyles.
+// only grows, so saved configs keep working across restyles.
 //
-// avatarSVG(app, uid) returns the inner markup for a `viewBox="0 0 100 100"`
-// SVG; AvatarSprite wraps it. `uid` namespaces the gradient/clip ids so many
-// avatars can render on one page without id collisions.
+// avatarSVG(app, uid) returns inner markup for the FULL 100x175 viewBox;
+// AvatarSprite picks the viewBox (full body vs. AVATAR_BUST_VIEWBOX crop) and
+// namespaces gradient/clip ids with `uid` so many avatars share a page safely.
 
 export interface Appearance {
   skin: number;
   hair: number;       // hair STYLE index
   hairColor: number;
-  shirt: number;
-  pants: number;      // retained for data compatibility; not shown on the bust
+  shirt: number;      // top color
+  pants: number;      // bottom color
   hat: number;        // cosmetic slot: 0 = none
+  build: number;      // body type: 0 neutral, 1 masculine, 2 feminine
+  bottom: number;     // bottom garment style: 0 trousers, 1 skirt, 2 shorts
 }
 
 export const SKIN = ["#f8d9b5", "#f0c090", "#d99a63", "#b06b3a", "#7a4a24", "#4a2f1a"];
@@ -27,12 +33,23 @@ export const PANTS = ["#3a3f4b", "#5b4636", "#274b6d", "#1f6b3a", "#5a1f4a", "#1
 export const HAIR_STYLE_COUNT = 6;        // 0 short 1 spiky 2 long 3 buzz 4 ponytail 5 bald
 // Cosmetic slot — new hats are APPENDED so saved indices stay valid.
 export const HATS = ["None", "Cap", "Beanie", "Wizard", "Crown", "Headband", "Flower Crown", "Halo"];
-export const HAT_COLOR = ["#d94f3d", "#3d7ad9", "#2b2b2b", "#8b3ddb", "#e0b93d", "#33a860"];
+export const BUILDS = ["Neutral", "Masculine", "Feminine"];
+export const BOTTOMS = ["Trousers", "Skirt", "Shorts"];
+
+// viewBox / aspect for the two render modes (see AvatarSprite).
+export const AVATAR_FULL_VIEWBOX = "0 0 100 175";
+export const AVATAR_FULL_ASPECT = 175 / 100;
+export const AVATAR_BUST_VIEWBOX = "13 5 72 72";
+
+function defaultBottom(build: number): number {
+  return build === 2 ? 1 : 0;   // feminine defaults to a skirt, others to trousers
+}
 
 export function defaultAppearance(seed: string): Appearance {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   const pick = (n: number, salt: number) => Math.floor(h / Math.pow(7, salt)) % n;
+  const build = pick(BUILDS.length, 6);
   return {
     skin: pick(SKIN.length, 1),
     hair: pick(HAIR_STYLE_COUNT, 2),
@@ -40,6 +57,8 @@ export function defaultAppearance(seed: string): Appearance {
     shirt: pick(SHIRT.length, 4),
     pants: pick(PANTS.length, 5),
     hat: 0,
+    build,
+    bottom: defaultBottom(build),
   };
 }
 
@@ -54,6 +73,8 @@ export function normalizeAppearance(a: Partial<Appearance> | null | undefined, s
     shirt: clamp(a.shirt, SHIRT.length, def.shirt),
     pants: clamp(a.pants, PANTS.length, def.pants),
     hat: clamp(a.hat, HATS.length, 0),
+    build: clamp(a.build, BUILDS.length, def.build),
+    bottom: clamp(a.bottom, BOTTOMS.length, def.bottom),
   };
 }
 
@@ -79,11 +100,13 @@ function mix(a: string, b: string, t: number): string {
 const P = (d: string, fill: string, extra = "") => `<path d="${d}" fill="${fill}" ${extra}/>`;
 const E = (cx: number, cy: number, rx: number, ry: number, fill: string, extra = "") =>
   `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" ${extra}/>`;
+const R = (x: number, y: number, w: number, h: number, rx: number, fill: string) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}"/>`;
 
 // Shared fringe used by several hair styles (bangs sweeping across the forehead).
 const FRINGE = "M31,35 C32,25 42,22 50,22 C58,22 68,25 69,35 C65,28 57,26 50,27 C43,26 35,28 31,35 Z";
 
-// ── Hair ────────────────────────────────────────────────────────────────────
+// ── Hair (head-space, head centered ~(50,41), like the original bust) ─────────
 function hairShapes(style: number, hair: string, hairHi: string, hairSh: string): { back: string; front: string } {
   if (style === 5) return { back: "", front: "" };                 // bald
   if (style === 3) {                                                // buzz — thin rim hugging the scalp
@@ -92,12 +115,8 @@ function hairShapes(style: number, hair: string, hairHi: string, hairSh: string)
       front: "",
     };
   }
-
-  // Helmet behind the head; the head ellipse is drawn on top and trims it to a
-  // clean hairline rim around the crown and temples.
   const back: string[] = [E(50, 39, 19.6, 20.6, hair), P("M37,26 Q50,20 63,26 Q52,23 37,26", hairHi, 'opacity="0.5"')];
   const front: string[] = [];
-
   if (style === 0) {                                                // short
     front.push(P(FRINGE, hair), P("M34,30 Q42,26 50,27 Q46,29 40,32 Z", hairHi, 'opacity="0.4"'));
   } else if (style === 1) {                                         // spiky
@@ -107,13 +126,13 @@ function hairShapes(style: number, hair: string, hairHi: string, hairSh: string)
     );
   } else if (style === 2) {                                         // long
     back.push(
-      P("M31,38 C27,51 28,64 32,73 L40,73 C37,60 36,49 38,40 Z", hairSh),
-      P("M69,38 C73,51 72,64 68,73 L60,73 C63,60 64,49 62,40 Z", hair),
+      P("M31,38 C27,54 28,68 32,80 L41,80 C37,64 36,50 38,40 Z", hairSh),
+      P("M69,38 C73,54 72,68 68,80 L59,80 C63,64 64,50 62,40 Z", hair),
     );
     front.push(P(FRINGE, hair));
   } else if (style === 4) {                                         // ponytail
     back.push(
-      P("M62,24 C74,26 82,40 79,55 C77,63 71,66 68,62 C74,52 73,39 64,31 Z", hairSh),
+      P("M62,24 C76,26 85,42 82,60 C80,70 72,74 68,68 C75,55 74,40 64,31 Z", hairSh),
       E(63, 28, 3, 2.4, hairHi),
     );
     front.push(P(FRINGE, hair));
@@ -121,7 +140,7 @@ function hairShapes(style: number, hair: string, hairHi: string, hairSh: string)
   return { back: back.join(""), front: front.join("") };
 }
 
-// ── Hats (cosmetic slot) ──────────────────────────────────────────────────────
+// ── Hats (head-space, cosmetic slot) ──────────────────────────────────────────
 function hatShapes(hat: number): string {
   const name = HATS[hat];
   if (name === "Cap") {
@@ -177,60 +196,129 @@ function hatShapes(hat: number): string {
   return "";
 }
 
-// ── Assembly ──────────────────────────────────────────────────────────────────
-export function avatarSVG(app: Appearance, uid: string): string {
+// ── Head module (hair, ears, head, face, hat) in head-space ───────────────────
+function headModule(app: Appearance, uid: string): string {
   const skin = SKIN[app.skin] ?? SKIN[0];
   const hair = HAIR_COLOR[app.hairColor] ?? HAIR_COLOR[0];
-  const shirt = SHIRT[app.shirt] ?? SHIRT[0];
-
-  const skinHi = shade(skin, 1.08), skinSh = shade(skin, 0.82);
+  const skinSh = shade(skin, 0.82);
   const hairHi = shade(hair, 1.2), hairSh = shade(hair, 0.76);
-  const shirtHi = shade(shirt, 1.14), shirtSh = shade(shirt, 0.78);
-  const bgTop = mix(shirt, "#1c2437", 0.72), bgBot = mix(shirt, "#0b0f1a", 0.8);
   const inkMouth = mix(skin, "#000000", 0.5);
-
   const { back: hairBack, front: hairFront } = hairShapes(app.hair, hair, hairHi, hairSh);
-
-  const defs =
-    `<defs>` +
-    `<clipPath id="${uid}-clip"><circle cx="50" cy="50" r="50"/></clipPath>` +
-    `<linearGradient id="${uid}-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${bgTop}"/><stop offset="1" stop-color="${bgBot}"/></linearGradient>` +
-    `<linearGradient id="${uid}-skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${skinHi}"/><stop offset="1" stop-color="${skinSh}"/></linearGradient>` +
-    `<linearGradient id="${uid}-shirt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${shirtHi}"/><stop offset="1" stop-color="${shirtSh}"/></linearGradient>` +
-    `</defs>`;
-
-  const shoulders =
-    P("M12,100 L12,90 C12,78 30,70 50,70 C70,70 88,78 88,90 L88,100 Z", `url(#${uid}-shirt)`) +
-    E(50, 70.5, 10.5, 3.6, shirtSh) +                                   // neckline shadow
-    P("M20,74 Q50,70 80,74", "none", `stroke="${shirtHi}" stroke-width="1.2" opacity="0.35"`);
-
-  const neck =
-    P("M43,50 L57,50 L57,68 Q50,73 43,68 Z", shade(skin, 0.86)) +
-    E(50, 52, 8, 3, shade(skin, 0.72), 'opacity="0.45"');               // under-chin shadow
 
   const ears = E(32.6, 43, 2.6, 3.6, shade(skin, 0.9)) + E(67.4, 43, 2.6, 3.6, shade(skin, 0.9));
   const head = E(50, 41, 17.5, 19.5, `url(#${uid}-skin)`);
-
   const face =
-    // eyes
     E(43, 43, 2, 2.6, "#2a2333") + E(57, 43, 2, 2.6, "#2a2333") +
     E(42.3, 42.2, 0.7, 0.7, "#ffffff") + E(56.3, 42.2, 0.7, 0.7, "#ffffff") +
-    // brows
     P("M40.4,38.4 Q43,37.2 45.6,38.2", "none", `stroke="${hairSh}" stroke-width="1.3" stroke-linecap="round" fill="none"`) +
     P("M54.4,38.2 Q57,37.2 59.6,38.4", "none", `stroke="${hairSh}" stroke-width="1.3" stroke-linecap="round" fill="none"`) +
-    // nose + mouth
     P("M50,44.5 Q51.4,47.4 49.4,48", "none", `stroke="${skinSh}" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.7"`) +
     P("M45.5,51.4 Q50,54.6 54.5,51.4", "none", `stroke="${inkMouth}" stroke-width="1.6" stroke-linecap="round" fill="none"`) +
-    // cheeks
     E(40, 48, 3, 1.8, "#ff8aa0", 'opacity="0.16"') + E(60, 48, 3, 1.8, "#ff8aa0", 'opacity="0.16"');
 
+  return hairBack + ears + head + face + hairFront + hatShapes(app.hat);
+}
+
+// ── Body builds ───────────────────────────────────────────────────────────────
+interface Build { sh: number; wa: number; hp: number; armW: number; }
+const BUILD_SPEC: Record<number, Build> = {
+  0: { sh: 16, wa: 12.5, hp: 13.5, armW: 6 },     // neutral
+  1: { sh: 19, wa: 13.5, hp: 12.5, armW: 6.6 },   // masculine
+  2: { sh: 13, wa: 10, hp: 15, armW: 5.4 },       // feminine
+};
+
+// Vertical anchors (100x175 space).
+const SY = 56, WY = 99, HY = 103, SKIRT_HEM = 122, ANKLE = 156, SHOE_TOP = 155, GROUND = 167;
+const SHOE = "#3b3540", SOLE = "#262029";
+
+function shoe(cx: number): string {
+  return R(cx - 4.6, SHOE_TOP, 9.2, 8, 3, SHOE) + R(cx - 4.6, SHOE_TOP + 5, 9.2, 3, 1.5, SOLE);
+}
+
+// Legs + bottom garment + shoes (drawn under the torso).
+function bottomShapes(app: Appearance, b: Build, uid: string): string {
+  const skinG = `url(#${uid}-skin)`, pantsG = `url(#${uid}-pants)`;
+  const pants = PANTS[app.pants] ?? PANTS[0];
+  const Lc = 50 - (b.hp + 1) / 2, Rc = 50 + (b.hp + 1) / 2;   // leg centers
+  const parts: string[] = [];
+
+  if (app.bottom === 0) {                                     // trousers
+    parts.push(P(`M${50 - b.wa},${WY - 1} L${50 + b.wa},${WY - 1} L${50 + b.hp},${HY + 5} L${50 - b.hp},${HY + 5} Z`, pantsG));
+    parts.push(R(50 - b.hp, HY, b.hp - 1, ANKLE - HY, 3, pantsG));
+    parts.push(R(51, HY, b.hp - 1, ANKLE - HY, 3, pantsG));
+    parts.push(P(`M50,${HY + 3} L50,${ANKLE - 2}`, "none", `stroke="${shade(pants, 0.8)}" stroke-width="1" opacity="0.5"`));
+  } else if (app.bottom === 2) {                              // shorts (bare legs below)
+    const lw = b.hp - 3;
+    parts.push(R(Lc - lw / 2, HY, lw, ANKLE - HY, lw / 2, skinG));
+    parts.push(R(Rc - lw / 2, HY, lw, ANKLE - HY, lw / 2, skinG));
+    parts.push(P(`M${50 - b.wa},${WY - 1} L${50 + b.wa},${WY - 1} L${50 + b.hp},${HY + 12} L${50 - b.hp},${HY + 12} Z`, pantsG));
+  } else {                                                    // skirt (bare legs below hem)
+    const lw = b.hp - 4;
+    parts.push(R(Lc - lw / 2, SKIRT_HEM - 6, lw, ANKLE - (SKIRT_HEM - 6), lw / 2, skinG));
+    parts.push(R(Rc - lw / 2, SKIRT_HEM - 6, lw, ANKLE - (SKIRT_HEM - 6), lw / 2, skinG));
+    parts.push(P(`M${50 - b.wa},${WY - 1} C${50 - b.wa - 3},${(WY + SKIRT_HEM) / 2} ${50 - b.hp - 7},${SKIRT_HEM - 3} ${50 - b.hp - 9},${SKIRT_HEM} L${50 + b.hp + 9},${SKIRT_HEM} C${50 + b.hp + 7},${SKIRT_HEM - 3} ${50 + b.wa + 3},${(WY + SKIRT_HEM) / 2} ${50 + b.wa},${WY - 1} Z`, pantsG));
+    parts.push(P(`M${50 - b.hp - 9},${SKIRT_HEM} Q50,${SKIRT_HEM + 4} ${50 + b.hp + 9},${SKIRT_HEM}`, "none", `stroke="${shade(pants, 0.8)}" stroke-width="1" opacity="0.5"`));
+  }
+
+  parts.push(shoe(Lc), shoe(Rc));
+  return parts.join("");
+}
+
+function armShapes(b: Build, uid: string): string {
+  const skinG = `url(#${uid}-skin)`, shirtG = `url(#${uid}-shirt)`;
+  const axL = 50 - b.sh + 1.5, axR = 50 + b.sh - 1.5;
+  const w = b.armW, elbow = 86, hand = 103;
+  const arm = (cx: number) =>
+    R(cx - w / 2, SY + 1, w, elbow - (SY + 1), w / 2, shirtG) +
+    R(cx - (w - 0.8) / 2, elbow - 1, w - 0.8, hand - (elbow - 1), (w - 0.8) / 2, skinG) +
+    E(cx, hand + 1, w / 2, w / 2, skinG);
+  return arm(axL) + arm(axR);
+}
+
+function torsoShapes(app: Appearance, b: Build, uid: string): string {
+  const shirt = SHIRT[app.shirt] ?? SHIRT[0];
+  const skin = SKIN[app.skin] ?? SKIN[0];
+  const neck = R(46, 44, 8, 16, 2, shade(skin, 0.88));
+  const chinShadow = E(50, 46, 6, 2.4, shade(skin, 0.72), 'opacity="0.4"');
+  const torso = P(
+    `M${50 - b.sh},${SY} Q${50 - b.sh - 1},${(SY + WY) / 2} ${50 - b.wa},${WY} L${50 + b.wa},${WY} Q${50 + b.sh + 1},${(SY + WY) / 2} ${50 + b.sh},${SY} Q50,${SY + 5} ${50 - b.sh},${SY} Z`,
+    `url(#${uid}-shirt)`,
+  );
+  const collar = P(`M${50 - 7},${SY + 2} Q50,${SY + 8} ${50 + 7},${SY + 2}`, "none", `stroke="${shade(shirt, 0.78)}" stroke-width="1.4" fill="none" opacity="0.7"`);
+  return neck + chinShadow + torso + collar;
+}
+
+// ── Assembly ──────────────────────────────────────────────────────────────────
+// Head-space (~centered on 50,41) mapped onto the body: old (50,41) → (50,30).
+const HEAD_K = 0.82, HEAD_TX = 50 - 50 * 0.82, HEAD_TY = 30 - 41 * 0.82;
+
+export function avatarSVG(app: Appearance, uid: string): string {
+  const skin = SKIN[app.skin] ?? SKIN[0];
+  const shirt = SHIRT[app.shirt] ?? SHIRT[0];
+  const pants = PANTS[app.pants] ?? PANTS[0];
+  const b = BUILD_SPEC[app.build] ?? BUILD_SPEC[0];
+
+  const grad = (id: string, hi: string, lo: string) =>
+    `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hi}"/><stop offset="1" stop-color="${lo}"/></linearGradient>`;
+
+  const bgTop = mix(shirt, "#1c2437", 0.74), bgBot = mix(shirt, "#0b0f1a", 0.82);
+  const defs =
+    `<defs>` +
+    grad(`${uid}-bg`, bgTop, bgBot) +
+    grad(`${uid}-skin`, shade(skin, 1.08), shade(skin, 0.82)) +
+    grad(`${uid}-shirt`, shade(shirt, 1.14), shade(shirt, 0.78)) +
+    grad(`${uid}-pants`, shade(pants, 1.12), shade(pants, 0.8)) +
+    `</defs>`;
+
+  const head = `<g transform="translate(${HEAD_TX},${HEAD_TY}) scale(${HEAD_K})">${headModule(app, uid)}</g>`;
+
   const body =
-    `<g clip-path="url(#${uid}-clip)">` +
-    P("M0,0 H100 V100 H0 Z", `url(#${uid}-bg)`) +
-    shoulders + neck + hairBack + ears + head + face + hairFront + hatShapes(app.hat) +
-    `</g>` +
-    // crisp rim to seat the bust in the UI
-    `<circle cx="50" cy="50" r="49.3" fill="none" stroke="#000000" stroke-opacity="0.18" stroke-width="1.4"/>`;
+    P("M0,0 H100 V175 H0 Z", `url(#${uid}-bg)`) +
+    E(50, GROUND, 24, 3.6, "#000000", 'opacity="0.28"') +
+    bottomShapes(app, b, uid) +
+    torsoShapes(app, b, uid) +
+    armShapes(b, uid) +
+    head;
 
   return defs + body;
 }

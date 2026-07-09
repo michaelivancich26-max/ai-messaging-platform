@@ -302,7 +302,7 @@ export default function DashboardPage() {
             {character && (
               <div className="flex items-center gap-4 rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5">
                 <div className="shrink-0 rounded-xl bg-gradient-to-b from-indigo-950 to-gray-950 p-2 ring-1 ring-indigo-900/40">
-                  <AvatarSprite appearance={character} size={72} dir="down" animated />
+                  <AvatarSprite appearance={character} size={64} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-gray-100">Your character</p>

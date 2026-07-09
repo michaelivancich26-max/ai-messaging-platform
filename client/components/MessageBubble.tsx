@@ -407,7 +407,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
         className={`order-2 shrink-0 transition-opacity ${isSelf ? "md:order-3" : "md:order-1"} ${onUserClick && message.userId ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
         title={onUserClick && message.userId ? `View ${username}'s profile` : undefined}
       >
-        <AvatarSprite appearance={senderApp} size={46} dir={isSelf ? "left" : "right"} />
+        <AvatarSprite appearance={senderApp} size={46} crop="bust" />
       </button>
 
       {/* Action toolbar */}
