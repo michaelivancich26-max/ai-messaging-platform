@@ -285,6 +285,22 @@ export default function RoomPage() {
       setMessages(history);
     });
 
+    // Live verdict — pushed to the whole room when a match completes (spectators + players)
+    socket.on("matchComplete", (data: any) => {
+      if (data?.isTeam) {
+        setMatchResult({ ...data, winner: "human", verdict: data.verdict ?? "", scoreImpact: 0, botId: "", isCompetitive: true });
+      } else {
+        setMatchResult({
+          winner: data.winnerId === userId ? "human" : "bot",
+          verdict: data.verdict ?? "", scoreImpact: 0, botId: "", isCompetitive: true,
+          winnerId: data.winnerId, challengerId: data.challengerId, challengedId: data.challengedId,
+          challengerEloChange: data.challengerEloChange, challengedEloChange: data.challengedEloChange,
+          challengerEloAfter: data.challengerEloAfter, challengedEloAfter: data.challengedEloAfter,
+        });
+      }
+      setMatchState("ended");
+    });
+
     socket.on("message", (msg: ChatMessage) => {
       // Route spectator chat messages
       if (msg.channelId && msg.channelId === spectatorChatChannelRef.current) {
@@ -366,6 +382,7 @@ export default function RoomPage() {
       socket.off("userTyping");
       socket.off("userStopTyping");
       socket.off("channelsUpdated");
+      socket.off("matchComplete");
     };
   }, [status, roomId, userId, username]);
 
@@ -1328,6 +1345,32 @@ export default function RoomPage() {
         <div className={`relative flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
           {/* Match result overlay */}
           {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && (() => {
+            // Spectators get a neutral result (no "you won/lost", no personal ELO)
+            if (isSpectator) {
+              const heading = matchResult.isTeam
+                ? `Team ${matchResult.winningSide} Wins`
+                : `${onlineMembers.find(m => m.userId === matchResult.winnerId)?.username
+                    ?? (matchResult.winnerId === matchResult.challengerId ? "Challenger" : "Opponent")} Wins`;
+              return (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-950 ring-2 ring-amber-700">
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-amber-400">
+                        <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-amber-400">{heading}</h2>
+                      <p className="mt-0.5 text-xs text-gray-500">{matchResult.isTeam ? "Team match" : "1v1 match"} · you spectated</p>
+                    </div>
+                    <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
+                    <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
+                      Back to Compete
+                    </button>
+                  </div>
+                </div>
+              );
+            }
             if (matchResult.isTeam) {
               const won = myTeamSide != null && myTeamSide === matchResult.winningSide;
               const myEloAfter = (matchResult.eloAfter ?? {})[userId] ?? 0;

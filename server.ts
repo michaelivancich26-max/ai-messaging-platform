@@ -1569,13 +1569,16 @@ app.post("/api/competitive/complete", async (req, res) => {
       winnerId, verdict, challengerEloAfter, challengedEloAfter, roomName,
     );
 
-    res.json({
+    const payload = {
       winnerId, verdict,
       challengerEloChange: challengerEloAfter - (match.challengerEloBefore ?? 1200),
       challengedEloChange: challengedEloAfter - (match.challengedEloBefore ?? 1200),
       challengerEloAfter, challengedEloAfter,
       challengerId: match.challengerId, challengedId: match.challengedId,
-    });
+    };
+    // Broadcast to everyone in the room (spectators + both players) for live verdicts
+    io.to(roomName).emit("matchComplete", { isTeam: false, ...payload });
+    res.json(payload);
   } catch (e) {
     console.error("[competitive complete]", e);
     res.status(500).json({ error: "Failed to complete match" });
@@ -2049,7 +2052,10 @@ app.post("/api/team/complete", async (req, res) => {
       winningSide, verdict, JSON.stringify(eloAfter), roomName,
     );
 
-    res.json({ isTeam: true, winningSide, verdict, teamA, teamB, eloBefore, eloAfter, sideAStance: match.sideAStance, topic: match.topic });
+    const payload = { isTeam: true, winningSide, verdict, teamA, teamB, eloBefore, eloAfter, sideAStance: match.sideAStance, topic: match.topic };
+    // Broadcast to everyone in the room (spectators + all players) for live verdicts
+    io.to(roomName).emit("matchComplete", payload);
+    res.json(payload);
   } catch (e) {
     console.error("[team complete]", e);
     res.status(500).json({ error: "Failed to complete team match" });
