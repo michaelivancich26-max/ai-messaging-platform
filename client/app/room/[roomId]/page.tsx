@@ -85,6 +85,13 @@ export default function RoomPage() {
 
   const isBotRoom = roomId.startsWith("arena-");
   const isCompetitiveRoom = roomId.startsWith("comp-");
+  // Spectator mode: ?spectate=1 → read-only viewing, never drives the match
+  const [isSpectator, setIsSpectator] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsSpectator(new URLSearchParams(window.location.search).get("spectate") === "1");
+    }
+  }, []);
   const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
   const [matchResult, setMatchResult] = useState<{
     winner: "human" | "bot";
@@ -259,8 +266,10 @@ export default function RoomPage() {
     socket.on("userStopTyping", ({ userId: uid }: { userId: string }) => {
       setTypingUsers((prev) => { const next = new Map(prev); next.delete(uid); return next; });
     });
-    // Backfill membership for users who entered this room before RoomMember existed
-    if (userId && !roomId.startsWith("dm-")) {
+    // Backfill membership for users who entered this room before RoomMember existed.
+    // Skip for spectators so watching stays read-only and doesn't add them as a member.
+    const spectating = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("spectate") === "1";
+    if (userId && !roomId.startsWith("dm-") && !spectating) {
       fetch(`${SERVER}/api/rooms/${roomId}/join`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -547,6 +556,7 @@ export default function RoomPage() {
   }, [messages.length, isBotRoom, matchState, winCondition.type, (winCondition as any).threshold]);
 
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
+    if (isSpectator) return; // spectators never drive match completion
     setMatchState("judging");
     try {
       if (isTeamMatch) {
@@ -1291,6 +1301,15 @@ export default function RoomPage() {
           </div>
         </div>
       )}
+      {isSpectator && (
+        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-red-900/30 bg-red-950/20 px-4 py-2">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+          </span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-red-400">Spectating — you're watching this match live</span>
+        </div>
+      )}
       {(isBotRoom || isCompetitiveRoom) && matchState === "judging" && (
         <div className="shrink-0 flex items-center justify-center gap-2 border-b border-amber-900/30 bg-amber-950/15 px-4 py-3">
           <svg className="h-4 w-4 animate-spin text-amber-400" viewBox="0 0 24 24" fill="none">
@@ -1584,8 +1603,10 @@ export default function RoomPage() {
         const floorClaimed = !!debateTurn?.currentSpeakerId;
         const isMySide = myPosition === debateTurn?.currentSide;
         const arenaLocked = (isBotRoom || isCompetitiveRoom) && matchState !== "active";
-        const locked = isSpectating || (isStructured && !isMyTurn) || arenaLocked;
-        const reason = arenaLocked
+        const locked = isSpectator || isSpectating || (isStructured && !isMyTurn) || arenaLocked;
+        const reason = isSpectator
+          ? "You're spectating this match — watching only"
+          : arenaLocked
           ? matchState === "judging"
             ? "Judging in progress…"
             : "The match has ended"

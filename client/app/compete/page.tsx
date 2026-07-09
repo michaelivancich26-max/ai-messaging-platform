@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import TeamMatches from "@/components/TeamMatches";
+import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -249,7 +250,10 @@ export default function CompetePage() {
   const router = useRouter();
   const userId = (session?.user as any)?.id ?? "";
 
-  const [tab, setTab] = useState<"board" | "teams" | "mine" | "leaderboard">("board");
+  const [tab, setTab] = useState<"live" | "board" | "teams" | "mine" | "leaderboard">("board");
+  const { matches: liveMatches } = useLiveMatches();
+  const liveByUser = new Map<string, string>();
+  for (const m of liveMatches) for (const id of m.participantIds) liveByUser.set(id, m.roomName);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [myChallenges, setMyChallenges] = useState<Challenge[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -383,7 +387,7 @@ export default function CompetePage() {
 
       {/* Tabs */}
       <div className="flex shrink-0 border-b border-gray-800">
-        {([["board", "1v1 Challenges"], ["teams", "Team Matches"], ["mine", "My Challenges"], ["leaderboard", "Leaderboard"]] as const).map(([key, label]) => (
+        {([["live", "Live"], ["board", "1v1 Challenges"], ["teams", "Team Matches"], ["mine", "My Challenges"], ["leaderboard", "Leaderboard"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => { setTab(key); if (key === "board") loadBoard(); if (key === "mine") loadMine(); if (key === "leaderboard") loadLeaderboard(); }}
@@ -395,12 +399,22 @@ export default function CompetePage() {
             {key === "board" && challenges.length > 0 && (
               <span className="ml-1.5 rounded-full bg-violet-800 px-1.5 text-[10px] text-violet-200">{challenges.length}</span>
             )}
+            {key === "live" && liveMatches.length > 0 && (
+              <span className="ml-1.5 rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{liveMatches.length}</span>
+            )}
           </button>
         ))}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
+
+        {/* Live matches */}
+        {tab === "live" && (
+          <div className="mx-auto max-w-4xl">
+            <LiveMatches variant="grid" />
+          </div>
+        )}
 
         {/* Team matches */}
         {tab === "teams" && <TeamMatches userId={userId} username={myUsername} />}
@@ -471,18 +485,32 @@ export default function CompetePage() {
                   const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
                   const isMe = entry.id === userId;
                   return (
-                    <button
+                    <div
                       key={entry.id}
-                      onClick={() => router.push(`/u/${encodeURIComponent(entry.username)}`)}
-                      className={`flex w-full items-center gap-3 px-4 py-3 border-b border-gray-800 last:border-0 text-left transition-colors hover:bg-gray-800/50 ${isMe ? "bg-violet-950/30" : ""}`}
+                      className={`flex items-center gap-3 px-4 py-3 border-b border-gray-800 last:border-0 ${isMe ? "bg-violet-950/30" : ""}`}
                     >
                       <span className="w-6 text-center text-xs text-gray-500">{medal ?? `${i + 1}`}</span>
-                      <span className={`flex-1 text-sm font-medium ${isMe ? "text-violet-300" : "text-gray-200"}`}>
+                      <button
+                        onClick={() => router.push(`/u/${encodeURIComponent(entry.username)}`)}
+                        className={`flex-1 truncate text-left text-sm font-medium hover:underline ${isMe ? "text-violet-300" : "text-gray-200"}`}
+                      >
                         {entry.username}{isMe && <span className="ml-1 text-xs text-gray-500">(you)</span>}
-                      </span>
+                      </button>
+                      {liveByUser.has(entry.id) && (
+                        <button
+                          onClick={() => router.push(`/room/${liveByUser.get(entry.id)}?spectate=1`)}
+                          className="flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-red-500"
+                        >
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+                          </span>
+                          Watch
+                        </button>
+                      )}
                       <span className="text-xs text-gray-500">{Number(entry.wins)}W {Number(entry.losses)}L</span>
                       <EloBadge elo={entry.elo} />
-                    </button>
+                    </div>
                   );
                 })
               )}

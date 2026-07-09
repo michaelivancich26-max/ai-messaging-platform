@@ -9,7 +9,7 @@ import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
 import { evaluateClaim, computeCredibility, SCORE_WEIGHTS } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
-import { respondAsBot, BOT_IDS, judgeMatch, scoreMatch } from "./services/debateBot";
+import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
 import bcrypt from "bcryptjs";
 
@@ -2285,6 +2285,108 @@ app.get("/api/leaderboard", async (req, res) => {
   }
 });
 
+// GET /api/arena-leaderboard — top arena players by arena ELO
+app.get("/api/arena-leaderboard", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT u.id, u.username, u."arenaElo" AS elo,
+         COALESCE(w.count, 0)::int AS wins,
+         COALESCE(l.count, 0)::int AS losses
+       FROM "User" u
+       JOIN (SELECT "userId", COUNT(*) AS c FROM "ArenaMatch" GROUP BY "userId") am ON am."userId" = u.id
+       LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'human' GROUP BY "userId") w ON w.uid = u.id
+       LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'bot'   GROUP BY "userId") l ON l.uid = u.id
+       ORDER BY u."arenaElo" DESC LIMIT 25`,
+    ).catch(() => [] as any[]);
+    res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
+  } catch (e) {
+    console.error("[arena-leaderboard]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/live-matches — in-progress competitive 1v1 and team matches, watchable
+app.get("/api/live-matches", async (_req, res) => {
+  try {
+    const [compRows, teamRows] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT cm."roomName", cm."challengerId", cm."challengedId",
+                cm."challengerStance", cm."challengedStance", cm."createdAt", c.claim AS topic
+         FROM "CompetitiveMatch" cm
+         LEFT JOIN "Challenge" c ON cm."challengeId" = c.id
+         WHERE cm.status = 'active'
+         ORDER BY cm."createdAt" DESC LIMIT 40`,
+      ).catch(() => [] as any[]),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "roomName", topic, "teamSize", "sideAStance", "teamA", "teamB", "createdAt"
+         FROM "TeamMatch" WHERE status = 'active' ORDER BY "createdAt" DESC LIMIT 40`,
+      ).catch(() => [] as any[]),
+    ]);
+
+    // Gather all participant ids to resolve usernames + elo in one query
+    const ids = new Set<string>();
+    for (const r of compRows) { ids.add(r.challengerId); ids.add(r.challengedId); }
+    for (const r of teamRows) {
+      try { (JSON.parse(r.teamA) as string[]).forEach(id => ids.add(id)); } catch {}
+      try { (JSON.parse(r.teamB) as string[]).forEach(id => ids.add(id)); } catch {}
+    }
+    const users = ids.size
+      ? await prisma.$queryRawUnsafe<{ id: string; username: string; elo: number }[]>(
+          `SELECT id, username, elo FROM "User" WHERE id = ANY($1::text[])`, [...ids],
+        ).catch(() => [] as any[])
+      : [];
+    const uMap = new Map(users.map(u => [u.id, { username: u.username, elo: Number(u.elo ?? 1200) }]));
+    const who = (id: string) => uMap.get(id) ?? { username: "Player", elo: 1200 };
+    const oppStance = (s: string) => (s === "affirmative" ? "negative" : "affirmative");
+    const viewers = (roomName: string) => presence.get(roomName)?.size ?? 0;
+
+    const matches = [
+      ...compRows.map(r => ({
+        type: "1v1" as const,
+        roomName: r.roomName,
+        topic: r.topic ?? "Debate",
+        teamSize: 1,
+        sideAStance: r.challengerStance,
+        sideBStance: r.challengedStance,
+        sideA: [who(r.challengerId)],
+        sideB: [who(r.challengedId)],
+        participantIds: [r.challengerId, r.challengedId],
+        viewers: viewers(r.roomName),
+        startedAt: r.createdAt,
+      })),
+      ...teamRows.map(r => {
+        const teamA: string[] = (() => { try { return JSON.parse(r.teamA); } catch { return []; } })();
+        const teamB: string[] = (() => { try { return JSON.parse(r.teamB); } catch { return []; } })();
+        return {
+          type: "team" as const,
+          roomName: r.roomName,
+          topic: r.topic ?? "Debate",
+          teamSize: Number(r.teamSize ?? teamA.length),
+          sideAStance: r.sideAStance,
+          sideBStance: oppStance(r.sideAStance),
+          sideA: teamA.map(who),
+          sideB: teamB.map(who),
+          participantIds: [...teamA, ...teamB],
+          viewers: viewers(r.roomName),
+          startedAt: r.createdAt,
+        };
+      }),
+    ];
+
+    // Surface the highest-rated / most-watched matches first
+    const prominence = (m: typeof matches[number]) => {
+      const maxElo = Math.max(0, ...[...m.sideA, ...m.sideB].map(p => p.elo));
+      return m.viewers * 10000 + maxElo;
+    };
+    matches.sort((a, b) => prominence(b) - prominence(a));
+
+    res.json(matches);
+  } catch (e) {
+    console.error("[live-matches]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/arena-result/:roomName
 app.get("/api/arena-result/:roomName", async (req, res) => {
   try {
@@ -2334,6 +2436,18 @@ app.post("/api/arena-judge", async (req, res) => {
        ON CONFLICT ("roomName") DO NOTHING`,
       roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact,
     );
+
+    // Update the user's arena ELO against a tier-scaled bot rating (tier 1→1200 … tier 5→2000)
+    try {
+      const tier = BOT_TIER[result.botId] ?? 3;
+      const botRating = 1000 + tier * 200;
+      const aeRows = await prisma.$queryRawUnsafe<{ arenaElo: number }[]>(
+        `SELECT "arenaElo" FROM "User" WHERE id = $1`, userId,
+      ).catch(() => [] as any[]);
+      const cur = Number(aeRows[0]?.arenaElo ?? 1200);
+      const { newA } = calcElo(cur, botRating, result.winner === "human");
+      await prisma.$executeRawUnsafe(`UPDATE "User" SET "arenaElo" = $1 WHERE id = $2`, newA, userId);
+    } catch (e) { console.error("[arena elo]", e); }
 
     // Keep only the last 5 arena match logs per user — delete messages from older completed rooms
     const ARENA_LOG_LIMIT = 5;
@@ -3495,6 +3609,7 @@ async function start() {
 
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "elo" INTEGER NOT NULL DEFAULT 1200`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "arenaElo" INTEGER NOT NULL DEFAULT 1200`);
     console.log("[DB] User.elo column ready");
   } catch (e) {
     console.error("[DB] User.elo setup failed:", e);
