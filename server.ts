@@ -108,8 +108,8 @@ const botOpeningPending = new Set<string>();
 // Global socket index: userId → Set<socketId> for real-time notification delivery
 const userSockets = new Map<string, Set<string>>();
 
-// Spatial world presence: userId → { username, x, y, avatar } for the walkable campus
-interface WorldPlayer { userId: string; username: string; x: number; y: number; avatar: string | null }
+// Spatial world presence: userId → position + facing + cosmetic appearance
+interface WorldPlayer { userId: string; username: string; x: number; y: number; dir: string; appearance: any }
 const worldPlayers = new Map<string, WorldPlayer>();
 
 function deliverNotification(userId: string, notif: object) {
@@ -180,20 +180,28 @@ io.on("connection", (socket) => {
   });
 
   // ── Spatial world (walkable campus) ────────────────────────────────────────
-  socket.on("world:join", ({ x, y, avatar }: { x: number; y: number; avatar?: string | null }) => {
-    worldPlayers.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, x, y, avatar: avatar ?? null });
+  socket.on("world:join", ({ x, y, dir, appearance }: { x: number; y: number; dir?: string; appearance?: any }) => {
+    const player: WorldPlayer = { userId: socketUser.id, username: socketUser.username, x, y, dir: dir ?? "down", appearance: appearance ?? null };
+    worldPlayers.set(socketUser.id, player);
     socket.join("world");
     // Send the full roster to the joiner (excluding self on the client)
     socket.emit("world:roster", [...worldPlayers.values()]);
     // Announce to everyone else already in the world
-    socket.to("world").emit("world:playerJoined", { userId: socketUser.id, username: socketUser.username, x, y, avatar: avatar ?? null });
+    socket.to("world").emit("world:playerJoined", player);
   });
 
-  socket.on("world:move", ({ x, y }: { x: number; y: number }) => {
+  socket.on("world:move", ({ x, y, dir }: { x: number; y: number; dir?: string }) => {
     const p = worldPlayers.get(socketUser.id);
     if (!p) return;
-    p.x = x; p.y = y;
-    socket.to("world").emit("world:playerMoved", { userId: socketUser.id, x, y });
+    p.x = x; p.y = y; if (dir) p.dir = dir;
+    socket.to("world").emit("world:playerMoved", { userId: socketUser.id, x, y, dir: p.dir });
+  });
+
+  socket.on("world:appearance", ({ appearance }: { appearance: any }) => {
+    const p = worldPlayers.get(socketUser.id);
+    if (!p) return;
+    p.appearance = appearance ?? null;
+    socket.to("world").emit("world:playerAppearance", { userId: socketUser.id, appearance: p.appearance });
   });
 
   socket.on("world:leave", () => {
@@ -2513,7 +2521,7 @@ async function buildProfilePayload(
   const uid = user.id;
   const uRows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT elo, "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
-            "claimsRated", "dailyStreak", "longestStreak", "featuredMedals"
+            "claimsRated", "dailyStreak", "longestStreak", "featuredMedals", "worldAppearance"
      FROM "User" WHERE id = $1`, uid,
   ).catch(() => [] as any[]);
   const u0 = uRows[0] ?? {};
@@ -2614,11 +2622,14 @@ async function buildProfilePayload(
     if (Array.isArray(raw)) featuredMedals = raw.filter((id: any) => typeof id === "string" && earnedIds.has(id)).slice(0, 6);
   } catch { /* no featured selection */ }
 
+  let worldAppearance: any = null;
+  try { worldAppearance = u0.worldAppearance ? JSON.parse(u0.worldAppearance) : null; } catch { /* none */ }
+
   const publicUser = includePrivate
     ? user
     : { id: user.id, username: user.username, bio: user.bio, avatarUrl: user.avatarUrl, createdAt: user.createdAt };
 
-  return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, ...(cred ? { cred } : {}) };
+  return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, worldAppearance, ...(cred ? { cred } : {}) };
 }
 
 // GET /api/users/:id/profile — full profile (includes account fields)
@@ -2653,7 +2664,7 @@ app.get("/api/users/by-name/:username/profile", async (req, res) => {
 
 // PATCH /api/users/:id/profile
 app.patch("/api/users/:id/profile", async (req, res) => {
-  const { bio, avatarUrl, featuredMedals } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[] };
+  const { bio, avatarUrl, featuredMedals, worldAppearance } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[]; worldAppearance?: object };
   try {
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -2663,6 +2674,11 @@ app.patch("/api/users/:id/profile", async (req, res) => {
       },
       select: { id: true, username: true, bio: true, avatarUrl: true },
     });
+    if (worldAppearance !== undefined && worldAppearance !== null && typeof worldAppearance === "object") {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "User" SET "worldAppearance" = $1 WHERE id = $2`, JSON.stringify(worldAppearance), req.params.id,
+      );
+    }
     // Featured medals are stored on a raw column; cap at 6 and keep only strings
     if (featuredMedals !== undefined) {
       const clean = Array.isArray(featuredMedals)
@@ -3664,6 +3680,7 @@ async function start() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "longestStreak" INTEGER NOT NULL DEFAULT 0`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveDay" DATE`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "featuredMedals" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "worldAppearance" TEXT`);
     console.log("[DB] User rubric-average + streak columns ready");
   } catch (e) {
     console.error("[DB] User rubric-average/streak setup failed:", e);

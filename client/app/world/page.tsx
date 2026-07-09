@@ -4,113 +4,151 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
+import {
+  drawCharacter, defaultAppearance, normalizeAppearance,
+  SKIN, HAIR_COLOR, SHIRT, PANTS, HAIR_STYLE_COUNT, HATS,
+  type Appearance, type Dir,
+} from "@/lib/avatar";
+import { BUILDINGS, WORLD_W, WORLD_H, SPAWN, hitsBuilding, drawWorldTo } from "@/lib/worldMap";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+const SCALE = 3;             // screen px per logical px
+const SPEED = 95;           // logical px / second
+const MOVE_EMIT_MS = 90;
+const DOOR_DIST = 34;
+const WATCH_DIST = 40;
 
-// ── World geometry ────────────────────────────────────────────────────────────
-const WORLD_W = 2000;
-const WORLD_H = 1400;
-const AVATAR_R = 16;
-const SPEED = 300;            // px per second
-const MOVE_EMIT_MS = 90;      // throttle for broadcasting my position
-const DOOR_DIST = 64;         // how close to a door to prompt "Enter"
-const WATCH_DIST = 78;        // how close to a live player to prompt "Watch"
-const SPAWN = { x: 1000, y: 700 };
-
-type Theme = "indigo" | "violet" | "amber" | "teal";
-
-interface Building {
-  id: string;
-  name: string;
-  sub: string;
-  route: string;
-  theme: Theme;
-  x: number; y: number; w: number; h: number;
-  door: { x: number; y: number };  // point in front of the entrance
-  icon: React.ReactNode;
-}
-
-const THEME: Record<Theme, { wall: string; roof: string; glow: string; door: string; text: string; ring: string; badge: string }> = {
-  indigo: { wall: "from-indigo-900/80 to-indigo-950", roof: "bg-indigo-700", glow: "shadow-indigo-900/40", door: "bg-indigo-400", text: "text-indigo-300", ring: "ring-indigo-700/50", badge: "bg-indigo-600" },
-  violet: { wall: "from-violet-900/80 to-violet-950", roof: "bg-violet-700", glow: "shadow-violet-900/40", door: "bg-violet-400", text: "text-violet-300", ring: "ring-violet-700/50", badge: "bg-violet-600" },
-  amber:  { wall: "from-amber-900/70 to-amber-950",   roof: "bg-amber-600",  glow: "shadow-amber-900/40",  door: "bg-amber-400",  text: "text-amber-300",  ring: "ring-amber-700/50",  badge: "bg-amber-600" },
-  teal:   { wall: "from-teal-900/70 to-teal-950",     roof: "bg-teal-600",   glow: "shadow-teal-900/40",   door: "bg-teal-400",   text: "text-teal-300",   ring: "ring-teal-700/50",   badge: "bg-teal-600" },
-};
-
-const BUILDINGS: Building[] = [
-  {
-    id: "debates", name: "Convention Center", sub: "Debates", route: "/lobby", theme: "indigo",
-    x: 160, y: 180, w: 440, h: 300, door: { x: 380, y: 512 },
-    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />,
-  },
-  {
-    id: "compete", name: "The Coliseum", sub: "Compete", route: "/compete", theme: "violet",
-    x: 1400, y: 180, w: 440, h: 320, door: { x: 1620, y: 532 },
-    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />,
-  },
-  {
-    id: "arena", name: "Computer Lab", sub: "Arena", route: "/arena", theme: "amber",
-    x: 160, y: 920, w: 440, h: 300, door: { x: 380, y: 888 },
-    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />,
-  },
-  {
-    id: "learn", name: "The Library", sub: "Learn", route: "/learn", theme: "teal",
-    x: 1400, y: 920, w: 440, h: 300, door: { x: 1620, y: 888 },
-    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />,
-  },
-];
-
-interface Player { userId: string; username: string; x: number; y: number; avatar: string | null }
+interface Other { x: number; y: number; tx: number; ty: number; dir: Dir; anim: number; app: Appearance; username: string }
 type Prompt =
   | { kind: "enter"; label: string; sub: string; route: string }
   | { kind: "watch"; label: string; sub: string; room: string }
   | null;
 
-function avatarColor(name: string): string {
-  const colors = ["bg-rose-500", "bg-orange-500", "bg-amber-500", "bg-lime-500", "bg-emerald-500", "bg-teal-500", "bg-cyan-500", "bg-sky-500", "bg-indigo-500", "bg-violet-500", "bg-fuchsia-500", "bg-pink-500"];
-  let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % colors.length;
-  return colors[h];
+// ── Character customizer ──────────────────────────────────────────────────────
+function Customizer({ app, onChange, onClose, onSave }: {
+  app: Appearance; onChange: (a: Appearance) => void; onClose: () => void; onSave: () => void;
+}) {
+  const pv = useRef<HTMLCanvasElement>(null);
+  const [dir, setDir] = useState<Dir>("down");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const c = pv.current; if (!c) return;
+    const ctx = c.getContext("2d"); if (!ctx) return;
+    let raf = 0; let t0 = performance.now();
+    const loop = (t: number) => {
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, c.width, c.height);
+      const frame = Math.floor((t - t0) / 260) % 2;
+      drawCharacter(ctx, 22, 8, 7, app, dir, frame);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [app, dir]);
+
+  const cycle = (key: keyof Appearance, n: number, d: number) =>
+    onChange({ ...app, [key]: ((app[key] + d) % n + n) % n });
+
+  const Row = ({ label, k, n, swatches }: { label: string; k: keyof Appearance; n: number; swatches?: string[] }) => (
+    <div className="flex items-center gap-2">
+      <span className="w-16 shrink-0 text-[11px] text-gray-400">{label}</span>
+      <button onClick={() => cycle(k, n, -1)} className="rounded-md bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700">‹</button>
+      <div className="flex-1 text-center text-xs text-gray-200">
+        {swatches
+          ? <span className="inline-block h-4 w-4 rounded-full ring-1 ring-white/30 align-middle" style={{ background: swatches[app[k]] }} />
+          : (k === "hat" ? HATS[app[k]] : `${app[k] + 1}`)}
+      </div>
+      <button onClick={() => cycle(k, n, 1)} className="rounded-md bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700">›</button>
+    </div>
+  );
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-700 p-5" onClick={e => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-white">Customize your character</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300">✕</button>
+        </div>
+        <div className="flex gap-4">
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-xl bg-emerald-950 p-2 ring-1 ring-emerald-800/50" style={{ imageRendering: "pixelated" } as any}>
+              <canvas ref={pv} width={112} height={180} style={{ imageRendering: "pixelated" }} />
+            </div>
+            <div className="flex gap-1">
+              {(["down", "left", "right", "up"] as Dir[]).map(d => (
+                <button key={d} onClick={() => setDir(d)}
+                  className={`rounded px-1.5 py-0.5 text-[10px] ${dir === d ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400"}`}>
+                  {d[0].toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 space-y-2.5">
+            <Row label="Skin" k="skin" n={SKIN.length} swatches={SKIN} />
+            <Row label="Hair" k="hair" n={HAIR_STYLE_COUNT} />
+            <Row label="Hair color" k="hairColor" n={HAIR_COLOR.length} swatches={HAIR_COLOR} />
+            <Row label="Shirt" k="shirt" n={SHIRT.length} swatches={SHIRT} />
+            <Row label="Pants" k="pants" n={PANTS.length} swatches={PANTS} />
+            <Row label="Hat" k="hat" n={HATS.length} />
+          </div>
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800">Cancel</button>
+          <button onClick={async () => { setSaving(true); await onSave(); setSaving(false); }}
+            className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40" disabled={saving}>
+            {saving ? "Saving…" : "Save look"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-// Expand a building rect by the avatar radius and test whether (px,py) collides.
-function hitsBuilding(px: number, py: number): boolean {
-  for (const b of BUILDINGS) {
-    if (px > b.x - AVATAR_R && px < b.x + b.w + AVATAR_R && py > b.y - AVATAR_R && py < b.y + b.h + AVATAR_R) return true;
-  }
-  return false;
-}
-
+// ── World page ────────────────────────────────────────────────────────────────
 export default function WorldPage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
   const userId: string = (session?.user as any)?.id ?? "";
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
 
-  const [players, setPlayers] = useState<Map<string, Player>>(new Map());
   const [prompt, setPrompt] = useState<Prompt>(null);
+  const [count, setCount] = useState(1);
   const [hint, setHint] = useState(true);
+  const [customize, setCustomize] = useState(false);
+  const [appearance, setAppearance] = useState<Appearance | null>(null);
 
-  // Refs driven by the animation loop (avoid per-frame React re-renders)
-  const meRef = useRef({ ...SPAWN });
-  const targetRef = useRef<{ x: number; y: number } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgRef = useRef<HTMLCanvasElement | null>(null);
+  const sizeRef = useRef({ w: 0, h: 0 });
+  const meRef = useRef({ x: SPAWN.x, y: SPAWN.y, dir: "down" as Dir, anim: 0, moving: false });
+  const appRef = useRef<Appearance | null>(null);
+  const othersRef = useRef<Map<string, Other>>(new Map());
   const keysRef = useRef<Set<string>>(new Set());
+  const targetRef = useRef<{ x: number; y: number } | null>(null);
   const camRef = useRef({ x: 0, y: 0 });
   const promptRef = useRef<Prompt>(null);
-  const liveRef = useRef<Map<string, string>>(new Map());       // userId -> roomName (live matches)
-  const playersRef = useRef<Map<string, Player>>(new Map());    // mirror for the loop
-  const avatarUrlRef = useRef<string | null>(null);
+  const liveRef = useRef<Map<string, string>>(new Map());
 
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const worldRef = useRef<HTMLDivElement>(null);
-  const meElRef = useRef<HTMLDivElement>(null);
+  // Build the static world once (offscreen)
+  useEffect(() => {
+    const c = document.createElement("canvas");
+    c.width = WORLD_W; c.height = WORLD_H;
+    const ctx = c.getContext("2d");
+    if (ctx) drawWorldTo(ctx);
+    bgRef.current = c;
+  }, []);
 
-  // Fetch my avatar (best-effort) to show it to others
+  // Load my saved appearance (or a default from my name)
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/users/${userId}/profile`).then(r => r.json()).then(d => { avatarUrlRef.current = d.avatarUrl ?? null; }).catch(() => {});
-  }, [userId]);
+    fetch(`${SERVER}/api/users/${userId}/profile`).then(r => r.json()).then(d => {
+      const a = normalizeAppearance(d.worldAppearance, username || userId);
+      setAppearance(a); appRef.current = a;
+    }).catch(() => { const a = defaultAppearance(username || userId); setAppearance(a); appRef.current = a; });
+  }, [userId, username]);
 
-  // Poll live matches so we know who is watchable
+  // Poll live matches → who is watchable
   useEffect(() => {
     if (!userId) return;
     const load = () => fetch(`${SERVER}/api/live-matches`).then(r => r.json()).then((d: any[]) => {
@@ -123,58 +161,44 @@ export default function WorldPage() {
     return () => clearInterval(id);
   }, [userId]);
 
-  // Socket: join the world, track other players
+  // Socket — join the world, track others (all via refs; canvas reads them)
   useEffect(() => {
-    if (status !== "authenticated" || !userId) return;
+    if (status !== "authenticated" || !userId || !appearance) return;
     const socket = getSocket({ id: userId, username });
+    const seed = username || userId;
 
-    const upsert = (p: Player) => {
+    const addOther = (p: any) => {
       if (p.userId === userId) return;
-      playersRef.current.set(p.userId, p);
-      setPlayers(new Map(playersRef.current));
+      const app = normalizeAppearance(p.appearance, p.username || p.userId);
+      othersRef.current.set(p.userId, { x: p.x, y: p.y, tx: p.x, ty: p.y, dir: (p.dir ?? "down") as Dir, anim: 0, app, username: p.username });
+      setCount(othersRef.current.size + 1);
     };
 
-    socket.on("world:roster", (list: Player[]) => {
-      playersRef.current = new Map();
-      for (const p of list) if (p.userId !== userId) playersRef.current.set(p.userId, p);
-      setPlayers(new Map(playersRef.current));
+    socket.on("world:roster", (list: any[]) => {
+      othersRef.current = new Map();
+      for (const p of list) if (p.userId !== userId) addOther(p);
+      setCount(othersRef.current.size + 1);
     });
-    socket.on("world:playerJoined", (p: Player) => upsert(p));
-    socket.on("world:playerMoved", ({ userId: uid, x, y }: { userId: string; x: number; y: number }) => {
-      const p = playersRef.current.get(uid);
-      if (p) { p.x = x; p.y = y; setPlayers(new Map(playersRef.current)); }
+    socket.on("world:playerJoined", addOther);
+    socket.on("world:playerMoved", ({ userId: uid, x, y, dir }: any) => {
+      const o = othersRef.current.get(uid); if (o) { o.tx = x; o.ty = y; if (dir) o.dir = dir; }
     });
-    socket.on("world:playerLeft", ({ userId: uid }: { userId: string }) => {
-      if (playersRef.current.delete(uid)) setPlayers(new Map(playersRef.current));
+    socket.on("world:playerAppearance", ({ userId: uid, appearance: ap }: any) => {
+      const o = othersRef.current.get(uid); if (o) o.app = normalizeAppearance(ap, o.username);
+    });
+    socket.on("world:playerLeft", ({ userId: uid }: any) => {
+      if (othersRef.current.delete(uid)) setCount(othersRef.current.size + 1);
     });
 
-    socket.emit("world:join", { x: meRef.current.x, y: meRef.current.y, avatar: avatarUrlRef.current });
+    socket.emit("world:join", { x: meRef.current.x, y: meRef.current.y, dir: meRef.current.dir, appearance });
 
     return () => {
       socket.emit("world:leave");
-      socket.off("world:roster");
-      socket.off("world:playerJoined");
-      socket.off("world:playerMoved");
-      socket.off("world:playerLeft");
+      socket.off("world:roster"); socket.off("world:playerJoined"); socket.off("world:playerMoved");
+      socket.off("world:playerAppearance"); socket.off("world:playerLeft");
     };
-  }, [status, userId, username]);
-
-  // Input handlers
-  useEffect(() => {
-    const down = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) e.preventDefault();
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
-        keysRef.current.add(k); targetRef.current = null; setHint(false);
-      }
-      if ((k === "e" || k === "enter") && promptRef.current) act(promptRef.current);
-    };
-    const up = (e: KeyboardEvent) => keysRef.current.delete(e.key.toLowerCase());
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status, userId, username, !!appearance]);
 
   const act = useCallback((p: Prompt) => {
     if (!p) return;
@@ -182,90 +206,158 @@ export default function WorldPage() {
     else router.push(`/room/${p.room}?spectate=1`);
   }, [router]);
 
-  // Tap / click the ground to walk there
-  const onGroundClick = useCallback((e: React.MouseEvent) => {
-    const vp = viewportRef.current;
-    if (!vp) return;
-    const rect = vp.getBoundingClientRect();
-    const wx = e.clientX - rect.left - camRef.current.x;
-    const wy = e.clientY - rect.top - camRef.current.y;
-    targetRef.current = { x: Math.max(AVATAR_R, Math.min(WORLD_W - AVATAR_R, wx)), y: Math.max(AVATAR_R, Math.min(WORLD_H - AVATAR_R, wy)) };
-    keysRef.current.clear();
-    setHint(false);
+  // Keyboard
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) e.preventDefault();
+      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) { keysRef.current.add(k); targetRef.current = null; setHint(false); }
+      if ((k === "e" || k === "enter") && promptRef.current) act(promptRef.current);
+    };
+    const up = (e: KeyboardEvent) => keysRef.current.delete(e.key.toLowerCase());
+    window.addEventListener("keydown", down); window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, [act]);
+
+  const onCanvasClick = useCallback((e: React.MouseEvent) => {
+    const c = canvasRef.current; if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const wx = camRef.current.x + (e.clientX - rect.left) / SCALE;
+    const wy = camRef.current.y + (e.clientY - rect.top) / SCALE;
+    targetRef.current = { x: Math.max(6, Math.min(WORLD_W - 6, wx)), y: Math.max(6, Math.min(WORLD_H - 6, wy)) };
+    keysRef.current.clear(); setHint(false);
   }, []);
 
-  // Animation loop
+  // Resize
+  useEffect(() => {
+    const c = canvasRef.current; if (!c) return;
+    const resize = () => {
+      const box = c.parentElement; if (!box) return;
+      const cssW = box.clientWidth, cssH = box.clientHeight;
+      const dpr = window.devicePixelRatio || 1;
+      c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+      c.style.width = cssW + "px"; c.style.height = cssH + "px";
+      const ctx = c.getContext("2d");
+      if (ctx) { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false; }
+      sizeRef.current = { w: cssW, h: cssH };
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  // Main loop
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
-    let raf = 0; let last = performance.now(); let lastEmit = 0;
     const socket = getSocket({ id: userId, username });
+    let raf = 0, last = performance.now(), lastEmit = 0;
 
-    const step = (now: number) => {
+    const loop = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const c = canvasRef.current, bg = bgRef.current, ctx = c?.getContext("2d");
       const me = meRef.current;
 
-      // Velocity from keys, else move toward tap target
-      let vx = 0, vy = 0;
-      const K = keysRef.current;
+      // ── Move me ──
+      let vx = 0, vy = 0; const K = keysRef.current;
       if (K.has("w") || K.has("arrowup")) vy -= 1;
       if (K.has("s") || K.has("arrowdown")) vy += 1;
       if (K.has("a") || K.has("arrowleft")) vx -= 1;
       if (K.has("d") || K.has("arrowright")) vx += 1;
-      if (vx || vy) {
-        const len = Math.hypot(vx, vy); vx /= len; vy /= len;
-      } else if (targetRef.current) {
-        const tx = targetRef.current.x - me.x, ty = targetRef.current.y - me.y;
-        const d = Math.hypot(tx, ty);
-        if (d < 3) { targetRef.current = null; } else { vx = tx / d; vy = ty / d; }
+      if (vx || vy) { const l = Math.hypot(vx, vy); vx /= l; vy /= l; }
+      else if (targetRef.current) {
+        const tx = targetRef.current.x - me.x, ty = targetRef.current.y - me.y, d = Math.hypot(tx, ty);
+        if (d < 2) targetRef.current = null; else { vx = tx / d; vy = ty / d; }
+      }
+      me.moving = !!(vx || vy);
+      if (me.moving) {
+        if (Math.abs(vx) > Math.abs(vy)) me.dir = vx < 0 ? "left" : "right";
+        else me.dir = vy < 0 ? "up" : "down";
+        const nx = me.x + vx * SPEED * dt, ny = me.y + vy * SPEED * dt;
+        if (!hitsBuilding(nx, me.y)) me.x = nx;
+        if (!hitsBuilding(me.x, ny)) me.y = ny;
+        me.anim += dt;
+      } else me.anim = 0;
+
+      // ── Camera ──
+      const { w: cssW, h: cssH } = sizeRef.current;
+      const visW = cssW / SCALE, visH = cssH / SCALE;
+      const camX = Math.max(0, Math.min(WORLD_W - visW, me.x - visW / 2));
+      const camY = Math.max(0, Math.min(WORLD_H - visH, me.y - visH / 2));
+      camRef.current = { x: camX, y: camY };
+
+      // ── Render ──
+      if (ctx && c && bg) {
+        ctx.clearRect(0, 0, cssW, cssH);
+        ctx.imageSmoothingEnabled = false;
+        // world
+        ctx.drawImage(bg, camX, camY, visW, visH, 0, 0, cssW, cssH);
+
+        // building name banners
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = "bold 11px ui-sans-serif, system-ui";
+        for (const b of BUILDINGS) {
+          const sx = (b.x + b.w / 2 - camX) * SCALE, sy = (b.y + 15 - camY) * SCALE;
+          ctx.fillStyle = "rgba(255,255,255,0.95)"; ctx.fillText(b.name, sx, sy);
+        }
+
+        // characters — advance & lerp others, then paint back-to-front by y
+        const drawList: { y: number; fn: () => void }[] = [];
+        for (const [uid, o] of othersRef.current) {
+          const dx = o.tx - o.x, dy = o.ty - o.y, dist = Math.hypot(dx, dy);
+          const moving = dist > 0.6;
+          if (moving) { const k = Math.min(1, dt * 12); o.x += dx * k; o.y += dy * k; o.anim += dt; } else o.anim = 0;
+          const sx = (o.x - camX) * SCALE, sy = (o.y - camY) * SCALE;
+          if (sx < -80 || sx > cssW + 80 || sy < -100 || sy > cssH + 100) continue;
+          const frame = moving ? Math.floor(o.anim * 7) % 2 : 0;
+          const live = liveRef.current.has(uid);
+          drawList.push({ y: o.y, fn: () => paintChar(ctx, sx, sy, o.app, o.dir, frame, o.username, live) });
+        }
+        // me
+        {
+          const sx = (me.x - camX) * SCALE, sy = (me.y - camY) * SCALE;
+          const frame = me.moving ? Math.floor(me.anim * 7) % 2 : 0;
+          const app = appRef.current;
+          if (app) drawList.push({ y: me.y, fn: () => paintChar(ctx, sx, sy, app, me.dir, frame, "You", false, true) });
+        }
+        drawList.sort((a, b) => a.y - b.y);
+        for (const d of drawList) d.fn();
       }
 
-      if (vx || vy) {
-        const nx = me.x + vx * SPEED * dt;
-        const ny = me.y + vy * SPEED * dt;
-        const cx = Math.max(AVATAR_R, Math.min(WORLD_W - AVATAR_R, nx));
-        const cy = Math.max(AVATAR_R, Math.min(WORLD_H - AVATAR_R, ny));
-        if (!hitsBuilding(cx, me.y)) me.x = cx;         // axis-separated collision
-        if (!hitsBuilding(me.x, cy)) me.y = cy;
+      // ── Emit my position (throttled) ──
+      if (now - lastEmit > MOVE_EMIT_MS && me.moving) {
+        socket.emit("world:move", { x: Math.round(me.x), y: Math.round(me.y), dir: me.dir }); lastEmit = now;
       }
 
-      // Camera — center on me, clamped to world bounds
-      const vp = viewportRef.current;
-      if (vp && worldRef.current && meElRef.current) {
-        const vw = vp.clientWidth, vh = vp.clientHeight;
-        const camX = Math.max(Math.min(0, vw / 2 - me.x), vw - WORLD_W);
-        const camY = Math.max(Math.min(0, vh / 2 - me.y), vh - WORLD_H);
-        camRef.current = { x: camX, y: camY };
-        worldRef.current.style.transform = `translate(${camX}px, ${camY}px)`;
-        meElRef.current.style.transform = `translate(${me.x - AVATAR_R}px, ${me.y - AVATAR_R}px)`;
-      }
-
-      // Broadcast my position (throttled)
-      if (now - lastEmit > MOVE_EMIT_MS) { socket.emit("world:move", { x: Math.round(me.x), y: Math.round(me.y) }); lastEmit = now; }
-
-      // Nearest interactable → prompt
-      let next: Prompt = null;
-      let best = Infinity;
+      // ── Prompt ──
+      let next: Prompt = null, best = Infinity;
       for (const b of BUILDINGS) {
         const d = Math.hypot(b.door.x - me.x, b.door.y - me.y);
         if (d < DOOR_DIST && d < best) { best = d; next = { kind: "enter", label: b.name, sub: b.sub, route: b.route }; }
       }
-      for (const p of playersRef.current.values()) {
-        const room = liveRef.current.get(p.userId);
-        if (!room) continue;
-        const d = Math.hypot(p.x - me.x, p.y - me.y);
-        if (d < WATCH_DIST && d < best) { best = d; next = { kind: "watch", label: p.username, sub: "Watch live debate", room }; }
+      for (const [uid, o] of othersRef.current) {
+        const room = liveRef.current.get(uid); if (!room) continue;
+        const d = Math.hypot(o.x - me.x, o.y - me.y);
+        if (d < WATCH_DIST && d < best) { best = d; next = { kind: "watch", label: o.username, sub: "Watch live debate", room }; }
       }
-      const a = promptRef.current, changed =
-        (!a && next) || (a && !next) ||
-        (a && next && (a.kind !== next.kind || (a as any).route !== (next as any).route || (a as any).room !== (next as any).room || a.label !== next.label));
+      const a = promptRef.current;
+      const changed = (!a && next) || (a && !next) || (a && next && (a.kind !== next.kind || a.label !== next.label || (a as any).route !== (next as any).route || (a as any).room !== (next as any).room));
       if (changed) { promptRef.current = next; setPrompt(next); }
 
-      raf = requestAnimationFrame(step);
+      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(step);
+    raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, userId, username]);
+
+  async function saveAppearance() {
+    const a = appRef.current; if (!a || !userId) { setCustomize(false); return; }
+    getSocket({ id: userId, username }).emit("world:appearance", { appearance: a });
+    await fetch(`${SERVER}/api/users/${userId}/profile`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ worldAppearance: a }),
+    }).catch(() => {});
+    setCustomize(false);
+  }
 
   if (status === "loading") {
     return <div className="flex h-full items-center justify-center bg-emerald-950 text-emerald-200/70 text-sm">Loading the campus…</div>;
@@ -273,120 +365,35 @@ export default function WorldPage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-emerald-950 select-none">
-      {/* Viewport */}
-      <div ref={viewportRef} className="absolute inset-0 cursor-pointer" onClick={onGroundClick}>
-        {/* World */}
-        <div
-          ref={worldRef}
-          className="absolute left-0 top-0 will-change-transform"
-          style={{
-            width: WORLD_W, height: WORLD_H,
-            backgroundColor: "#0f3d2e",
-            backgroundImage:
-              "radial-gradient(circle at 50% 45%, rgba(52,211,153,0.10), transparent 60%)," +
-              "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px)," +
-              "linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)",
-            backgroundSize: "100% 100%, 48px 48px, 48px 48px",
-          }}
-        >
-          {/* Central plaza */}
-          <div className="absolute rounded-full ring-2 ring-emerald-700/30 bg-emerald-900/20"
-            style={{ left: SPAWN.x - 190, top: SPAWN.y - 130, width: 380, height: 260 }} />
-          <div className="absolute -translate-x-1/2 text-center" style={{ left: SPAWN.x, top: SPAWN.y - 34 }}>
-            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-emerald-500/60">Veritas Campus</p>
-          </div>
-
-          {/* Buildings */}
-          {BUILDINGS.map(b => {
-            const t = THEME[b.theme];
-            const doorSide = b.door.y > b.y + b.h ? "bottom" : "top";
-            return (
-              <div key={b.id} className="absolute" style={{ left: b.x, top: b.y, width: b.w, height: b.h }}>
-                <div className={`relative flex h-full w-full flex-col overflow-hidden rounded-2xl bg-gradient-to-b ${t.wall} shadow-2xl ${t.glow} ring-1 ${t.ring}`}>
-                  {/* Roof band */}
-                  <div className={`flex items-center gap-2 px-4 py-2 ${t.roof}`}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5 text-white/90">{b.icon}</svg>
-                    <span className="text-sm font-bold tracking-wide text-white">{b.name}</span>
-                  </div>
-                  {/* Facade */}
-                  <div className="relative flex-1">
-                    <div className="absolute inset-0 grid grid-cols-4 gap-3 p-5 opacity-40">
-                      {Array.from({ length: 8 }).map((_, i) => <div key={i} className="rounded-md bg-white/10" />)}
-                    </div>
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-3 text-center">
-                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white ${t.badge}`}>{b.sub}</span>
-                    </div>
-                  </div>
-                </div>
-                {/* Door marker */}
-                <div className={`absolute h-3 w-16 -translate-x-1/2 rounded-full ${t.door} shadow-lg`}
-                  style={{ left: b.w / 2, [doorSide === "bottom" ? "bottom" : "top"]: -6 } as any} />
-              </div>
-            );
-          })}
-
-          {/* Other players */}
-          {[...players.values()].map(p => {
-            const live = liveRef.current.has(p.userId);
-            return (
-              <div key={p.userId} className="absolute will-change-transform transition-transform duration-100 ease-linear"
-                style={{ transform: `translate(${p.x - AVATAR_R}px, ${p.y - AVATAR_R}px)` }}>
-                <div className="relative flex flex-col items-center">
-                  <span className="mb-1 max-w-[90px] truncate rounded-full bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-gray-100">
-                    {live && <span className="mr-0.5 text-red-400">●</span>}{p.username}
-                  </span>
-                  <div className={`flex items-center justify-center rounded-full ring-2 ring-white/70 ${avatarColor(p.username)}`} style={{ width: AVATAR_R * 2, height: AVATAR_R * 2 }}>
-                    {p.avatar ? <img src={p.avatar} alt="" className="h-full w-full rounded-full object-cover" /> : <span className="text-xs font-bold text-white">{p.username[0]?.toUpperCase()}</span>}
-                  </div>
-                  {live && <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-ping rounded-full bg-red-500" />}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Me */}
-          <div ref={meElRef} className="absolute left-0 top-0 z-10 will-change-transform" style={{ transform: `translate(${SPAWN.x - AVATAR_R}px, ${SPAWN.y - AVATAR_R}px)` }}>
-            <div className="relative flex flex-col items-center">
-              <span className="mb-1 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">You</span>
-              <div className="flex items-center justify-center rounded-full bg-indigo-500 ring-2 ring-white shadow-lg shadow-black/40" style={{ width: AVATAR_R * 2, height: AVATAR_R * 2 }}>
-                {avatarUrlRef.current ? <img src={avatarUrlRef.current} alt="" className="h-full w-full rounded-full object-cover" /> : <span className="text-xs font-bold text-white">{username[0]?.toUpperCase()}</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <canvas ref={canvasRef} onClick={onCanvasClick} className="absolute inset-0 h-full w-full cursor-pointer" style={{ imageRendering: "pixelated" }} />
 
       {/* Top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-3 p-4 pt-safe">
-        <button onClick={() => router.push("/home")} className="pointer-events-auto flex items-center gap-1.5 rounded-xl bg-black/40 px-3 py-2 text-xs font-semibold text-gray-200 backdrop-blur hover:bg-black/60">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 p-4 pt-safe">
+        <button onClick={() => router.push("/home")} className="pointer-events-auto flex items-center gap-1.5 rounded-xl bg-black/45 px-3 py-2 text-xs font-semibold text-gray-200 backdrop-blur hover:bg-black/60">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
           Home
         </button>
-        <div className="rounded-xl bg-black/40 px-3 py-2 text-xs text-gray-300 backdrop-blur">
-          <span className="font-semibold text-emerald-400">{players.size + 1}</span> on campus
-        </div>
+        <div className="rounded-xl bg-black/45 px-3 py-2 text-xs text-gray-300 backdrop-blur"><span className="font-semibold text-emerald-400">{count}</span> on campus</div>
+        <button onClick={() => setCustomize(true)} className="pointer-events-auto ml-auto flex items-center gap-1.5 rounded-xl bg-indigo-600/90 px-3 py-2 text-xs font-semibold text-white backdrop-blur hover:bg-indigo-500">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M8 1a3.5 3.5 0 0 0-3.5 3.5c0 .9.34 1.72.9 2.35C3.4 7.9 2 9.9 2 12.5V14h12v-1.5c0-2.6-1.4-4.6-3.4-5.65.56-.63.9-1.45.9-2.35A3.5 3.5 0 0 0 8 1Z" /></svg>
+          Customize
+        </button>
       </div>
 
-      {/* Controls hint */}
       {hint && (
         <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center px-4">
           <div className="rounded-xl bg-black/50 px-4 py-2 text-center text-xs text-gray-300 backdrop-blur">
             <span className="hidden sm:inline">Move with <b className="text-white">WASD</b> / arrows — or click to walk. </span>
-            <span className="sm:hidden">Tap anywhere to walk. </span>
-            Approach a building to enter, or a <span className="text-red-400">●live</span> debater to watch.
+            <span className="sm:hidden">Tap to walk. </span>
+            Walk to a building to enter, or to a <span className="text-red-400">●live</span> debater to watch.
           </div>
         </div>
       )}
 
-      {/* Interaction prompt */}
       {prompt && (
         <div className="absolute inset-x-0 bottom-8 flex justify-center px-4">
-          <button
-            onClick={() => act(prompt)}
-            className={`pointer-events-auto flex items-center gap-3 rounded-2xl px-5 py-3 text-left shadow-xl backdrop-blur transition-transform hover:scale-[1.02] ${
-              prompt.kind === "watch" ? "bg-red-600/90 hover:bg-red-500" : "bg-indigo-600/90 hover:bg-indigo-500"
-            }`}
-          >
+          <button onClick={() => act(prompt)}
+            className={`pointer-events-auto flex items-center gap-3 rounded-2xl px-5 py-3 text-left shadow-xl backdrop-blur transition-transform hover:scale-[1.02] ${prompt.kind === "watch" ? "bg-red-600/90 hover:bg-red-500" : "bg-indigo-600/90 hover:bg-indigo-500"}`}>
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white">
               {prompt.kind === "watch"
                 ? <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
@@ -399,6 +406,29 @@ export default function WorldPage() {
           </button>
         </div>
       )}
+
+      {customize && appearance && (
+        <Customizer app={appearance} onChange={(a) => { setAppearance(a); appRef.current = a; }} onClose={() => setCustomize(false)} onSave={saveAppearance} />
+      )}
     </div>
   );
+}
+
+// Draw a character sprite + floating name/badge in screen space.
+function paintChar(
+  ctx: CanvasRenderingContext2D, screenX: number, screenY: number,
+  app: Appearance, dir: Dir, frame: number, name: string, live: boolean, isMe = false,
+) {
+  const sx = screenX - 8 * SCALE, sy = screenY - 22 * SCALE;
+  drawCharacter(ctx, sx, sy, SCALE, app, dir, frame);
+  // name label
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.font = `bold 11px ui-sans-serif, system-ui`;
+  const ly = sy - 4;
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.strokeText(name, screenX, ly);
+  ctx.fillStyle = isMe ? "#a5b4fc" : "#f3f4f6"; ctx.fillText(name, screenX, ly);
+  if (live) {
+    ctx.beginPath(); ctx.fillStyle = "#ef4444";
+    ctx.arc(screenX - ctx.measureText(name).width / 2 - 6, ly - 4, 3, 0, Math.PI * 2); ctx.fill();
+  }
 }
