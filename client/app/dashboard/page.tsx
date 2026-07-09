@@ -7,6 +7,10 @@ import Sidebar from "@/components/Sidebar";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
+import AvatarSprite from "@/components/AvatarSprite";
+import CharacterCustomizer from "@/components/CharacterCustomizer";
+import { normalizeAppearance, type Appearance } from "@/lib/avatar";
+import { setLocalAvatar } from "@/lib/avatarStore";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
@@ -107,6 +111,8 @@ export default function DashboardPage() {
   const [medals, setMedals] = useState<Medal[]>([]);
   const [featuredMedals, setFeaturedMedals] = useState<string[]>([]);
   const [claimAverages, setClaimAverages] = useState<ClaimAverages | null>(null);
+  const [character, setCharacter] = useState<Appearance | null>(null);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [emailVerified, setEmailVerified] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -145,6 +151,7 @@ export default function DashboardPage() {
         if (Array.isArray(data.medals)) setMedals(data.medals);
         if (Array.isArray(data.featuredMedals)) setFeaturedMedals(data.featuredMedals);
         if (data.claimAverages) setClaimAverages(data.claimAverages);
+        setCharacter(normalizeAppearance(data.avatarConfig, username || userId));
       })
       .catch(() => {});
   }, [status, userId]);
@@ -170,6 +177,17 @@ export default function DashboardPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally { setSaving(false); }
+  }
+
+  async function saveCharacter(a: Appearance) {
+    setCharacter(a);
+    if (userId) setLocalAvatar(userId, a);
+    setCustomizeOpen(false);
+    if (!userId) return;
+    await fetch(`${SERVER}/api/users/${userId}/profile`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ avatarConfig: a }),
+    }).catch(() => {});
   }
 
   async function saveFeatured(ids: string[]) {
@@ -279,6 +297,23 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+
+            {/* ── Character (cosmetics) ── */}
+            {character && (
+              <div className="flex items-center gap-4 rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5">
+                <div className="shrink-0 rounded-xl bg-gradient-to-b from-indigo-950 to-gray-950 p-2 ring-1 ring-indigo-900/40">
+                  <AvatarSprite appearance={character} size={72} dir="down" animated />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-gray-100">Your character</p>
+                  <p className="mt-0.5 text-xs text-gray-500">This is how you appear in chat — every message speaks from your avatar.</p>
+                </div>
+                <button onClick={() => setCustomizeOpen(true)}
+                  className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors">
+                  Customize
+                </button>
+              </div>
+            )}
 
             {/* ── Stats row ── */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -411,6 +446,10 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {customizeOpen && character && (
+        <CharacterCustomizer initial={character} onClose={() => setCustomizeOpen(false)} onSave={saveCharacter} />
+      )}
     </div>
   );
 }

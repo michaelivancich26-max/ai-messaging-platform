@@ -2480,7 +2480,7 @@ async function buildProfilePayload(
   const uid = user.id;
   const uRows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT elo, "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
-            "claimsRated", "dailyStreak", "longestStreak", "featuredMedals"
+            "claimsRated", "dailyStreak", "longestStreak", "featuredMedals", "avatarConfig"
      FROM "User" WHERE id = $1`, uid,
   ).catch(() => [] as any[]);
   const u0 = uRows[0] ?? {};
@@ -2581,11 +2581,14 @@ async function buildProfilePayload(
     if (Array.isArray(raw)) featuredMedals = raw.filter((id: any) => typeof id === "string" && earnedIds.has(id)).slice(0, 6);
   } catch { /* no featured selection */ }
 
+  let avatarConfig: any = null;
+  try { avatarConfig = u0.avatarConfig ? JSON.parse(u0.avatarConfig) : null; } catch { /* none */ }
+
   const publicUser = includePrivate
     ? user
     : { id: user.id, username: user.username, bio: user.bio, avatarUrl: user.avatarUrl, createdAt: user.createdAt };
 
-  return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, ...(cred ? { cred } : {}) };
+  return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, avatarConfig, ...(cred ? { cred } : {}) };
 }
 
 // GET /api/users/:id/profile — full profile (includes account fields)
@@ -2620,7 +2623,7 @@ app.get("/api/users/by-name/:username/profile", async (req, res) => {
 
 // PATCH /api/users/:id/profile
 app.patch("/api/users/:id/profile", async (req, res) => {
-  const { bio, avatarUrl, featuredMedals } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[] };
+  const { bio, avatarUrl, featuredMedals, avatarConfig } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[]; avatarConfig?: object };
   try {
     const user = await prisma.user.update({
       where: { id: req.params.id },
@@ -2639,8 +2642,35 @@ app.patch("/api/users/:id/profile", async (req, res) => {
         `UPDATE "User" SET "featuredMedals" = $1 WHERE id = $2`, JSON.stringify(clean), req.params.id,
       );
     }
+    // Pixel character config (cosmetics)
+    if (avatarConfig !== undefined && avatarConfig !== null && typeof avatarConfig === "object") {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "User" SET "avatarConfig" = $1 WHERE id = $2`, JSON.stringify(avatarConfig), req.params.id,
+      );
+    }
     res.json(user);
   } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/avatars?ids=a,b,c — batch pixel-avatar configs for chat rendering
+app.get("/api/avatars", async (req, res) => {
+  try {
+    const ids = String(req.query.ids ?? "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 100);
+    if (!ids.length) return res.json({});
+    const rows = await prisma.$queryRawUnsafe<{ id: string; username: string; avatarConfig: string | null }[]>(
+      `SELECT id, username, "avatarConfig" FROM "User" WHERE id = ANY($1::text[])`, ids,
+    ).catch(() => [] as any[]);
+    const out: Record<string, { u: string; a: any }> = {};
+    for (const r of rows) {
+      let cfg: any = null;
+      try { cfg = r.avatarConfig ? JSON.parse(r.avatarConfig) : null; } catch { /* none */ }
+      out[r.id] = { u: r.username, a: cfg };
+    }
+    res.json(out);
+  } catch (e) {
+    console.error("[avatars GET]", e);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -3631,6 +3661,7 @@ async function start() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "longestStreak" INTEGER NOT NULL DEFAULT 0`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastActiveDay" DATE`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "featuredMedals" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarConfig" TEXT`);
     console.log("[DB] User rubric-average + streak columns ready");
   } catch (e) {
     console.error("[DB] User rubric-average/streak setup failed:", e);

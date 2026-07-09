@@ -5,6 +5,8 @@ import type { ChatMessage, ClaimInfo, CredScore, Reaction } from "@/lib/types";
 import { getStancePalette, NEUTRAL_PALETTE } from "@/lib/stances";
 import CredibilityBadge from "./CredibilityBadge";
 import ClaimBadge from "./ClaimBadge";
+import AvatarSprite from "./AvatarSprite";
+import { useAvatar } from "@/lib/avatarStore";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🔥", "👎", "🤔"];
 
@@ -179,6 +181,7 @@ function ReactionPills({ reactions, messageId, currentUserId, onReact }: {
 export default function MessageBubble({ message, isSelf, highlighted, claim, credScore, senderPosition, stances, onStakeClaim, onChallengeClaim, onUserClick, onSubDebate, onReact, onEdit, onDelete, currentUserId, isAdmin }: Props) {
   const username = message.user?.username ?? "unknown";
   const avatarUrl = (message.user as any)?.avatarUrl ?? null;
+  const senderApp = useAvatar(message.userId, username);
   const time = new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const imagePayload = message.type !== "deleted" ? parseImageContent(message.content) : null;
   const isHuman = message.type === "human";
@@ -397,21 +400,20 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
   }
 
   return (
-    <div className={`group flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"} ${highlighted ? "animate-pulse" : ""}`}>
-      {!isSelf && (
-        <button
-          onClick={() => message.userId && onUserClick?.(message.userId, username)}
-          className={`shrink-0 rounded-full transition-opacity ${onUserClick && message.userId ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
-          title={onUserClick && message.userId ? `View ${username}'s profile` : undefined}
-        >
-          <Avatar username={username} avatarUrl={avatarUrl} size={7} />
-        </button>
-      )}
+    <div className={`group flex flex-col gap-1.5 md:flex-row md:items-end md:gap-2 ${isSelf ? "items-end md:justify-end" : "items-start"} ${highlighted ? "animate-pulse" : ""}`}>
+      {/* Avatar — on the side (desktop), under the bubble (mobile) */}
+      <button
+        onClick={() => message.userId && onUserClick?.(message.userId, username)}
+        className={`order-2 shrink-0 transition-opacity ${isSelf ? "md:order-3" : "md:order-1"} ${onUserClick && message.userId ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+        title={onUserClick && message.userId ? `View ${username}'s profile` : undefined}
+      >
+        <AvatarSprite appearance={senderApp} size={46} dir={isSelf ? "left" : "right"} />
+      </button>
 
-      {/* Action toolbar to the left for self, right for others */}
-      {isSelf && actionBar}
+      {/* Action toolbar */}
+      {hasActions && <div className={`order-3 self-center ${isSelf ? "md:order-1" : "md:order-3"}`}>{actionBar}</div>}
 
-      <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
+      <div className={`order-1 md:order-2 flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
           {isSelf ? "You" : username} · {time}
           {message.editedAt && <span className="text-[10px] text-gray-600 italic">edited</span>}
@@ -442,16 +444,23 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
             </div>
           </div>
         ) : imagePayload ? (
-          <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
+          <div className={`relative transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
             <ImageMessage payload={imagePayload} isSelf={isSelf} />
           </div>
         ) : (
-          <div
-            className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
-              highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
-            } ${isSelf ? `rounded-tr-sm ${selfBubble}` : `rounded-tl-sm ${otherBubble}`}`}
-          >
-            {message.content}
+          <div className="relative">
+            {/* speech-bubble tail pointing toward the avatar */}
+            <span
+              className={`pointer-events-none absolute bottom-1.5 hidden h-3 w-3 rotate-45 md:block ${isSelf ? `-right-1 ${selfBubble}` : `-left-1 ${otherBubble}`}`}
+              aria-hidden
+            />
+            <div
+              className={`relative max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
+                highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
+              } ${isSelf ? `rounded-br-sm ${selfBubble}` : `rounded-bl-sm ${otherBubble}`}`}
+            >
+              {message.content}
+            </div>
           </div>
         )}
 
@@ -470,8 +479,6 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <ClaimBadge claim={claim} canChallenge={false} onChallenge={() => {}} />
         )}
       </div>
-
-      {!isSelf && actionBar}
 
       {/* Delete confirmation overlay */}
       {showDeleteConfirm && (
