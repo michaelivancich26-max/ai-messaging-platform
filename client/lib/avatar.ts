@@ -1,20 +1,22 @@
-// Composable pixel-art avatar engine (hi-res).
+// Composable flat-vector avatar engine.
 //
-// A character is a stack of layered parts drawn on a 32x48 grid:
-// shadow → legs → torso → arms → head → face → hair → hat.
-// Each layer is chosen by an index into a palette/style list, so cosmetics
-// (new hair, hats, outfits, accessories) are added by extending these lists
-// and the per-layer draw code — the Appearance shape stays stable.
+// A character is a head-and-shoulders "bust" drawn as clean SVG shapes inside a
+// soft circular backdrop: backdrop → shoulders/shirt → neck → hair(back) →
+// ears → head → face → hair(front) → hat. Each layer is chosen by an index into
+// a palette/style list, so cosmetics (new hair, hats, accessories) are added by
+// extending these lists and the per-layer shape code — the Appearance shape
+// stays stable, so saved configs keep working across restyles.
 //
-// Sprites are painted once per (appearance, direction, frame) into a small
-// offscreen canvas at 1px cells, auto-outlined, cached, then scale-blitted.
+// avatarSVG(app, uid) returns the inner markup for a `viewBox="0 0 100 100"`
+// SVG; AvatarSprite wraps it. `uid` namespaces the gradient/clip ids so many
+// avatars can render on one page without id collisions.
 
 export interface Appearance {
   skin: number;
   hair: number;       // hair STYLE index
   hairColor: number;
   shirt: number;
-  pants: number;
+  pants: number;      // retained for data compatibility; not shown on the bust
   hat: number;        // cosmetic slot: 0 = none
 }
 
@@ -26,14 +28,6 @@ export const HAIR_STYLE_COUNT = 6;        // 0 short 1 spiky 2 long 3 buzz 4 pon
 // Cosmetic slot — new hats are APPENDED so saved indices stay valid.
 export const HATS = ["None", "Cap", "Beanie", "Wizard", "Crown", "Headband", "Flower Crown", "Halo"];
 export const HAT_COLOR = ["#d94f3d", "#3d7ad9", "#2b2b2b", "#8b3ddb", "#e0b93d", "#33a860"];
-
-export const GRID_W = 32;
-export const GRID_H = 48;
-export const FEET_Y = 46;
-
-export type Dir = "down" | "up" | "left" | "right";
-
-const OUTLINE = "#221a2e";
 
 export function defaultAppearance(seed: string): Appearance {
   let h = 0;
@@ -63,318 +57,180 @@ export function normalizeAppearance(a: Partial<Appearance> | null | undefined, s
   };
 }
 
-function shade(hex: string, f: number): string {
+// ── Color helpers ───────────────────────────────────────────────────────────
+function hx(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
-  const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * f)));
-  const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * f)));
-  const b = Math.max(0, Math.min(255, Math.round((n & 255) * f)));
-  return `rgb(${r},${g},${b})`;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function toHex(r: number, g: number, b: number): string {
+  const c = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+function shade(hex: string, f: number): string {
+  const [r, g, b] = hx(hex);
+  return toHex(r * f, g * f, b * f);
+}
+function mix(a: string, b: string, t: number): string {
+  const [r1, g1, b1] = hx(a), [r2, g2, b2] = hx(b);
+  return toHex(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t);
 }
 
-interface Pal {
-  skin: string; skinSh: string; skinHi: string;
-  hair: string; hairSh: string; hairHi: string;
-  shirt: string; shirtSh: string; shirtHi: string;
-  pants: string; pantsSh: string;
-  shoe: string; shoeSh: string;
-  mouth: string;
-}
+// ── Shape primitives ────────────────────────────────────────────────────────
+const P = (d: string, fill: string, extra = "") => `<path d="${d}" fill="${fill}" ${extra}/>`;
+const E = (cx: number, cy: number, rx: number, ry: number, fill: string, extra = "") =>
+  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" ${extra}/>`;
 
-function palette(a: Appearance): Pal {
-  const skin = SKIN[a.skin] ?? SKIN[0];
-  const hair = HAIR_COLOR[a.hairColor] ?? HAIR_COLOR[0];
-  const shirt = SHIRT[a.shirt] ?? SHIRT[0];
-  const pants = PANTS[a.pants] ?? PANTS[0];
-  return {
-    skin, skinSh: shade(skin, 0.84), skinHi: shade(skin, 1.12),
-    hair, hairSh: shade(hair, 0.72), hairHi: shade(hair, 1.3),
-    shirt, shirtSh: shade(shirt, 0.76), shirtHi: shade(shirt, 1.22),
-    pants, pantsSh: shade(pants, 0.72),
-    shoe: "#4a3729", shoeSh: "#33261c",
-    mouth: shade(skin, 0.6),
-  };
-}
+// Shared fringe used by several hair styles (bangs sweeping across the forehead).
+const FRINGE = "M31,35 C32,25 42,22 50,22 C58,22 68,25 69,35 C65,28 57,26 50,27 C43,26 35,28 31,35 Z";
 
-type Px = (x: number, y: number, w: number, h: number, c: string) => void;
-
-// ── Hair ──────────────────────────────────────────────────────────────────────
-function paintHair(P: Px, C: Pal, style: number, dir: "down" | "right" | "up") {
-  const c = C.hair, sh = C.hairSh, hi = C.hairHi;
-  if (style === 5) { // bald — scalp shine
-    if (dir !== "up") P(12, 5, 4, 1, C.skinHi);
-    return;
+// ── Hair ────────────────────────────────────────────────────────────────────
+function hairShapes(style: number, hair: string, hairHi: string, hairSh: string): { back: string; front: string } {
+  if (style === 5) return { back: "", front: "" };                 // bald
+  if (style === 3) {                                                // buzz — thin rim hugging the scalp
+    return {
+      back: E(50, 40.3, 18.6, 19.8, hair) + P("M36,27 Q50,21 64,27 Q52,24 36,27", hairHi, 'opacity="0.5"'),
+      front: "",
+    };
   }
-  if (style === 0) { // short
-    if (dir === "down") {
-      P(9, 2, 14, 4, c); P(9, 6, 14, 1, c);
-      P(9, 7, 3, 1, c); P(14, 7, 2, 1, c); P(19, 7, 4, 1, c);
-      P(8, 6, 1, 5, c); P(23, 6, 1, 5, c);
-      P(11, 3, 5, 1, hi); P(9, 5, 14, 1, sh);
-    } else if (dir === "right") {
-      P(8, 2, 15, 4, c); P(8, 6, 4, 8, c); P(9, 14, 2, 3, sh);
-      P(19, 6, 4, 2, c); P(12, 3, 6, 1, hi);
-    } else {
-      P(9, 2, 14, 5, c); P(9, 7, 14, 10, c);
-      P(10, 17, 3, 1, c); P(15, 17, 2, 1, c); P(19, 17, 3, 1, c);
-      P(12, 8, 1, 8, sh); P(18, 8, 1, 8, sh); P(11, 3, 6, 1, hi);
-    }
-  } else if (style === 1) { // spiky
-    P(9, 3, 14, 3, c);
-    P(10, 1, 3, 2, c); P(14, 0, 3, 3, c); P(18, 1, 3, 2, c); P(21, 2, 2, 1, c);
-    P(15, 1, 1, 2, hi);
-    if (dir === "down") {
-      P(9, 6, 3, 1, c); P(15, 6, 2, 1, c); P(20, 6, 3, 1, c);
-      P(8, 6, 1, 3, c); P(23, 6, 1, 3, c);
-    } else if (dir === "right") {
-      P(8, 5, 4, 6, c); P(7, 7, 2, 3, sh); P(19, 6, 4, 1, c);
-    } else {
-      P(9, 6, 14, 9, c); P(11, 15, 4, 1, c); P(17, 15, 4, 1, c); P(13, 7, 1, 7, sh);
-    }
-  } else if (style === 2) { // long
-    if (dir === "down") {
-      P(9, 2, 14, 4, c); P(9, 6, 14, 1, c);
-      P(7, 6, 2, 15, c); P(23, 6, 2, 15, c);
-      P(7, 20, 3, 4, sh); P(22, 20, 3, 4, sh);
-      P(7, 8, 1, 5, hi); P(24, 8, 1, 5, hi); P(11, 3, 6, 1, hi);
-    } else if (dir === "right") {
-      P(8, 2, 14, 4, c); P(6, 5, 5, 21, c); P(6, 20, 4, 5, sh);
-      P(19, 6, 4, 1, c); P(7, 7, 1, 8, hi); P(11, 3, 5, 1, hi);
-    } else {
-      P(8, 2, 16, 5, c); P(8, 6, 16, 21, c); P(8, 24, 16, 3, sh);
-      P(11, 8, 1, 14, hi); P(20, 8, 1, 14, sh);
-    }
-  } else if (style === 3) { // buzz
-    if (dir === "down") {
-      P(9, 3, 14, 3, c); P(8, 7, 1, 4, sh); P(23, 7, 1, 4, sh); P(11, 4, 5, 1, hi);
-    } else if (dir === "right") {
-      P(8, 3, 15, 3, c); P(8, 6, 3, 8, sh);
-    } else {
-      P(9, 3, 14, 4, c); P(9, 7, 14, 7, c); P(12, 8, 1, 5, sh);
-    }
-  } else if (style === 4) { // ponytail
-    if (dir === "down") {
-      P(9, 2, 14, 4, c); P(9, 6, 14, 1, c);
-      P(8, 6, 1, 4, c); P(23, 6, 1, 4, c);
-      P(23, 1, 3, 2, c); P(24, 3, 1, 1, "#eec95c");
-      P(24, 4, 3, 4, c); P(25, 8, 2, 5, c); P(25, 12, 2, 2, sh);
-      P(11, 3, 5, 1, hi);
-    } else if (dir === "right") {
-      P(8, 2, 14, 4, c); P(19, 6, 4, 1, c);
-      P(6, 5, 2, 2, "#eec95c");
-      P(4, 6, 3, 4, c); P(3, 10, 3, 6, c); P(4, 16, 2, 4, sh);
-      P(11, 3, 5, 1, hi);
-    } else {
-      P(9, 2, 14, 5, c); P(9, 7, 14, 4, c);
-      P(14, 6, 4, 2, "#eec95c");
-      P(13, 8, 6, 5, c); P(14, 13, 4, 6, c); P(15, 19, 3, 4, sh);
-    }
+
+  // Helmet behind the head; the head ellipse is drawn on top and trims it to a
+  // clean hairline rim around the crown and temples.
+  const back: string[] = [E(50, 39, 19.6, 20.6, hair), P("M37,26 Q50,20 63,26 Q52,23 37,26", hairHi, 'opacity="0.5"')];
+  const front: string[] = [];
+
+  if (style === 0) {                                                // short
+    front.push(P(FRINGE, hair), P("M34,30 Q42,26 50,27 Q46,29 40,32 Z", hairHi, 'opacity="0.4"'));
+  } else if (style === 1) {                                         // spiky
+    front.push(
+      P("M30,28 L33,14 L39,25 L45,12 L50,24 L55,12 L61,25 L67,14 L70,28 C58,24 42,24 30,28 Z", hair),
+      P("M45,12 L50,24 L48,17 Z", hairHi, 'opacity="0.5"'),
+    );
+  } else if (style === 2) {                                         // long
+    back.push(
+      P("M31,38 C27,51 28,64 32,73 L40,73 C37,60 36,49 38,40 Z", hairSh),
+      P("M69,38 C73,51 72,64 68,73 L60,73 C63,60 64,49 62,40 Z", hair),
+    );
+    front.push(P(FRINGE, hair));
+  } else if (style === 4) {                                         // ponytail
+    back.push(
+      P("M62,24 C74,26 82,40 79,55 C77,63 71,66 68,62 C74,52 73,39 64,31 Z", hairSh),
+      E(63, 28, 3, 2.4, hairHi),
+    );
+    front.push(P(FRINGE, hair));
   }
+  return { back: back.join(""), front: front.join("") };
 }
 
 // ── Hats (cosmetic slot) ──────────────────────────────────────────────────────
-function paintHat(P: Px, hat: number, dir: "down" | "right" | "up") {
+function hatShapes(hat: number): string {
   const name = HATS[hat];
   if (name === "Cap") {
-    const c = "#d94f3d", dk = shade(c, 0.72), hi = shade(c, 1.2);
-    P(9, 1, 14, 4, c); P(9, 1, 14, 1, hi); P(15, 0, 2, 1, dk);
-    P(12, 2, 1, 2, dk); P(19, 2, 1, 2, dk);
-    if (dir === "down") P(8, 5, 16, 2, dk);
-    else if (dir === "right") { P(9, 5, 12, 1, dk); P(20, 4, 7, 2, dk); }
-    else P(9, 5, 14, 1, dk);
-  } else if (name === "Beanie") {
-    const c = "#3d7ad9", dk = shade(c, 0.72);
-    P(9, 1, 14, 5, c); P(9, 4, 14, 2, dk); P(13, 0, 6, 1, shade(c, 1.35));
-  } else if (name === "Wizard") {
-    const c = "#5b3fd6", dk = shade(c, 0.7), hi = shade(c, 1.3);
-    P(6, 5, 20, 2, c); P(6, 6, 20, 1, dk);
-    P(16, 0, 3, 1, hi); P(14, 1, 4, 1, c); P(13, 2, 5, 1, c); P(12, 3, 7, 1, c); P(11, 4, 9, 1, dk);
-    P(13, 3, 1, 1, "#ffe17a"); P(17, 1, 1, 1, "#ffe17a");
-  } else if (name === "Crown") {
-    P(10, 1, 12, 3, "#eec95c");
-    P(10, 0, 2, 1, "#eec95c"); P(15, 0, 2, 1, "#eec95c"); P(20, 0, 2, 1, "#eec95c");
-    P(12, 2, 2, 1, "#e0475c"); P(17, 2, 2, 1, "#3d7ad9");
-    P(10, 3, 12, 1, "#c9a53e");
-  } else if (name === "Headband") {
+    const c = "#d94f3d", dk = shade(c, 0.8);
+    return (
+      P("M31,30 C31,18 40,13.5 50,13.5 C60,13.5 69,18 69,30 C60,25 40,25 31,30 Z", c) +
+      P("M29,30 C40,26.5 60,26.5 71,30 C74,31.5 73,35 68,35 C58,32 42,32 32,35 C27,35 26,31.5 29,30 Z", dk) +
+      E(50, 14.6, 1.5, 1.5, dk)
+    );
+  }
+  if (name === "Beanie") {
+    const c = "#3d7ad9", dk = shade(c, 0.8), hi = shade(c, 1.25);
+    return (
+      P("M30,32 C30,18 40,13 50,13 C60,13 70,18 70,32 C58,28 42,28 30,32 Z", c) +
+      P("M29,31 Q50,27 71,31 L71,35 Q50,31 29,35 Z", dk) +
+      E(50, 12, 2.6, 2.6, hi)
+    );
+  }
+  if (name === "Wizard") {
+    const c = "#5b3fd6", dk = shade(c, 0.75);
+    return (
+      P("M50,2 L63,30 C58,27 42,27 37,30 Z", c) +
+      P("M50,2 L50,28 C46,28 40,29 37,30 Z", dk) +
+      E(50, 30, 24, 5, dk) +
+      P("M52,10 L53.2,13 L56,14 L53.2,15 L52,18 L50.8,15 L48,14 L50.8,13 Z", "#ffe17a")
+    );
+  }
+  if (name === "Crown") {
+    const gold = "#eec95c", dk = "#c9a53e";
+    return (
+      P("M32,30 L34,20 L41,26 L50,17 L59,26 L66,20 L68,30 Z", gold) +
+      P("M32,29 L68,29 L68,32 Q50,35 32,32 Z", dk) +
+      E(50, 27, 1.7, 1.7, "#e0475c") + E(41, 26.5, 1.2, 1.2, "#3d7ad9") + E(59, 26.5, 1.2, 1.2, "#33a860")
+    );
+  }
+  if (name === "Headband") {
     const c = "#33a860";
-    P(9, 5, 14, 2, c);
-    if (dir === "right") { P(6, 6, 3, 1, c); P(5, 7, 2, 2, shade(c, 0.75)); }
-    else if (dir === "down") P(23, 5, 2, 2, shade(c, 0.75));
-  } else if (name === "Flower Crown") {
-    P(9, 4, 14, 2, "#4e8f46");
-    P(10, 3, 2, 2, "#ff9ecb"); P(15, 2, 2, 2, "#fff3b0"); P(20, 3, 2, 2, "#c39bff");
-    P(10, 3, 1, 1, "#ffffff"); P(15, 2, 1, 1, "#f5a623"); P(20, 3, 1, 1, "#ffffff");
-  } else if (name === "Halo") {
-    P(11, 0, 10, 1, "#ffe17a"); P(10, 0, 1, 1, "#fff7cc"); P(21, 0, 1, 1, "#fff7cc");
+    return P("M30,30 Q50,26 70,30 L70,34 Q50,30 30,34 Z", c) + P("M32,30 Q50,27 68,30", "none", `stroke="${shade(c, 1.3)}" stroke-width="0.8" opacity="0.6"`);
   }
+  if (name === "Flower Crown") {
+    const flower = (cx: number, cy: number, petal: string, core: string) =>
+      E(cx - 2.4, cy, 1.7, 1.7, petal) + E(cx + 2.4, cy, 1.7, 1.7, petal) +
+      E(cx, cy - 2.2, 1.7, 1.7, petal) + E(cx, cy + 2.2, 1.7, 1.7, petal) + E(cx, cy, 1.7, 1.7, core);
+    return (
+      P("M30,31 Q50,27 70,31 L70,33 Q50,29 30,33 Z", "#4e8f46") +
+      flower(37, 29, "#ff9ecb", "#fff3b0") + flower(50, 26.5, "#c39bff", "#fff3b0") + flower(63, 29, "#ffd27a", "#fff3b0")
+    );
+  }
+  if (name === "Halo") {
+    return E(50, 12, 14, 4.6, "none", 'stroke="#ffe17a" stroke-width="2.6" opacity="0.95"') +
+      E(50, 12, 14, 4.6, "none", 'stroke="#fff6c8" stroke-width="0.9" opacity="0.9"');
+  }
+  return "";
 }
 
-// ── Poses ─────────────────────────────────────────────────────────────────────
-function paintDown(P: Px, C: Pal, app: Appearance, f: number, back: boolean) {
-  const bob = f === 1 || f === 3 ? 1 : 0;           // upper body bob (px down on passing frames = -1 up visually)
-  const by = -bob;                                   // shift upper body up on frames 1,3
-  const legL = f === 1 ? 1 : 0;                      // leg lifts
-  const legR = f === 3 ? 1 : 0;
-  const armL = f === 1 ? 1 : f === 3 ? -1 : 0;       // arm swing (y offset)
-  const armR = -armL;
+// ── Assembly ──────────────────────────────────────────────────────────────────
+export function avatarSVG(app: Appearance, uid: string): string {
+  const skin = SKIN[app.skin] ?? SKIN[0];
+  const hair = HAIR_COLOR[app.hairColor] ?? HAIR_COLOR[0];
+  const shirt = SHIRT[app.shirt] ?? SHIRT[0];
 
-  // hips + legs
-  P(10, 33, 12, 1, C.pantsSh);
-  P(11, 34, 4, 8 - legL, C.pants); P(14, 34, 1, 8 - legL, C.pantsSh);
-  P(17, 34, 4, 8 - legR, C.pants); P(17, 34, 1, 8 - legR, C.pantsSh);
-  P(11, 37, 4, 1, C.pantsSh); P(17, 37, 4, 1, C.pantsSh);
-  P(10, 42 - legL, 5, 3, C.shoe); P(10, 45 - legL, 5, 1, C.shoeSh);
-  P(17, 42 - legR, 5, 3, C.shoe); P(17, 45 - legR, 5, 1, C.shoeSh);
+  const skinHi = shade(skin, 1.08), skinSh = shade(skin, 0.82);
+  const hairHi = shade(hair, 1.2), hairSh = shade(hair, 0.76);
+  const shirtHi = shade(shirt, 1.14), shirtSh = shade(shirt, 0.78);
+  const bgTop = mix(shirt, "#1c2437", 0.72), bgBot = mix(shirt, "#0b0f1a", 0.8);
+  const inkMouth = mix(skin, "#000000", 0.5);
 
-  // torso
-  P(11, 21 + by, 10, 1, C.shirtHi);
-  P(10, 22 + by, 12, 9, C.shirt);
-  P(10, 22 + by, 1, 9, C.shirtSh); P(21, 22 + by, 1, 9, C.shirtSh);
-  P(13, 21 + by, 6, 1, C.shirtSh);
-  if (!back) P(12, 23 + by, 3, 2, C.shirtHi);
-  P(10, 30 + by, 12, 1, C.shirtSh);
-  P(10, 31 + by, 12, 2, "#4a3b5c"); P(15, 31 + by, 2, 2, "#eec95c");
+  const { back: hairBack, front: hairFront } = hairShapes(app.hair, hair, hairHi, hairSh);
 
-  // arms
-  P(7, 22 + armL + by, 3, 4, C.shirt); P(7, 25 + armL + by, 3, 1, C.shirtSh);
-  P(7, 26 + armL + by, 3, 4, C.skin); P(7, 30 + armL + by, 3, 2, C.skinSh);
-  P(22, 22 + armR + by, 3, 4, C.shirt); P(22, 25 + armR + by, 3, 1, C.shirtSh);
-  P(22, 26 + armR + by, 3, 4, C.skin); P(22, 30 + armR + by, 3, 2, C.skinSh);
+  const defs =
+    `<defs>` +
+    `<clipPath id="${uid}-clip"><circle cx="50" cy="50" r="50"/></clipPath>` +
+    `<linearGradient id="${uid}-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${bgTop}"/><stop offset="1" stop-color="${bgBot}"/></linearGradient>` +
+    `<linearGradient id="${uid}-skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${skinHi}"/><stop offset="1" stop-color="${skinSh}"/></linearGradient>` +
+    `<linearGradient id="${uid}-shirt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${shirtHi}"/><stop offset="1" stop-color="${shirtSh}"/></linearGradient>` +
+    `</defs>`;
 
-  // head
-  P(10, 4 + by, 12, 1, C.skin);
-  P(9, 5 + by, 14, 13, C.skin);
-  P(10, 18 + by, 12, 1, C.skinSh);
-  P(8, 11 + by, 1, 3, C.skin); P(23, 11 + by, 1, 3, C.skin);
-  P(9, 15 + by, 1, 3, C.skinSh); P(22, 15 + by, 1, 3, C.skinSh);
-  P(14, 19 + by, 4, 2, C.skinSh);
+  const shoulders =
+    P("M12,100 L12,90 C12,78 30,70 50,70 C70,70 88,78 88,90 L88,100 Z", `url(#${uid}-shirt)`) +
+    E(50, 70.5, 10.5, 3.6, shirtSh) +                                   // neckline shadow
+    P("M20,74 Q50,70 80,74", "none", `stroke="${shirtHi}" stroke-width="1.2" opacity="0.35"`);
 
-  if (!back) {
-    // face
-    P(12, 9 + by, 3, 1, C.hairSh); P(17, 9 + by, 3, 1, C.hairSh);
-    P(12, 11 + by, 3, 3, "#ffffff"); P(17, 11 + by, 3, 3, "#ffffff");
-    P(13, 12 + by, 2, 2, "#2a2333"); P(18, 12 + by, 2, 2, "#2a2333");
-    P(13, 12 + by, 1, 1, "#cfe8ff"); P(18, 12 + by, 1, 1, "#cfe8ff");
-    P(15, 16 + by, 2, 1, C.mouth);
-    P(10, 14 + by, 2, 1, "rgba(240,110,130,0.30)"); P(20, 14 + by, 2, 1, "rgba(240,110,130,0.30)");
-  }
-}
+  const neck =
+    P("M43,50 L57,50 L57,68 Q50,73 43,68 Z", shade(skin, 0.86)) +
+    E(50, 52, 8, 3, shade(skin, 0.72), 'opacity="0.45"');               // under-chin shadow
 
-function paintSide(P: Px, C: Pal, app: Appearance, f: number) {
-  const bob = f === 1 || f === 3 ? -1 : 0;
-  const stride = [0, 2, 0, -2][f];
-  const liftA = f === 1 ? 1 : 0;
-  const liftB = f === 3 ? 1 : 0;
-  const armDx = [0, 2, 0, -2][f];
+  const ears = E(32.6, 43, 2.6, 3.6, shade(skin, 0.9)) + E(67.4, 43, 2.6, 3.6, shade(skin, 0.9));
+  const head = E(50, 41, 17.5, 19.5, `url(#${uid}-skin)`);
 
-  // far arm (behind torso)
-  P(9, 23 + bob - Math.sign(armDx), 2, 6, C.shirtSh);
-  P(9, 29 + bob - Math.sign(armDx), 2, 2, C.skinSh);
+  const face =
+    // eyes
+    E(43, 43, 2, 2.6, "#2a2333") + E(57, 43, 2, 2.6, "#2a2333") +
+    E(42.3, 42.2, 0.7, 0.7, "#ffffff") + E(56.3, 42.2, 0.7, 0.7, "#ffffff") +
+    // brows
+    P("M40.4,38.4 Q43,37.2 45.6,38.2", "none", `stroke="${hairSh}" stroke-width="1.3" stroke-linecap="round" fill="none"`) +
+    P("M54.4,38.2 Q57,37.2 59.6,38.4", "none", `stroke="${hairSh}" stroke-width="1.3" stroke-linecap="round" fill="none"`) +
+    // nose + mouth
+    P("M50,44.5 Q51.4,47.4 49.4,48", "none", `stroke="${skinSh}" stroke-width="1.1" stroke-linecap="round" fill="none" opacity="0.7"`) +
+    P("M45.5,51.4 Q50,54.6 54.5,51.4", "none", `stroke="${inkMouth}" stroke-width="1.6" stroke-linecap="round" fill="none"`) +
+    // cheeks
+    E(40, 48, 3, 1.8, "#ff8aa0", 'opacity="0.16"') + E(60, 48, 3, 1.8, "#ff8aa0", 'opacity="0.16"');
 
-  // legs (back leg darker)
-  P(11, 33, 10, 1, C.pantsSh);
-  P(12 - stride, 34, 4, 8 - liftB, C.pantsSh);
-  P(11 - stride, 42 - liftB, 5, 3, C.shoeSh); P(11 - stride, 45 - liftB, 5, 1, C.shoeSh);
-  P(15 + stride, 34, 4, 8 - liftA, C.pants); P(15 + stride, 37, 4, 1, C.pantsSh);
-  P(15 + stride, 42 - liftA, 6, 3, C.shoe); P(15 + stride, 45 - liftA, 6, 1, C.shoeSh);
+  const body =
+    `<g clip-path="url(#${uid}-clip)">` +
+    P("M0,0 H100 V100 H0 Z", `url(#${uid}-bg)`) +
+    shoulders + neck + hairBack + ears + head + face + hairFront + hatShapes(app.hat) +
+    `</g>` +
+    // crisp rim to seat the bust in the UI
+    `<circle cx="50" cy="50" r="49.3" fill="none" stroke="#000000" stroke-opacity="0.18" stroke-width="1.4"/>`;
 
-  // torso
-  P(12, 21 + bob, 8, 1, C.shirtHi);
-  P(11, 22 + bob, 10, 9, C.shirt);
-  P(11, 22 + bob, 1, 9, C.shirtSh);
-  P(11, 30 + bob, 10, 1, C.shirtSh);
-  P(11, 31 + bob, 10, 2, "#4a3b5c"); P(18, 31 + bob, 2, 2, "#eec95c");
-
-  // head
-  P(10, 4 + bob, 12, 1, C.skin);
-  P(9, 5 + bob, 14, 13, C.skin);
-  P(10, 18 + bob, 12, 1, C.skinSh);
-  P(23, 13 + bob, 1, 2, C.skin);                 // nose
-  P(23, 15 + bob, 1, 1, C.skinSh);
-  P(13, 12 + bob, 2, 3, C.skinSh); P(14, 13 + bob, 1, 1, shade(C.skin, 0.7)); // ear
-  P(14, 19 + bob, 4, 2, C.skinSh);
-
-  // face (single eye toward front)
-  P(18, 9 + bob, 3, 1, C.hairSh);
-  P(18, 11 + bob, 3, 3, "#ffffff");
-  P(19, 12 + bob, 2, 2, "#2a2333"); P(19, 12 + bob, 1, 1, "#cfe8ff");
-  P(21, 16 + bob, 1, 1, C.mouth);
-  P(19, 14 + bob, 2, 1, "rgba(240,110,130,0.28)");
-
-  // near arm over torso
-  P(14 + armDx, 22 + bob, 3, 5, C.shirt); P(14 + armDx, 26 + bob, 3, 1, C.shirtSh);
-  P(14 + armDx, 27 + bob, 3, 4, C.skin); P(14 + armDx, 31 + bob, 3, 2, C.skinSh);
-}
-
-// ── Sprite building + cache ───────────────────────────────────────────────────
-const spriteCache = new Map<string, HTMLCanvasElement>();
-
-function buildSprite(app: Appearance, dir: "down" | "right" | "up", frame: number): HTMLCanvasElement {
-  const body = document.createElement("canvas");
-  body.width = GRID_W + 2; body.height = GRID_H + 2;
-  const b = body.getContext("2d")!;
-  const P: Px = (x, y, w, h, c) => { b.fillStyle = c; b.fillRect(x + 1, y + 1, w, h); };
-  const C = palette(app);
-
-  if (dir === "right") paintSide(P, C, app, frame);
-  else paintDown(P, C, app, frame, dir === "up");
-  paintHair(P, C, app.hair, dir);
-  if (app.hat > 0) paintHat(P, app.hat, dir);
-
-  // Auto-outline: stamp silhouette in 8 directions, tint, then draw body on top
-  const out = document.createElement("canvas");
-  out.width = body.width; out.height = body.height;
-  const o = out.getContext("2d")!;
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    o.drawImage(body, dx, dy);
-  }
-  o.globalCompositeOperation = "source-in";
-  o.fillStyle = OUTLINE;
-  o.fillRect(0, 0, out.width, out.height);
-  o.globalCompositeOperation = "source-over";
-  o.drawImage(body, 0, 0);
-  return out;
-}
-
-function getSprite(app: Appearance, dir: "down" | "right" | "up", frame: number): HTMLCanvasElement {
-  const key = `${app.skin}.${app.hair}.${app.hairColor}.${app.shirt}.${app.pants}.${app.hat}.${dir}.${frame}`;
-  let s = spriteCache.get(key);
-  if (!s) {
-    if (spriteCache.size > 480) spriteCache.clear();
-    s = buildSprite(app, dir, frame);
-    spriteCache.set(key, s);
-  }
-  return s;
-}
-
-// Draw a character. (sx,sy) is the top-left of the 32x48 grid in screen px;
-// s is screen pixels per sprite cell. dir = facing; frame = walk frame (mod 4).
-export function drawCharacter(
-  ctx: CanvasRenderingContext2D,
-  sx: number, sy: number, s: number,
-  app: Appearance, dir: Dir, frame: number,
-) {
-  const f = ((frame % 4) + 4) % 4;
-
-  // Shadow
-  ctx.fillStyle = "rgba(18,14,36,0.30)";
-  ctx.beginPath();
-  ctx.ellipse(sx + 16 * s, sy + FEET_Y * s, 9 * s, 2.4 * s, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  const spriteDir = dir === "left" ? "right" : dir;
-  const spr = getSprite(app, spriteDir as "down" | "right" | "up", f);
-  const w = (GRID_W + 2) * s, h = (GRID_H + 2) * s;
-  const dx = sx - s, dy = sy - s;
-  const prev = ctx.imageSmoothingEnabled;
-  ctx.imageSmoothingEnabled = false;
-  if (dir === "left") {
-    ctx.save();
-    ctx.translate(dx + w, dy);
-    ctx.scale(-1, 1);
-    ctx.drawImage(spr, 0, 0, w, h);
-    ctx.restore();
-  } else {
-    ctx.drawImage(spr, dx, dy, w, h);
-  }
-  ctx.imageSmoothingEnabled = prev;
+  return defs + body;
 }
