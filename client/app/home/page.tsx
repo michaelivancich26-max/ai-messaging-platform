@@ -250,6 +250,30 @@ export default function HomePage() {
         </button>
       </div>
 
+      {/* Explore the Campus — enter the walkable world */}
+      <div className="shrink-0 border-b border-gray-800/60 px-6 py-4">
+        <button
+          onClick={() => router.push("/world")}
+          className="group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-900/60 via-emerald-950 to-teal-950 px-5 py-4 text-left ring-1 ring-emerald-800/50 transition-all hover:ring-emerald-600"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-800/60 ring-1 ring-emerald-700/60">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-6 w-6 text-emerald-300">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-base font-bold text-white">Explore the Campus</p>
+              <span className="rounded-full bg-emerald-600/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300 ring-1 ring-emerald-600/40">New</span>
+            </div>
+            <p className="mt-0.5 text-xs text-emerald-200/60">Walk between buildings, meet other players, and watch live debates by strolling up to them.</p>
+          </div>
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 shrink-0 text-emerald-500/70 transition-transform group-hover:translate-x-0.5">
+            <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
       {/* Live matches strip */}
       <div className="shrink-0">
         <LiveMatches variant="strip" />

@@ -108,6 +108,10 @@ const botOpeningPending = new Set<string>();
 // Global socket index: userId → Set<socketId> for real-time notification delivery
 const userSockets = new Map<string, Set<string>>();
 
+// Spatial world presence: userId → { username, x, y, avatar } for the walkable campus
+interface WorldPlayer { userId: string; username: string; x: number; y: number; avatar: string | null }
+const worldPlayers = new Map<string, WorldPlayer>();
+
 function deliverNotification(userId: string, notif: object) {
   const sids = userSockets.get(userId);
   if (!sids) return;
@@ -167,6 +171,35 @@ io.on("connection", (socket) => {
     if (sids) {
       sids.delete(socket.id);
       if (sids.size === 0) userSockets.delete(socketUser.id);
+    }
+    // Leave the spatial world if the user has no other connected sockets
+    if (worldPlayers.has(socketUser.id) && (!userSockets.get(socketUser.id) || userSockets.get(socketUser.id)!.size === 0)) {
+      worldPlayers.delete(socketUser.id);
+      io.to("world").emit("world:playerLeft", { userId: socketUser.id });
+    }
+  });
+
+  // ── Spatial world (walkable campus) ────────────────────────────────────────
+  socket.on("world:join", ({ x, y, avatar }: { x: number; y: number; avatar?: string | null }) => {
+    worldPlayers.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, x, y, avatar: avatar ?? null });
+    socket.join("world");
+    // Send the full roster to the joiner (excluding self on the client)
+    socket.emit("world:roster", [...worldPlayers.values()]);
+    // Announce to everyone else already in the world
+    socket.to("world").emit("world:playerJoined", { userId: socketUser.id, username: socketUser.username, x, y, avatar: avatar ?? null });
+  });
+
+  socket.on("world:move", ({ x, y }: { x: number; y: number }) => {
+    const p = worldPlayers.get(socketUser.id);
+    if (!p) return;
+    p.x = x; p.y = y;
+    socket.to("world").emit("world:playerMoved", { userId: socketUser.id, x, y });
+  });
+
+  socket.on("world:leave", () => {
+    if (worldPlayers.delete(socketUser.id)) {
+      socket.leave("world");
+      io.to("world").emit("world:playerLeft", { userId: socketUser.id });
     }
   });
 
