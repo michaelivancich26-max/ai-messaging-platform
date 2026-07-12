@@ -80,6 +80,7 @@ export default function BetsPage() {
   if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-950 text-gray-600 text-sm">Loading…</div>;
 
   const openPositions = positions.filter((p) => p.status === "open");
+  const settledPositions = positions.filter((p) => p.status === "settled");
 
   return (
     <div className="flex h-full flex-col bg-gray-950 text-white">
@@ -160,6 +161,33 @@ export default function BetsPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+        </section>
+
+        {/* Past bets — settled markets you had a position in */}
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Past bets</h2>
+          {settledPositions.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-800 py-10 text-center">
+              <p className="text-sm font-medium text-gray-400">No settled bets yet</p>
+              <p className="mt-1 text-xs text-gray-600">Once a match you bet on ends, its result shows up here.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {settledPositions.map((p, i) => {
+                const pnl = p.value - p.cost;
+                return (
+                  <button key={i} onClick={() => router.push(`/room/${p.roomName}`)}
+                    className="flex w-full items-center gap-3 rounded-xl bg-gray-900 ring-1 ring-gray-800 px-4 py-3 text-left hover:ring-gray-700 transition-colors">
+                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${p.side === "A" ? "bg-emerald-900/40 text-emerald-300" : "bg-rose-900/40 text-rose-300"}`}>{p.label}</span>
+                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${p.won ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>{p.won ? "Won" : "Lost"}</span>
+                    <span className="text-xs text-gray-500">staked {money(p.cost)}</span>
+                    <span className="ml-auto text-sm font-semibold text-gray-200">{money(p.value)}</span>
+                    <span className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </section>
