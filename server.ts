@@ -2899,6 +2899,46 @@ app.get("/api/users/by-name/:username/profile", async (req, res) => {
   }
 });
 
+// GET /api/users/:id/matches — a user's completed 1v1 competitive matches (most recent first)
+app.get("/api/users/:id/matches", async (req, res) => {
+  const uid = req.params.id;
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT cm."roomName", cm."challengerId", cm."challengedId", cm."winnerId", cm.verdict,
+              cm."challengerEloBefore", cm."challengedEloBefore", cm."challengerEloAfter", cm."challengedEloAfter",
+              cm."completedAt", c.claim AS topic,
+              uc.username AS "challengerName", ud.username AS "challengedName"
+       FROM "CompetitiveMatch" cm
+       LEFT JOIN "Challenge" c ON cm."challengeId" = c.id
+       LEFT JOIN "User" uc ON uc.id = cm."challengerId"
+       LEFT JOIN "User" ud ON ud.id = cm."challengedId"
+       WHERE cm.status = 'complete' AND (cm."challengerId" = $1 OR cm."challengedId" = $1)
+       ORDER BY cm."completedAt" DESC NULLS LAST LIMIT 20`, uid,
+    ).catch(() => [] as any[]);
+    const matches = rows.map((r) => {
+      const isChallenger = r.challengerId === uid;
+      const eloBefore = Number((isChallenger ? r.challengerEloBefore : r.challengedEloBefore) ?? 1200);
+      const eloAfter = Number((isChallenger ? r.challengerEloAfter : r.challengedEloAfter) ?? eloBefore);
+      return {
+        roomName: r.roomName,
+        topic: r.topic ?? "Debate",
+        opponentName: (isChallenger ? r.challengedName : r.challengerName) ?? "Opponent",
+        won: r.winnerId === uid,
+        eloAfter,
+        eloDelta: eloAfter - eloBefore,
+        verdict: r.verdict ?? "",
+        completedAt: r.completedAt,
+        challengerId: r.challengerId,
+        challengedId: r.challengedId,
+      };
+    });
+    res.json(matches);
+  } catch (e) {
+    console.error("[user matches GET]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // PATCH /api/users/:id/profile
 app.patch("/api/users/:id/profile", async (req, res) => {
   const { bio, avatarUrl, featuredMedals } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[] };

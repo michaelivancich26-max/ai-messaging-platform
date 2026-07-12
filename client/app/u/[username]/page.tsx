@@ -27,6 +27,19 @@ interface ProfileData {
   cred?: CredScore;
 }
 
+interface MatchItem {
+  roomName: string;
+  topic: string;
+  opponentName: string;
+  won: boolean;
+  eloAfter: number;
+  eloDelta: number;
+  verdict: string;
+  completedAt: string | null;
+  challengerId: string;
+  challengedId: string;
+}
+
 function StatCard({ value, label, sub }: { value: string | number; label: string; sub?: string }) {
   return (
     <div className="flex flex-col gap-1 rounded-xl bg-gray-900 p-4 ring-1 ring-gray-800">
@@ -65,6 +78,7 @@ export default function PublicProfilePage() {
   const myId: string = (session?.user as any)?.id ?? "";
 
   const [data, setData] = useState<ProfileData | null>(null);
+  const [matches, setMatches] = useState<MatchItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -77,6 +91,21 @@ export default function PublicProfilePage() {
       .then((d: ProfileData) => { setData(d); setLoading(false); })
       .catch(() => { setNotFound(true); setLoading(false); });
   }, [username]);
+
+  const profileId = data?.id;
+  useEffect(() => {
+    if (!profileId) { setMatches([]); return; }
+    fetch(`${SERVER}/api/users/${profileId}/matches`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((m: MatchItem[]) => setMatches(Array.isArray(m) ? m : []))
+      .catch(() => setMatches([]));
+  }, [profileId]);
+
+  // A viewer who wasn't in the match opens it read-only (spectator); participants see their own result.
+  function openMatch(m: MatchItem) {
+    const isParticipant = myId === m.challengerId || myId === m.challengedId;
+    router.push(`/room/${m.roomName}${isParticipant ? "" : "?spectate=1"}`);
+  }
 
   const isMe = data?.id === myId;
   const memberSince = data?.createdAt
@@ -137,6 +166,26 @@ export default function PublicProfilePage() {
                   <StatCard value={`${data.stats.arenaWins}W ${data.stats.arenaLosses}L`} label="Arena record" />
                   <StatCard value={`${data.stats.dailyStreak}🔥`} label="Day streak" sub={data.stats.longestStreak ? `best ${data.stats.longestStreak}` : undefined} />
                 </div>
+
+                {/* Match history — completed 1v1 competitive matches */}
+                {matches.length > 0 && (
+                  <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Match history</p>
+                    <div className="space-y-2">
+                      {matches.map((m) => (
+                        <button key={m.roomName} onClick={() => openMatch(m)}
+                          className="flex w-full items-center gap-3 rounded-xl bg-gray-950/40 ring-1 ring-gray-800 px-3 py-2.5 text-left hover:ring-gray-700 transition-colors">
+                          <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${m.won ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>{m.won ? "Win" : "Loss"}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-gray-200">vs {m.opponentName}</p>
+                            <p className="truncate text-[11px] text-gray-500">{m.topic}</p>
+                          </div>
+                          <span className={`shrink-0 text-xs font-semibold tabular-nums ${m.eloDelta >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{m.eloDelta >= 0 ? "+" : ""}{m.eloDelta}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Veritas */}
                 {data.cred && <VeritasSummary cred={data.cred} arenaBonus={data.stats.arenaBonus} />}
