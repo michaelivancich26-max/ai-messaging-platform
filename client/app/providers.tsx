@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { SessionProvider } from "next-auth/react";
+import AppChrome from "@/components/AppChrome";
 
 function IOSViewportFix() {
   useEffect(() => {
@@ -32,5 +33,5 @@ function IOSViewportFix() {
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  return <SessionProvider><IOSViewportFix />{children}</SessionProvider>;
+  return <SessionProvider><IOSViewportFix /><AppChrome>{children}</AppChrome></SessionProvider>;
 }

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Sidebar from "@/components/Sidebar";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
@@ -110,7 +109,6 @@ export default function DashboardPage() {
   const [email, setEmail] = useState("");
   const [emailVerified, setEmailVerified] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -220,14 +218,9 @@ export default function DashboardPage() {
 
   return (
     <div className="flex h-full overflow-hidden bg-gray-950 text-gray-100">
-      <Sidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
-
       <div className="flex flex-1 min-w-0 flex-col">
         {/* Top bar */}
         <div className="flex min-h-14 shrink-0 items-center gap-3 border-b border-gray-800 px-4 md:px-6 pt-safe">
-          <button className="md:hidden rounded p-1.5 text-gray-400 hover:bg-gray-800" onClick={() => setMobileSidebarOpen(true)}>
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" /></svg>
-          </button>
           <span className="text-sm font-semibold text-gray-100">Dashboard</span>
         </div>
 
