@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import QuickBet from "./QuickBet";
+import { GavelIcon } from "./GavelsPill";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+const pct = (p: number) => `${Math.round(p * 100)}%`;
 
 export interface LiveMatch {
   type: "1v1" | "team";
@@ -17,6 +22,12 @@ export interface LiveMatch {
   participantIds: string[];
   viewers: number;
   startedAt: string;
+  priceA: number;
+  priceB: number;
+  labelA: string | null;
+  labelB: string | null;
+  volume: number;
+  bettors: number;
 }
 
 export function useLiveMatches(pollMs = 8000) {
@@ -62,7 +73,12 @@ function Side({ players, stance }: { players: { username: string; elo: number }[
   );
 }
 
-function MatchCard({ m, onWatch, compact }: { m: LiveMatch; onWatch: () => void; compact?: boolean }) {
+function MatchCard({ m, onWatch, compact, myId }: { m: LiveMatch; onWatch: () => void; compact?: boolean; myId: string }) {
+  const [betSide, setBetSide] = useState<"A" | "B" | null>(null);
+  const hasMarket = m.labelA != null && m.labelB != null;
+  const isParticipant = !!myId && m.participantIds.includes(myId);
+  const canBet = hasMarket && !isParticipant;
+
   return (
     <div className={`flex flex-col gap-3 rounded-2xl border border-gray-800 bg-gray-900/70 p-4 transition-colors hover:border-gray-700 ${compact ? "w-72 shrink-0" : ""}`}>
       <div className="flex items-center gap-2">
@@ -84,21 +100,59 @@ function MatchCard({ m, onWatch, compact }: { m: LiveMatch; onWatch: () => void;
         <Side players={m.sideB} stance={m.sideBStance} />
       </div>
 
-      <button
-        onClick={onWatch}
-        className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-500"
-      >
-        <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
-        Watch live
-      </button>
+      {hasMarket && (
+        <div>
+          <div className="flex h-2 overflow-hidden rounded-full bg-gray-800">
+            <div className="bg-emerald-500 transition-all duration-500" style={{ width: pct(m.priceA) }} />
+            <div className="bg-rose-500 transition-all duration-500" style={{ width: pct(m.priceB) }} />
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[10px]">
+            <span className="font-semibold text-emerald-300">{m.labelA} · {pct(m.priceA)}</span>
+            <span className="font-semibold text-rose-300">{pct(m.priceB)} · {m.labelB}</span>
+          </div>
+          <div className="mt-1.5 flex items-center gap-3 text-[10px] text-gray-500">
+            <span className="flex items-center gap-1 text-amber-400/90"><GavelIcon className="h-3 w-3" /> {money(m.volume)} staked</span>
+            <span>{m.bettors} {m.bettors === 1 ? "bettor" : "bettors"}</span>
+          </div>
+        </div>
+      )}
+
+      {canBet ? (
+        <div className="flex gap-1.5">
+          <button onClick={() => setBetSide("A")}
+            className="flex-1 rounded-xl bg-emerald-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-500">
+            Bet {m.labelA}
+          </button>
+          <button onClick={() => setBetSide("B")}
+            className="flex-1 rounded-xl bg-rose-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500">
+            Bet {m.labelB}
+          </button>
+          <button onClick={onWatch} title="Watch live"
+            className="shrink-0 rounded-xl bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700">
+            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
+          </button>
+        </div>
+      ) : (
+        <button onClick={onWatch}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-500">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
+          {isParticipant ? "Back to your match" : "Watch live"}
+        </button>
+      )}
+
+      {betSide && hasMarket && (
+        <QuickBet roomName={m.roomName} side={betSide} labelA={m.labelA!} labelB={m.labelB!} priceA={m.priceA} onClose={() => setBetSide(null)} />
+      )}
     </div>
   );
 }
 
 export default function LiveMatches({ variant = "grid" }: { variant?: "grid" | "strip" }) {
   const router = useRouter();
+  const { data: session } = useSession();
+  const myId: string = (session?.user as any)?.id ?? "";
   const { matches, loading } = useLiveMatches();
-  const watch = (m: LiveMatch) => router.push(`/room/${m.roomName}?spectate=1`);
+  const watch = (m: LiveMatch) => router.push(`/room/${m.roomName}${m.participantIds.includes(myId) ? "" : "?spectate=1"}`);
 
   if (variant === "strip") {
     if (loading || matches.length === 0) return null;
@@ -110,7 +164,7 @@ export default function LiveMatches({ variant = "grid" }: { variant?: "grid" | "
           <span className="text-[10px] text-gray-600">{matches.length} match{matches.length === 1 ? "" : "es"}</span>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2 -mr-6 pr-6 scrollbar-none">
-          {matches.map(m => <MatchCard key={m.roomName} m={m} onWatch={() => watch(m)} compact />)}
+          {matches.map(m => <MatchCard key={m.roomName} m={m} onWatch={() => watch(m)} compact myId={myId} />)}
         </div>
       </div>
     );
@@ -127,7 +181,7 @@ export default function LiveMatches({ variant = "grid" }: { variant?: "grid" | "
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {matches.map(m => <MatchCard key={m.roomName} m={m} onWatch={() => watch(m)} />)}
+          {matches.map(m => <MatchCard key={m.roomName} m={m} onWatch={() => watch(m)} myId={myId} />)}
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import { GavelIcon } from "@/components/GavelsPill";
+import QuickBet from "@/components/QuickBet";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -18,6 +19,8 @@ interface Market {
   priceA: number;
   priceB: number;
   topic: string;
+  volume: number;
+  bettors: number;
 }
 interface Position {
   roomName: string;
@@ -49,6 +52,7 @@ export default function BetsPage() {
   const [gavels, setGavels] = useState<number | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
+  const [betMarket, setBetMarket] = useState<Market | null>(null);
 
   const loadMarkets = useCallback(() => {
     fetch(`${SERVER}/api/markets/live`).then((r) => r.json())
@@ -155,10 +159,20 @@ export default function BetsPage() {
                     <span className="font-semibold text-emerald-300">{m.labelA} · {pct(m.priceA)}</span>
                     <span className="font-semibold text-rose-300">{pct(m.priceB)} · {m.labelB}</span>
                   </div>
-                  <button onClick={() => router.push(`/room/${m.roomName}`)}
-                    className="flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-500">
-                    <GavelIcon /> Watch &amp; bet
-                  </button>
+                  <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                    <span className="flex items-center gap-1 text-amber-400/90"><GavelIcon className="h-3 w-3" /> {money(m.volume)} staked</span>
+                    <span>{m.bettors} {m.bettors === 1 ? "bettor" : "bettors"}</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setBetMarket(m)}
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-amber-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-500">
+                      <GavelIcon className="h-3.5 w-3.5" /> Bet
+                    </button>
+                    <button onClick={() => router.push(`/room/${m.roomName}?spectate=1`)}
+                      className="shrink-0 rounded-xl bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700">
+                      <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -192,6 +206,11 @@ export default function BetsPage() {
           )}
         </section>
       </div>
+
+      {betMarket && (
+        <QuickBet roomName={betMarket.roomName} side="A" labelA={betMarket.labelA} labelB={betMarket.labelB} priceA={betMarket.priceA}
+          onClose={() => setBetMarket(null)} onPlaced={() => { loadMarkets(); loadWallet(); }} />
+      )}
     </div>
   );
 }
