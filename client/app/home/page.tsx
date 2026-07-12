@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import LiveMatches from "@/components/LiveMatches";
+import GavelsPill from "@/components/GavelsPill";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -176,6 +177,7 @@ export default function HomePage() {
         <div className="flex items-center justify-between px-6 pt-3 pb-2">
           <span className="text-sm font-bold tracking-tight text-gray-400">Veritas</span>
           <div className="flex items-center gap-3">
+            <GavelsPill />
             <button
               onClick={() => setShowDMPanel(true)}
               className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors"
