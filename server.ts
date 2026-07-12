@@ -1801,8 +1801,10 @@ app.post("/api/competitive/complete", async (req, res) => {
         messages: [{ role: "user", content: judgePrompt }],
       });
       const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+      // Slice to the last "}" so trailing prose after the JSON object doesn't break the parse.
       const jsonStart = raw.indexOf("{");
-      const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
+      const jsonEnd = raw.lastIndexOf("}");
+      const parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw);
       if (!forcedWinner && (parsed.winnerId === match.challengerId || parsed.winnerId === match.challengedId)) {
         winnerId = parsed.winnerId;
       }
@@ -2292,8 +2294,10 @@ app.post("/api/team/complete", async (req, res) => {
           messages: [{ role: "user", content: judgePrompt }],
         });
         const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+        // Slice to the last "}" so trailing prose after the JSON object doesn't break the parse.
         const jsonStart = raw.indexOf("{");
-        const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
+        const jsonEnd = raw.lastIndexOf("}");
+        const parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw);
         if (parsed.winningSide === "A" || parsed.winningSide === "B") winningSide = parsed.winningSide;
         if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
       } catch (e) {
