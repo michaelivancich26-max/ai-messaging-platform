@@ -94,6 +94,8 @@ export default function RoomPage() {
     }
   }, []);
   const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
+  // Lets a viewer dismiss the end-of-match result overlay to read the transcript underneath.
+  const [resultDismissed, setResultDismissed] = useState(false);
   const [matchResult, setMatchResult] = useState<{
     winner: "human" | "bot";
     verdict: string;
@@ -470,6 +472,26 @@ export default function RoomPage() {
     ? messages.filter((m) => (m as any).userId).length
     : myTurnCount;
 
+  // Exchanges completion: a human-vs-human match only ends once BOTH sides have
+  // posted at least `limit` messages, so it can't end while one party is still a
+  // response behind. Bot rooms keep the local count (the bot auto-replies, so
+  // sides stay balanced).
+  const exchangesLimitReached = (limit: number): boolean => {
+    const countFor = (ids?: string[]) =>
+      ids && ids.length
+        ? messages.filter((m) => ids.includes((m as any).userId)).length
+        : 0;
+    if (isTeamMatch && parsedMatchConfig) {
+      return Math.min(countFor(parsedMatchConfig.teamA), countFor(parsedMatchConfig.teamB)) >= limit;
+    }
+    if (isCompetitiveRoom && parsedMatchConfig?.challengerId && parsedMatchConfig?.challengedId) {
+      const c = countFor([parsedMatchConfig.challengerId]);
+      const d = countFor([parsedMatchConfig.challengedId]);
+      return Math.min(c, d) >= limit;
+    }
+    return myTurnCount >= limit; // bot rooms
+  };
+
 
   // Arena: load existing match result on mount (handles page reload after match ends)
   useEffect(() => {
@@ -532,9 +554,9 @@ export default function RoomPage() {
   // Arena: exchanges — auto-trigger when limit reached
   useEffect(() => {
     if (!(isBotRoom || isCompetitiveRoom) || matchState !== "active" || winCondition.type !== "exchanges") return;
-    if (matchExchangeCount >= winCondition.limit) triggerJudge(false);
+    if (exchangesLimitReached(winCondition.limit)) triggerJudge(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchExchangeCount, matchState, isBotRoom, isCompetitiveRoom, winCondition.type, (winCondition as any).limit]);
+  }, [messages.length, matchExchangeCount, matchState, isBotRoom, isCompetitiveRoom, winCondition.type, (winCondition as any).limit]);
 
   // Arena: time — countdown and auto-trigger when expired
   useEffect(() => {
@@ -1408,6 +1430,12 @@ export default function RoomPage() {
           <span className="text-xs font-medium text-amber-400">Judging the debate…</span>
         </div>
       )}
+      {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && resultDismissed && (
+        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-gray-800 bg-gray-950/60 px-4 py-1.5">
+          <span className="text-[11px] font-medium text-gray-400">This match has ended.</span>
+          <button onClick={() => setResultDismissed(false)} className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors">View result</button>
+        </div>
+      )}
 
       {(() => {
         const anyPanelOpen = (sidebarOpen && !!sidebarChannel) || (spectatorChatOpen && !!spectatorChatChannelId);
@@ -1415,8 +1443,8 @@ export default function RoomPage() {
       <div className={`flex flex-1 overflow-hidden min-h-0 ${anyPanelOpen ? "flex-row" : "flex-col"}`}>
         {/* Main chat column — hidden on mobile when sidebar is open (sidebar takes full screen instead) */}
         <div className={`relative flex-col flex-1 overflow-hidden min-w-0 ${anyPanelOpen ? "hidden md:flex" : "flex"}`}>
-          {/* Match result overlay */}
-          {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && (() => {
+          {/* Match result overlay — dismissible so the transcript stays viewable after the match ends */}
+          {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && !resultDismissed && (() => {
             // Spectators get a neutral result (no "you won/lost", no personal ELO)
             if (isSpectator) {
               const heading = matchResult.isTeam
@@ -1425,6 +1453,9 @@ export default function RoomPage() {
                     ?? (matchResult.winnerId === matchResult.challengerId ? "Challenger" : "Opponent")} Wins`;
               return (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
+                  </button>
                   <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
                     <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-950 ring-2 ring-amber-700">
                       <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-amber-400">
@@ -1450,6 +1481,9 @@ export default function RoomPage() {
               const myEloChange = myEloAfter - myEloBefore;
               return (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
+                  </button>
                   <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
                     <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
                       {won ? (
@@ -1492,6 +1526,9 @@ export default function RoomPage() {
                 : matchResult.challengedEloAfter) ?? 0;
               return (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
+                  </button>
                   <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
                     <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
                       {won ? (
@@ -1528,6 +1565,9 @@ export default function RoomPage() {
             const won = matchResult.winner === "human";
             return (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
+                  </button>
                 <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
                   <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
                     {won ? (
