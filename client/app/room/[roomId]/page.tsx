@@ -17,6 +17,7 @@ import ArenaSidebar from "@/components/ArenaSidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
+import BetPanel from "@/components/BetPanel";
 import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
@@ -1200,6 +1201,15 @@ export default function RoomPage() {
           onSetDebateMode={setDebateMode}
           onDetailsClick={() => setScorePanelOpen(true)}
         />
+      )}
+
+      {/* Live betting for competitive matches (spectators bet on the outcome) */}
+      {isCompetitiveRoom && userId && (
+        <div className="shrink-0 border-b border-gray-800 bg-gray-950/40 px-3 py-2">
+          <div className="mx-auto max-w-md">
+            <BetPanel roomName={roomId} userId={userId} />
+          </div>
+        </div>
       )}
 
       {/* Opinionated badge when there's no proposition/DebateHeader */}

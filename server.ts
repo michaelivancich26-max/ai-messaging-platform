@@ -577,6 +577,11 @@ io.on("connection", (socket) => {
           }
         }
 
+        // Betting: track full exchanges in competitive rooms to update live odds
+        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg && room.name.startsWith("comp-")) {
+          trackExchangeMessage(room.name, user.id).catch(() => {});
+        }
+
         // Bot auto-reply (fire-and-forget; delay is handled inside respondAsBot)
         // Skip for competitive (human vs human) rooms even if isBotRoom is set
         const isCompetitiveRoom = room.name.startsWith("comp-");
@@ -613,6 +618,7 @@ io.on("connection", (socket) => {
               });
               await prisma.$executeRawUnsafe(`UPDATE "Claim" SET evidence=$1,logic=$2,impact=$3,score=$4 WHERE id=$5`, evidence, logic, impact, claimScore, claim.id);
               io.to(emitTarget).emit("claimVerdict", { claimId: claim.id, messageId: message.id, status: verdict, reasoning, claimantId: user.id, challengeCount: 0, score: claimScore, relevance, evidence, logic, impact });
+              if (verdict === "SUPPORTED") awardGavels(user.id, EARN_SUPPORTED_CLAIM, "claim_supported", claim.id).catch(() => {});
               if (!isOpinionated) {
                 const cred = await computeCredibility(user.id, prisma);
                 io.to(emitTarget).emit("credibilityUpdate", cred);
@@ -1251,6 +1257,255 @@ app.post("/api/arena-score", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Betting — Gavels prediction markets on live competitive matches
+//
+// Odds are driven by the debate's proposition bar: each side's credibility-
+// weighted claim points (SUPPORTED*2 - REFUTED*3, min 1 base per debater) give a
+// raw share, sharpened toward the extremes. Start 50/50, recomputed each full
+// exchange (both sides post since the last update), frozen between. A share of a
+// side costs its current probability and pays 1 Gavel if that side is ahead on
+// the FINAL bar when the match ends. House is the counterparty; volume does not
+// move the price. Debaters can't bet on their own match.
+// ═══════════════════════════════════════════════════════════════════════════
+const STARTING_GAVELS = 1000;
+const ODDS_SHARPEN = 2.5;              // >1 pushes the bar toward the extremes
+const MARKET_POSITION_CAP = 5000;      // max net Gavels a user can stake per market
+const EARN_MATCH_WIN = 100;            // Gavels awarded for winning a match
+const EARN_SUPPORTED_CLAIM = 10;       // Gavels awarded for a SUPPORTED claim
+const TIE_EPSILON = 0.02;              // |priceA-0.5| below this at close => refund
+const PRICE_MIN = 0.02, PRICE_MAX = 0.98;
+
+// roomName -> which sides have spoken since the last odds update
+const exchangeTracker = new Map<string, { a: boolean; b: boolean }>();
+
+function sharpenProb(p: number): number {
+  const g = ODDS_SHARPEN;
+  const a = Math.pow(p, g), b = Math.pow(1 - p, g);
+  const v = a + b > 0 ? a / (a + b) : 0.5;
+  return Math.min(PRICE_MAX, Math.max(PRICE_MIN, v));
+}
+
+async function currentGavels(userId: string): Promise<number> {
+  const r = await prisma.$queryRawUnsafe<{ gavels: number }[]>(
+    `SELECT COALESCE(gavels, ${STARTING_GAVELS}) AS gavels FROM "User" WHERE id = $1`, userId,
+  );
+  return r[0]?.gavels ?? STARTING_GAVELS;
+}
+
+// Adjust a user's balance and append a ledger row. Returns the new balance.
+async function awardGavels(userId: string, delta: number, reason: string, refId: string | null = null): Promise<number> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ gavels: number }[]>(
+      `UPDATE "User" SET gavels = COALESCE(gavels, ${STARTING_GAVELS}) + $1 WHERE id = $2 RETURNING gavels`,
+      delta, userId,
+    );
+    const bal = rows[0]?.gavels ?? 0;
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "GavelTxn" ("id","userId","delta","balanceAfter","reason","refId")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5)`,
+      userId, delta, bal, reason, refId,
+    );
+    const sids = userSockets.get(userId);
+    if (sids) for (const sid of sids) io.to(sid).emit("gavelsUpdate", { gavels: bal, delta, reason });
+    return bal;
+  } catch (e) { console.error("[awardGavels]", e); return 0; }
+}
+
+async function createBetMarket(opts: { roomName: string; matchType: "1v1" | "team"; sideA: string[]; sideB: string[]; labelA: string; labelB: string }): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "BetMarket" ("id","roomName","matchType","sideA","sideB","labelA","labelB","priceA","status")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,0.5,'open')
+       ON CONFLICT ("roomName") DO NOTHING`,
+      opts.roomName, opts.matchType, JSON.stringify(opts.sideA), JSON.stringify(opts.sideB), opts.labelA, opts.labelB,
+    );
+  } catch (e) { console.error("[createBetMarket]", e); }
+}
+
+// Recompute the sharpened proposition-bar probability from room-scoped claims.
+async function recomputeMarketPrice(roomName: string): Promise<void> {
+  try {
+    const mRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetMarket" WHERE "roomName"=$1 AND status='open' LIMIT 1`, roomName);
+    if (!mRows.length) return;
+    const market = mRows[0];
+    const sideA: string[] = JSON.parse(market.sideA), sideB: string[] = JSON.parse(market.sideB);
+    const roomRow = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
+    if (!roomRow) return;
+    const claimRows = await prisma.$queryRawUnsafe<{ claimantId: string; status: string; n: number }[]>(
+      `SELECT "claimantId", status, COUNT(*)::int AS n FROM "Claim"
+       WHERE "roomId"=$1 AND status IN ('SUPPORTED','REFUTED') GROUP BY "claimantId", status`, roomRow.id,
+    );
+    const sup: Record<string, number> = {}, ref: Record<string, number> = {};
+    for (const r of claimRows) { if (r.status === "SUPPORTED") sup[r.claimantId] = r.n; else ref[r.claimantId] = r.n; }
+    const pts = (ids: string[]) => ids.reduce((t, id) => {
+      const s = sup[id] || 0, f = ref[id] || 0;
+      return t + (s || f ? Math.max(0, s * 2 - f * 3) : 1);   // base 1 until a debater has a scored claim
+    }, 0);
+    const pa = pts(sideA), pb = pts(sideB);
+    const raw = pa + pb > 0 ? pa / (pa + pb) : 0.5;
+    const priceA = sharpenProb(raw);
+    await prisma.$executeRawUnsafe(`UPDATE "BetMarket" SET "priceA"=$1, "lastExchange"="lastExchange"+1 WHERE "roomName"=$2`, priceA, roomName);
+    io.to(roomName).emit("oddsUpdate", { roomName, priceA, priceB: 1 - priceA });
+  } catch (e) { console.error("[recomputeMarketPrice]", e); }
+}
+
+// Called on every human message in a comp- room; recomputes odds once both sides
+// have spoken since the last update (a "full exchange").
+async function trackExchangeMessage(roomName: string, senderId: string): Promise<void> {
+  try {
+    const mRows = await prisma.$queryRawUnsafe<any[]>(`SELECT "sideA","sideB" FROM "BetMarket" WHERE "roomName"=$1 AND status='open' LIMIT 1`, roomName);
+    if (!mRows.length) return;
+    const sideA: string[] = JSON.parse(mRows[0].sideA), sideB: string[] = JSON.parse(mRows[0].sideB);
+    const side = sideA.includes(senderId) ? "a" : sideB.includes(senderId) ? "b" : null;
+    if (!side) return;
+    const t = exchangeTracker.get(roomName) ?? { a: false, b: false };
+    t[side] = true;
+    if (t.a && t.b) {
+      exchangeTracker.set(roomName, { a: false, b: false });
+      await recomputeMarketPrice(roomName);
+    } else {
+      exchangeTracker.set(roomName, t);
+    }
+  } catch (e) { console.error("[trackExchangeMessage]", e); }
+}
+
+async function buyShares(roomName: string, userId: string, side: "A" | "B", amount: number): Promise<{ shares: number; price: number; spent: number }> {
+  const mRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetMarket" WHERE "roomName"=$1 LIMIT 1`, roomName);
+  if (!mRows.length) throw new Error("No market for this match");
+  const market = mRows[0];
+  if (market.status !== "open") throw new Error("Betting is closed for this match");
+  const sideA: string[] = JSON.parse(market.sideA), sideB: string[] = JSON.parse(market.sideB);
+  if (sideA.includes(userId) || sideB.includes(userId)) throw new Error("You can't bet on a match you're debating in");
+  const price = side === "A" ? market.priceA : 1 - market.priceA;
+  const bal = await currentGavels(userId);
+  if (bal < amount) throw new Error("Not enough Gavels");
+  const posRows = await prisma.$queryRawUnsafe<{ cost: number }[]>(`SELECT COALESCE(SUM(cost),0) AS cost FROM "BetPosition" WHERE "marketId"=$1 AND "userId"=$2`, market.id, userId);
+  if ((Number(posRows[0]?.cost) || 0) + amount > MARKET_POSITION_CAP) throw new Error(`Position cap is ${MARKET_POSITION_CAP} Gavels per match`);
+  const shares = amount / price;
+  await awardGavels(userId, -amount, "bet_buy", market.id);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "BetPosition" ("id","marketId","userId","side","shares","cost","status")
+     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,'open')
+     ON CONFLICT ("marketId","userId","side")
+     DO UPDATE SET shares="BetPosition".shares+$4, cost="BetPosition".cost+$5, "updatedAt"=NOW()`,
+    market.id, userId, side, shares, amount,
+  );
+  return { shares, price, spent: amount };
+}
+
+async function sellShares(roomName: string, userId: string, side: "A" | "B", sharesToSell?: number): Promise<{ soldShares: number; price: number; received: number }> {
+  const mRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetMarket" WHERE "roomName"=$1 LIMIT 1`, roomName);
+  if (!mRows.length) throw new Error("No market for this match");
+  const market = mRows[0];
+  if (market.status !== "open") throw new Error("Betting is closed for this match");
+  const posRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetPosition" WHERE "marketId"=$1 AND "userId"=$2 AND side=$3 LIMIT 1`, market.id, userId, side);
+  if (!posRows.length || posRows[0].shares <= 0) throw new Error("No position to sell");
+  const pos = posRows[0];
+  const sell = sharesToSell && sharesToSell > 0 ? Math.min(sharesToSell, pos.shares) : pos.shares;
+  const price = side === "A" ? market.priceA : 1 - market.priceA;
+  const value = sell * price;
+  const costReduce = pos.cost * (sell / pos.shares);
+  await awardGavels(userId, value, "bet_sell", market.id);
+  await prisma.$executeRawUnsafe(`UPDATE "BetPosition" SET shares=shares-$1, cost=cost-$2, "updatedAt"=NOW() WHERE id=$3`, sell, costReduce, pos.id);
+  return { soldShares: sell, price, received: value };
+}
+
+// Settle all open positions on the FINAL proposition bar (Michael's rule).
+async function settleBetMarket(roomName: string): Promise<void> {
+  try {
+    await recomputeMarketPrice(roomName);                    // capture the final bar
+    const mRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetMarket" WHERE "roomName"=$1 AND status='open' LIMIT 1`, roomName);
+    if (!mRows.length) return;
+    const market = mRows[0];
+    const priceA: number = market.priceA;
+    const tie = Math.abs(priceA - 0.5) < TIE_EPSILON;
+    const winSide: "A" | "B" | null = tie ? null : (priceA > 0.5 ? "A" : "B");
+    const positions = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetPosition" WHERE "marketId"=$1 AND status='open' AND shares>0`, market.id);
+    for (const p of positions) {
+      const payout = winSide === null ? p.cost : (p.side === winSide ? p.shares : 0);
+      if (payout > 0) await awardGavels(p.userId, payout, winSide === null ? "bet_refund" : "bet_win", market.id);
+    }
+    await prisma.$executeRawUnsafe(`UPDATE "BetPosition" SET status='settled', "updatedAt"=NOW() WHERE "marketId"=$1`, market.id);
+    await prisma.$executeRawUnsafe(`UPDATE "BetMarket" SET status='settled', "winningSide"=$1, "priceA"=$2, "settledAt"=NOW() WHERE id=$3`, winSide, priceA, market.id);
+    exchangeTracker.delete(roomName);
+    io.to(roomName).emit("marketSettled", { roomName, winningSide: winSide, priceA });
+  } catch (e) { console.error("[settleBetMarket]", e); }
+}
+
+// ── Betting endpoints ─────────────────────────────────────────────────────────
+app.get("/api/wallet", async (req, res) => {
+  const userId = String(req.query.userId ?? "");
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const gavels = await currentGavels(userId);
+    const positions = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT bp."side", bp.shares, bp.cost, bm."roomName", bm."labelA", bm."labelB", bm."priceA", bm.status, bm."winningSide"
+       FROM "BetPosition" bp JOIN "BetMarket" bm ON bm.id=bp."marketId"
+       WHERE bp."userId"=$1 AND bp.shares>0 ORDER BY bp."updatedAt" DESC`, userId,
+    );
+    const out = positions.map((p) => {
+      const price = p.side === "A" ? p.priceA : 1 - p.priceA;
+      const value = p.status === "open" ? p.shares * price : (p.status === "settled" ? (p.winningSide === p.side ? p.shares : 0) : p.cost);
+      return { roomName: p.roomName, side: p.side, label: p.side === "A" ? p.labelA : p.labelB, shares: p.shares, cost: p.cost, price, value, status: p.status, won: p.status === "settled" ? p.winningSide === p.side : null };
+    });
+    res.json({ gavels, positions: out });
+  } catch (e) { console.error("[wallet]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+app.get("/api/markets/live", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "roomName","matchType","labelA","labelB","priceA","lastExchange" FROM "BetMarket" WHERE status='open' ORDER BY "createdAt" DESC`);
+    const out: any[] = [];
+    for (const m of rows) {
+      let topic = "";
+      try {
+        const r = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(`SELECT "matchConfig" FROM "Room" WHERE name=$1`, m.roomName);
+        topic = (r[0]?.matchConfig ? JSON.parse(r[0].matchConfig).topic : "") ?? "";
+      } catch { /* no topic */ }
+      out.push({ ...m, priceB: 1 - m.priceA, topic });
+    }
+    res.json(out);
+  } catch (e) { console.error("[markets live]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+app.get("/api/markets/:roomName", async (req, res) => {
+  try {
+    const userId = String(req.query.userId ?? "");
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "BetMarket" WHERE "roomName"=$1 LIMIT 1`, req.params.roomName);
+    if (!rows.length) return res.json({ market: null, positions: [] });
+    const m = rows[0];
+    let topic = "";
+    try {
+      const r = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(`SELECT "matchConfig" FROM "Room" WHERE name=$1`, m.roomName);
+      topic = (r[0]?.matchConfig ? JSON.parse(r[0].matchConfig).topic : "") ?? "";
+    } catch { /* no topic */ }
+    const sideA: string[] = JSON.parse(m.sideA), sideB: string[] = JSON.parse(m.sideB);
+    let positions: any[] = [];
+    const isParticipant = !!userId && (sideA.includes(userId) || sideB.includes(userId));
+    if (userId) positions = await prisma.$queryRawUnsafe<any[]>(`SELECT side, shares, cost FROM "BetPosition" WHERE "marketId"=$1 AND "userId"=$2 AND shares>0`, m.id, userId);
+    res.json({ market: { roomName: m.roomName, matchType: m.matchType, labelA: m.labelA, labelB: m.labelB, priceA: m.priceA, priceB: 1 - m.priceA, status: m.status, winningSide: m.winningSide, topic, isParticipant }, positions });
+  } catch (e) { console.error("[market get]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+app.post("/api/markets/:roomName/buy", async (req, res) => {
+  const { userId, side, amount } = req.body as { userId: string; side: "A" | "B"; amount: number };
+  if (!userId || (side !== "A" && side !== "B") || !(amount > 0)) return res.status(400).json({ error: "userId, side, amount required" });
+  try {
+    const r = await buyShares(req.params.roomName, userId, side, Math.floor(amount));
+    res.json({ ...r, gavels: await currentGavels(userId) });
+  } catch (e: any) { res.status(400).json({ error: e?.message ?? "Bet failed" }); }
+});
+
+app.post("/api/markets/:roomName/sell", async (req, res) => {
+  const { userId, side, shares } = req.body as { userId: string; side: "A" | "B"; shares?: number };
+  if (!userId || (side !== "A" && side !== "B")) return res.status(400).json({ error: "userId, side required" });
+  try {
+    const r = await sellShares(req.params.roomName, userId, side, shares);
+    res.json({ ...r, gavels: await currentGavels(userId) });
+  } catch (e: any) { res.status(400).json({ error: e?.message ?? "Sell failed" }); }
+});
+
 // ── ELO ─────────────────────────────────────────────────────────────────────
 function calcElo(ratingA: number, ratingB: number, aWon: boolean, K = 32): { newA: number; newB: number } {
   const expected = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
@@ -1463,6 +1718,13 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
       roomName, challenge.challengerElo ?? 1200, challengedElo,
     );
 
+    // Open a betting market for spectators
+    try {
+      const names = await prisma.$queryRawUnsafe<{ id: string; username: string }[]>(`SELECT id, username FROM "User" WHERE id = ANY($1::text[])`, [challenge.userId, userId]);
+      const nm = (id: string) => names.find((n) => n.id === id)?.username ?? "Debater";
+      await createBetMarket({ roomName, matchType: "1v1", sideA: [challenge.userId], sideB: [userId], labelA: nm(challenge.userId), labelB: nm(userId) });
+    } catch (e) { console.error("[bet market 1v1]", e); }
+
     // Notify the challenge poster via socket
     const posterSockets = userSockets.get(challenge.userId);
     if (posterSockets) {
@@ -1578,6 +1840,11 @@ app.post("/api/competitive/complete", async (req, res) => {
     };
     // Broadcast to everyone in the room (spectators + both players) for live verdicts
     io.to(roomName).emit("matchComplete", { isTeam: false, ...payload });
+
+    // Betting + earn: settle spectator bets on the final proposition bar, reward the winner
+    settleBetMarket(roomName).catch(() => {});
+    awardGavels(winnerId, EARN_MATCH_WIN, "match_win", roomName).catch(() => {});
+
     res.json(payload);
   } catch (e) {
     console.error("[competitive complete]", e);
@@ -1677,6 +1944,11 @@ async function startTeamMatchIfReady(challengeId: string): Promise<string | null
     JSON.stringify(teamA), JSON.stringify(teamB), JSON.stringify(eloBefore),
   );
   await prisma.$executeRawUnsafe(`UPDATE "Challenge" SET status = 'matched' WHERE id = $1`, challengeId);
+
+  // Open a betting market for spectators
+  try {
+    await createBetMarket({ roomName, matchType: "team", sideA: teamA, sideB: teamB, labelA: `Side A · ${sideAStance}`, labelB: `Side B · ${OPP_STANCE(sideAStance)}` });
+  } catch (e) { console.error("[bet market team]", e); }
 
   // Notify all members their match is ready
   for (const uid of allIds) {
@@ -2055,6 +2327,11 @@ app.post("/api/team/complete", async (req, res) => {
     const payload = { isTeam: true, winningSide, verdict, teamA, teamB, eloBefore, eloAfter, sideAStance: match.sideAStance, topic: match.topic };
     // Broadcast to everyone in the room (spectators + all players) for live verdicts
     io.to(roomName).emit("matchComplete", payload);
+
+    // Betting + earn: settle spectator bets on the final proposition bar, reward the winning team
+    settleBetMarket(roomName).catch(() => {});
+    for (const uid of (winningSide === "A" ? teamA : teamB)) awardGavels(uid, EARN_MATCH_WIN, "match_win", roomName).catch(() => {});
+
     res.json(payload);
   } catch (e) {
     console.error("[team complete]", e);
@@ -3764,6 +4041,59 @@ async function start() {
     console.log("[DB] Claim rubric columns ready");
   } catch (e) {
     console.error("[DB] Claim rubric columns setup failed:", e);
+  }
+
+  // Betting: Gavels wallet + prediction markets on live matches
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "gavels" DOUBLE PRECISION NOT NULL DEFAULT ${STARTING_GAVELS}`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "BetMarket" (
+        "id"           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "roomName"     TEXT NOT NULL UNIQUE,
+        "matchType"    TEXT NOT NULL,                        -- '1v1' | 'team'
+        "sideA"        TEXT NOT NULL,                        -- JSON array of userIds
+        "sideB"        TEXT NOT NULL,                        -- JSON array of userIds
+        "labelA"       TEXT NOT NULL,
+        "labelB"       TEXT NOT NULL,
+        "priceA"       DOUBLE PRECISION NOT NULL DEFAULT 0.5,-- P(side A wins); B = 1 - A
+        "lastExchange" INTEGER NOT NULL DEFAULT 0,
+        "status"       TEXT NOT NULL DEFAULT 'open',         -- 'open' | 'settled'
+        "winningSide"  TEXT,                                 -- 'A' | 'B' | null (refund)
+        "createdAt"    TIMESTAMP NOT NULL DEFAULT NOW(),
+        "settledAt"    TIMESTAMP
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "BetPosition" (
+        "id"        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "marketId"  TEXT NOT NULL,
+        "userId"    TEXT NOT NULL,
+        "side"      TEXT NOT NULL,                           -- 'A' | 'B'
+        "shares"    DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "cost"      DOUBLE PRECISION NOT NULL DEFAULT 0,     -- net Gavels staked
+        "status"    TEXT NOT NULL DEFAULT 'open',            -- 'open' | 'settled'
+        "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+        "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE ("marketId","userId","side")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BetPosition_user_idx" ON "BetPosition"("userId")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BetPosition_market_idx" ON "BetPosition"("marketId")`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "GavelTxn" (
+        "id"           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "userId"       TEXT NOT NULL,
+        "delta"        DOUBLE PRECISION NOT NULL,
+        "balanceAfter" DOUBLE PRECISION NOT NULL,
+        "reason"       TEXT NOT NULL,
+        "refId"        TEXT,
+        "createdAt"    TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "GavelTxn_user_idx" ON "GavelTxn"("userId")`);
+    console.log("[DB] Betting (Gavels) tables ready");
+  } catch (e) {
+    console.error("[DB] Betting table setup failed:", e);
   }
 
   httpServer.listen(PORT, () => {
