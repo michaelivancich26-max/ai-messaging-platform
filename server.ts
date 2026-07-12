@@ -1433,6 +1433,34 @@ async function settleBetMarket(roomName: string): Promise<void> {
   } catch (e) { console.error("[settleBetMarket]", e); }
 }
 
+interface MarketStat { priceA: number; labelA: string; labelB: string; status: string; volume: number; bettors: number }
+
+// Aggregate live betting stats — odds + volume (Gavels staked) + unique bettors — for a
+// set of rooms in a single query. Used to make live matches betting-forward.
+async function marketStats(roomNames: string[]): Promise<Map<string, MarketStat>> {
+  const out = new Map<string, MarketStat>();
+  if (!roomNames.length) return out;
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT bm."roomName", bm."priceA", bm."labelA", bm."labelB", bm.status,
+              COALESCE(SUM(bp.cost), 0)::float8 AS volume,
+              COUNT(DISTINCT bp."userId")::int AS bettors
+       FROM "BetMarket" bm
+       LEFT JOIN "BetPosition" bp ON bp."marketId" = bm.id AND bp.shares > 0
+       WHERE bm."roomName" = ANY($1::text[])
+       GROUP BY bm."roomName", bm."priceA", bm."labelA", bm."labelB", bm.status`,
+      roomNames,
+    );
+    for (const r of rows) {
+      out.set(r.roomName, {
+        priceA: Number(r.priceA), labelA: r.labelA, labelB: r.labelB, status: r.status,
+        volume: Number(r.volume) || 0, bettors: Number(r.bettors) || 0,
+      });
+    }
+  } catch (e) { console.error("[marketStats]", e); }
+  return out;
+}
+
 // ── Betting endpoints ─────────────────────────────────────────────────────────
 app.get("/api/wallet", async (req, res) => {
   const userId = String(req.query.userId ?? "");
@@ -1456,6 +1484,7 @@ app.get("/api/wallet", async (req, res) => {
 app.get("/api/markets/live", async (_req, res) => {
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "roomName","matchType","labelA","labelB","priceA","lastExchange" FROM "BetMarket" WHERE status='open' ORDER BY "createdAt" DESC`);
+    const stats = await marketStats(rows.map((m) => m.roomName));
     const out: any[] = [];
     for (const m of rows) {
       let topic = "";
@@ -1463,7 +1492,8 @@ app.get("/api/markets/live", async (_req, res) => {
         const r = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(`SELECT "matchConfig" FROM "Room" WHERE name=$1`, m.roomName);
         topic = (r[0]?.matchConfig ? JSON.parse(r[0].matchConfig).topic : "") ?? "";
       } catch { /* no topic */ }
-      out.push({ ...m, priceB: 1 - m.priceA, topic });
+      const s = stats.get(m.roomName);
+      out.push({ ...m, priceB: 1 - m.priceA, topic, volume: s?.volume ?? 0, bettors: s?.bettors ?? 0 });
     }
     res.json(out);
   } catch (e) { console.error("[markets live]", e); res.status(500).json({ error: "Server error" }); }
@@ -1484,7 +1514,8 @@ app.get("/api/markets/:roomName", async (req, res) => {
     let positions: any[] = [];
     const isParticipant = !!userId && (sideA.includes(userId) || sideB.includes(userId));
     if (userId) positions = await prisma.$queryRawUnsafe<any[]>(`SELECT side, shares, cost FROM "BetPosition" WHERE "marketId"=$1 AND "userId"=$2 AND shares>0`, m.id, userId);
-    res.json({ market: { roomName: m.roomName, matchType: m.matchType, labelA: m.labelA, labelB: m.labelB, priceA: m.priceA, priceB: 1 - m.priceA, status: m.status, winningSide: m.winningSide, topic, isParticipant }, positions });
+    const s = (await marketStats([m.roomName])).get(m.roomName);
+    res.json({ market: { roomName: m.roomName, matchType: m.matchType, labelA: m.labelA, labelB: m.labelB, priceA: m.priceA, priceB: 1 - m.priceA, status: m.status, winningSide: m.winningSide, topic, isParticipant, volume: s?.volume ?? 0, bettors: s?.bettors ?? 0 }, positions });
   } catch (e) { console.error("[market get]", e); res.status(500).json({ error: "Server error" }); }
 });
 
@@ -2667,7 +2698,21 @@ app.get("/api/live-matches", async (_req, res) => {
     };
     matches.sort((a, b) => prominence(b) - prominence(a));
 
-    res.json(matches);
+    // Attach live odds + betting volume so the hub can lead with betting.
+    const stats = await marketStats(matches.map((m) => m.roomName));
+    const enriched = matches.map((m) => {
+      const s = stats.get(m.roomName);
+      return {
+        ...m,
+        priceA: s?.priceA ?? 0.5,
+        priceB: s ? 1 - s.priceA : 0.5,
+        labelA: s?.labelA ?? null,
+        labelB: s?.labelB ?? null,
+        volume: s?.volume ?? 0,
+        bettors: s?.bettors ?? 0,
+      };
+    });
+    res.json(enriched);
   } catch (e) {
     console.error("[live-matches]", e);
     res.status(500).json({ error: "Server error" });
