@@ -117,6 +117,9 @@ export default function RoomPage() {
     eloAfter?: Record<string, number>;
   } | null>(null);
   const [propositionScore, setPropositionScore] = useState(50); // 0=bot winning, 100=human winning
+  // Competitive betting odds = the live proposition bar (sharpened), shown to all parties
+  const [betPriceA, setBetPriceA] = useState(0.5);
+  const [betLabels, setBetLabels] = useState<{ a: string; b: string } | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // seconds remaining
   const lastScoredLenRef = useRef(0);
 
@@ -550,9 +553,11 @@ export default function RoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBotRoom, matchState, winCondition.type, (winCondition as any).minutes, (roomMeta as any)?.createdAt]);
 
-  // Arena: proposition — score after each message, trigger when threshold crossed
+  // Arena (bot rooms): proposition — score after each message, trigger when threshold crossed.
+  // Competitive rooms have no bot, so /api/arena-score returns a constant 50 for them; they
+  // drive their proposition threshold off the sharpened betting bar instead (effect below).
   useEffect(() => {
-    if (!(isBotRoom || isCompetitiveRoom) || matchState !== "active" || winCondition.type !== "proposition") return;
+    if (!isBotRoom || matchState !== "active" || winCondition.type !== "proposition") return;
     if (messages.length <= lastScoredLenRef.current || messages.length < 2) return;
     lastScoredLenRef.current = messages.length;
     const threshold = (winCondition as { type: "proposition"; threshold: number }).threshold;
@@ -572,6 +577,39 @@ export default function RoomPage() {
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, isBotRoom, matchState, winCondition.type, (winCondition as any).threshold]);
+
+  // Competitive: track the live betting odds (= sharpened proposition bar) so the
+  // bar is visible to all parties regardless of win condition.
+  useEffect(() => {
+    if (!isCompetitiveRoom) return;
+    let active = true;
+    fetch(`${SERVER}/api/markets/${roomId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active || !d?.market) return;
+        setBetLabels({ a: d.market.labelA, b: d.market.labelB });
+        setBetPriceA(d.market.priceA);
+      })
+      .catch(() => {});
+    const socket = getSocket();
+    const onOdds = (x: { roomName: string; priceA: number }) => { if (x.roomName === roomId) setBetPriceA(x.priceA); };
+    const onSettled = (x: { roomName: string; priceA: number }) => { if (x.roomName === roomId) setBetPriceA(x.priceA); };
+    socket.on("oddsUpdate", onOdds);
+    socket.on("marketSettled", onSettled);
+    return () => { active = false; socket.off("oddsUpdate", onOdds); socket.off("marketSettled", onSettled); };
+  }, [isCompetitiveRoom, roomId]);
+
+  // Competitive proposition win: end the match when the sharpened betting bar crosses the
+  // threshold — the same value that's displayed and that settles bets, so it's fully congruent.
+  // Guarded on messages.length >= 2 so a fresh 50/50 market can't self-resolve on mount.
+  useEffect(() => {
+    if (!isCompetitiveRoom || isSpectator || matchState !== "active" || winCondition.type !== "proposition") return;
+    if (messages.length < 2) return;
+    const threshold = (winCondition as { type: "proposition"; threshold: number }).threshold;
+    const pct = betPriceA * 100;
+    if (pct >= threshold || pct <= 100 - threshold) triggerJudge(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [betPriceA, messages.length, isCompetitiveRoom, isSpectator, matchState, winCondition.type, (winCondition as any).threshold]);
 
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
     if (isSpectator) return; // spectators never drive match completion
@@ -1258,6 +1296,30 @@ export default function RoomPage() {
         </div>
       )}
 
+      {/* Competitive proposition bar — always visible to all parties (betting-driven) */}
+      {isCompetitiveRoom && matchState === "active" && betLabels && (
+        <div className="shrink-0 border-b border-gray-800 bg-gray-950/50 px-4 py-2">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Proposition</span>
+            {winCondition.type === "proposition" && (
+              <span className="text-[10px] text-gray-600">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
+            )}
+            {/* Forfeit lives here only for proposition rooms; exchanges/time rooms carry it in their own banners */}
+            {winCondition.type === "proposition" && !isSpectator && (
+              <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+            )}
+          </div>
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-800">
+            <div className="bg-emerald-500 transition-all duration-700" style={{ width: `${Math.round(betPriceA * 100)}%` }} />
+            <div className="bg-rose-500 transition-all duration-700" style={{ width: `${Math.round((1 - betPriceA) * 100)}%` }} />
+          </div>
+          <div className="mt-1 flex items-center justify-between text-[10px]">
+            <span className="font-semibold text-emerald-300">{betLabels.a} · {Math.round(betPriceA * 100)}%</span>
+            <span className="font-semibold text-rose-300">{Math.round((1 - betPriceA) * 100)}% · {betLabels.b}</span>
+          </div>
+        </div>
+      )}
+
       {/* Match progress banner */}
       {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "exchanges" && (
         <div className="shrink-0 flex items-center gap-3 border-b border-amber-900/30 bg-amber-950/15 px-4 py-2">
@@ -1302,7 +1364,7 @@ export default function RoomPage() {
           <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
-      {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "proposition" && (
+      {isBotRoom && matchState === "active" && winCondition.type === "proposition" && (
         <div className="shrink-0 border-b border-violet-900/30 bg-violet-950/10 px-4 py-2 space-y-1.5">
           <div className="flex items-center gap-2">
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-violet-400">
