@@ -26,12 +26,12 @@ interface StreamingProps {
 export function AIStreamingCard({ text }: StreamingProps) {
   return (
     <div className="flex justify-center">
-      <div className="w-full max-w-lg rounded-2xl border border-violet-500/30 bg-violet-950/40 px-4 py-3 text-sm">
+      <div className="w-full max-w-lg rounded-2xl border border-violet-500/30 bg-violet-100 dark:bg-violet-950/40 px-4 py-3 text-sm">
         <div className="flex items-center gap-2">
-          <span className="text-violet-400"><SparkleIcon /></span>
-          <span className="font-semibold text-violet-300">@Claude</span>
+          <span className="text-violet-600 dark:text-violet-400"><SparkleIcon /></span>
+          <span className="font-semibold text-violet-700 dark:text-violet-300">@Claude</span>
         </div>
-        <p className="mt-2 leading-relaxed text-gray-200 whitespace-pre-wrap">
+        <p className="mt-2 leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
           {text}
           <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-violet-400 align-middle" />
         </p>
@@ -61,15 +61,15 @@ export default function AIInterjectionCard({ message }: Props) {
 
   return (
     <div className="flex justify-center">
-      <div className="w-full max-w-lg rounded-2xl border border-violet-500/30 bg-violet-950/40 px-4 py-3 text-sm">
+      <div className="w-full max-w-lg rounded-2xl border border-violet-500/30 bg-violet-100 dark:bg-violet-950/40 px-4 py-3 text-sm">
         <button onClick={toggle} className="flex w-full items-center gap-2 text-left">
-          <span className="text-violet-400"><SparkleIcon /></span>
-          <span className="font-semibold text-violet-300">@Claude</span>
+          <span className="text-violet-600 dark:text-violet-400"><SparkleIcon /></span>
+          <span className="font-semibold text-violet-700 dark:text-violet-300">@Claude</span>
           <span className="ml-auto text-xs text-gray-500">{time}</span>
           <ChevronIcon rotated={!headerOnly && expanded} />
         </button>
         {!headerOnly && expanded && (
-          <p className="mt-2 whitespace-pre-wrap leading-relaxed text-gray-200">{text}</p>
+          <p className="mt-2 whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-gray-200">{text}</p>
         )}
       </div>
     </div>

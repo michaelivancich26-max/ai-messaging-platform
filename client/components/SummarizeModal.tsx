@@ -39,8 +39,8 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-gray-900 p-5 shadow-2xl ring-1 ring-gray-800">
-        <h3 className="mb-1 text-sm font-semibold text-gray-100">Summarize conversation</h3>
+      <div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-900 p-5 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-800">
+        <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-gray-100">Summarize conversation</h3>
         <p className="mb-4 text-xs text-gray-500">Choose a time frame to summarize.</p>
 
         <div className="space-y-2">
@@ -51,7 +51,7 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
               className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors ${
                 selected === p.minutes
                   ? "bg-indigo-600 text-white"
-                  : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
               }`}
             >
               {p.label}
@@ -69,7 +69,7 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
             className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors ${
               selected === "custom"
                 ? "bg-indigo-600 text-white"
-                : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
             }`}
           >
             Custom
@@ -88,13 +88,13 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
                 value={customValue}
                 onChange={(e) => setCustomValue(e.target.value)}
                 placeholder="e.g. 45"
-                className="w-24 rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+                className="w-24 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
                 autoFocus
               />
               <select
                 value={customUnit}
                 onChange={(e) => setCustomUnit(e.target.value as "minutes" | "hours")}
-                className="flex-1 rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+                className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               >
                 <option value="minutes">minutes</option>
                 <option value="hours">hours</option>
@@ -106,7 +106,7 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
         <div className="mt-4 flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 rounded-lg bg-gray-800 py-2 text-sm text-gray-400 hover:bg-gray-700"
+            className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
           >
             Cancel
           </button>

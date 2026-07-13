@@ -23,11 +23,11 @@ export interface Medal {
 const TIER_RANK: Record<MedalTier, number> = { bronze: 1, silver: 2, gold: 3, platinum: 4, diamond: 5 };
 
 const TIER_STYLE: Record<MedalTier, { text: string; bg: string; ring: string; bar: string; label: string }> = {
-  bronze:   { text: "text-amber-300",  bg: "bg-amber-950/50",  ring: "ring-amber-700/50",  bar: "bg-amber-500",  label: "Bronze"   },
+  bronze:   { text: "text-amber-700 dark:text-amber-300",  bg: "bg-amber-100 dark:bg-amber-950/50",  ring: "ring-amber-700/50",  bar: "bg-amber-500",  label: "Bronze"   },
   silver:   { text: "text-slate-200",  bg: "bg-slate-700/40",  ring: "ring-slate-400/40",  bar: "bg-slate-300",  label: "Silver"   },
   gold:     { text: "text-yellow-300", bg: "bg-yellow-950/50", ring: "ring-yellow-600/50", bar: "bg-yellow-400", label: "Gold"     },
-  platinum: { text: "text-cyan-200",   bg: "bg-cyan-950/50",   ring: "ring-cyan-500/40",   bar: "bg-cyan-300",   label: "Platinum" },
-  diamond:  { text: "text-indigo-200", bg: "bg-indigo-950/60", ring: "ring-indigo-400/50", bar: "bg-indigo-300", label: "Diamond"  },
+  platinum: { text: "text-cyan-800 dark:text-cyan-200",   bg: "bg-cyan-100 dark:bg-cyan-950/50",   ring: "ring-cyan-500/40",   bar: "bg-cyan-300",   label: "Platinum" },
+  diamond:  { text: "text-indigo-800 dark:text-indigo-200", bg: "bg-indigo-100 dark:bg-indigo-950/60", ring: "ring-indigo-400/50", bar: "bg-indigo-300", label: "Diamond"  },
 };
 
 interface GroupView {
@@ -80,11 +80,11 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
   if (!medals.length) return null;
 
   return (
-    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-5">
+    <div className="rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-5 space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Medals</p>
-        <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs font-semibold text-gray-300 tabular-nums">
-          {earned.length} <span className="text-gray-600">/ {medals.length}</span>
+        <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 text-xs font-semibold text-gray-700 dark:text-gray-300 tabular-nums">
+          {earned.length} <span className="text-gray-500 dark:text-gray-600">/ {medals.length}</span>
         </span>
       </div>
 
@@ -106,13 +106,13 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
           })}
         </div>
       ) : (
-        <p className="rounded-xl bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
+        <p className="rounded-xl bg-gray-100/50 dark:bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
           No medals yet — debate, stake claims, and win matches to start earning them.
         </p>
       )}
 
       {/* Progression ladders */}
-      <div className="space-y-2.5 border-t border-gray-800 pt-4">
+      <div className="space-y-2.5 border-t border-gray-200 dark:border-gray-800 pt-4">
         {groups.map(g => {
           const s = g.highest ? TIER_STYLE[g.highest.tier] : null;
           const nextTarget = g.next?.target ?? g.highest?.target ?? 1;
@@ -121,7 +121,7 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
             <div key={g.groupId} className="flex items-center gap-3">
               {/* Medal disc */}
               <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg ring-1 ${
-                s ? `${s.bg} ${s.ring}` : "bg-gray-800/60 ring-gray-700/50 grayscale opacity-60"
+                s ? `${s.bg} ${s.ring}` : "bg-gray-100/60 dark:bg-gray-800/60 ring-gray-300/50 dark:ring-gray-700/50 grayscale opacity-60"
               }`}>
                 {g.icon}
               </div>
@@ -129,23 +129,23 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
               {/* Info */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-gray-200">{g.group}</span>
+                  <span className="truncate text-sm font-medium text-gray-800 dark:text-gray-200">{g.group}</span>
                   {g.highest && <span className={`shrink-0 text-[10px] font-semibold uppercase ${s!.text}`}>{TIER_STYLE[g.highest.tier].label}</span>}
                 </div>
                 {g.next ? (
                   <>
                     <div className="mt-1 flex items-center gap-2">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-800">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                         <div className={`h-full rounded-full ${TIER_STYLE[g.next.tier].bar} transition-all`} style={{ width: `${pct}%` }} />
                       </div>
                       <span className="shrink-0 text-[10px] tabular-nums text-gray-500">
                         {fmt(g.value)}/{fmt(nextTarget)}{g.unit === "%" ? "%" : ""}
                       </span>
                     </div>
-                    <p className="mt-0.5 truncate text-[10px] text-gray-600">Next: {g.next.name} — {g.next.description}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-gray-500 dark:text-gray-600">Next: {g.next.name} — {g.next.description}</p>
                   </>
                 ) : (
-                  <p className="mt-0.5 text-[10px] font-semibold text-emerald-400">Maxed out — all tiers earned</p>
+                  <p className="mt-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Maxed out — all tiers earned</p>
                 )}
               </div>
 
@@ -155,7 +155,7 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
                   <span
                     key={t.id}
                     title={`${TIER_STYLE[t.tier].label}: ${t.description}`}
-                    className={`h-2 w-2 rounded-full ${t.earned ? TIER_STYLE[t.tier].bar : "bg-gray-700"}`}
+                    className={`h-2 w-2 rounded-full ${t.earned ? TIER_STYLE[t.tier].bar : "bg-gray-200 dark:bg-gray-700"}`}
                   />
                 ))}
               </div>
@@ -203,11 +203,11 @@ function MedalPicker({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-gray-900 ring-1 ring-gray-800" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 border-b border-gray-800 px-5 py-4">
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4">
           <h2 className="flex-1 text-sm font-bold text-white">Choose featured medals</h2>
-          <span className="rounded-full bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-400 tabular-nums">{sel.length}/{MAX_FEATURED}</span>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300">✕</button>
+          <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:text-gray-400 tabular-nums">{sel.length}/{MAX_FEATURED}</span>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {earned.length === 0 ? (
@@ -224,13 +224,13 @@ function MedalPicker({
                     onClick={() => toggle(m.id)}
                     disabled={atCap}
                     className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors disabled:opacity-40 ${
-                      on ? `${s.bg} ${s.ring} ring-1 border-transparent` : "border-gray-800 hover:border-gray-700"
+                      on ? `${s.bg} ${s.ring} ring-1 border-transparent` : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
                     }`}
                   >
                     <span className="text-lg leading-none">{m.icon}</span>
                     <span className="min-w-0 flex-1">
-                      <span className={`block truncate text-[11px] font-semibold ${on ? s.text : "text-gray-300"}`}>{m.name}</span>
-                      <span className="block text-[9px] uppercase tracking-wider text-gray-600">{s.label}</span>
+                      <span className={`block truncate text-[11px] font-semibold ${on ? s.text : "text-gray-700 dark:text-gray-300"}`}>{m.name}</span>
+                      <span className="block text-[9px] uppercase tracking-wider text-gray-500 dark:text-gray-600">{s.label}</span>
                     </span>
                     {on && (
                       <svg viewBox="0 0 16 16" fill="currentColor" className={`h-3.5 w-3.5 shrink-0 ${s.text}`}>
@@ -243,8 +243,8 @@ function MedalPicker({
             </div>
           )}
         </div>
-        <div className="flex gap-2 border-t border-gray-800 px-5 py-4">
-          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800">Cancel</button>
+        <div className="flex gap-2 border-t border-gray-200 dark:border-gray-800 px-5 py-4">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 py-2 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">Cancel</button>
           <button onClick={save} disabled={saving} className="flex-1 rounded-xl bg-indigo-600 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">
             {saving ? "Saving…" : "Save showcase"}
           </button>
@@ -281,14 +281,14 @@ export function MedalShowcase({
 
   if (earned.length === 0 && !editable) {
     return emptyHint ? (
-      <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5">
+      <div className="rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-5">
         <p className="text-center text-xs text-gray-500">{emptyHint}</p>
       </div>
     ) : null;
   }
 
   return (
-    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4">
+    <div className="rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-5 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
           {featuredIds.length ? "Featured Medals" : "Top Medals"}
@@ -296,7 +296,7 @@ export function MedalShowcase({
         {editable && (
           <button
             onClick={() => setEditing(true)}
-            className="flex items-center gap-1 text-xs font-medium text-indigo-400 hover:text-indigo-300"
+            className="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z" />
@@ -311,7 +311,7 @@ export function MedalShowcase({
           {displayed.map(m => <MedalCard key={m.id} medal={m} />)}
         </div>
       ) : (
-        <p className="rounded-xl bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
+        <p className="rounded-xl bg-gray-100/50 dark:bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
           {editable ? "No medals earned yet — earn some, then feature your favorites here." : (emptyHint ?? "No medals yet.")}
         </p>
       )}
@@ -341,12 +341,12 @@ export function RubricAverages({ avg }: { avg: ClaimAverages }) {
     { label: "Impact",    value: avg.impact,    color: "bg-amber-500"   },
   ];
   return (
-    <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-4">
+    <div className="rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-5 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rubric Averages</p>
         <span className="text-xs text-gray-500">
           {avg.rated > 0
-            ? <>avg <span className="font-bold text-gray-200 tabular-nums">{avg.score}</span><span className="text-gray-600">/100</span> over {avg.rated} claim{avg.rated === 1 ? "" : "s"}</>
+            ? <>avg <span className="font-bold text-gray-800 dark:text-gray-200 tabular-nums">{avg.score}</span><span className="text-gray-500 dark:text-gray-600">/100</span> over {avg.rated} claim{avg.rated === 1 ? "" : "s"}</>
             : "No rated claims yet"}
         </span>
       </div>
@@ -354,16 +354,16 @@ export function RubricAverages({ avg }: { avg: ClaimAverages }) {
         <div className="space-y-2.5">
           {dims.map(d => (
             <div key={d.label} className="flex items-center gap-3">
-              <span className="w-20 shrink-0 text-xs text-gray-400">{d.label}</span>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-800">
+              <span className="w-20 shrink-0 text-xs text-gray-600 dark:text-gray-400">{d.label}</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                 <div className={`h-full rounded-full ${d.color} transition-all`} style={{ width: `${Math.min(100, (d.value / 10) * 100)}%` }} />
               </div>
-              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-gray-400">{d.value.toFixed(1)}<span className="text-gray-600">/10</span></span>
+              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-gray-600 dark:text-gray-400">{d.value.toFixed(1)}<span className="text-gray-500 dark:text-gray-600">/10</span></span>
             </div>
           ))}
         </div>
       ) : (
-        <p className="rounded-xl bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
+        <p className="rounded-xl bg-gray-100/50 dark:bg-gray-800/50 px-3 py-3 text-center text-xs text-gray-500">
           Stake claims in debates to build your category averages.
         </p>
       )}

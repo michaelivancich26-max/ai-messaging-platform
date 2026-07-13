@@ -17,7 +17,7 @@ function StarMini({ tier, color }: { tier: number; color: Bot["color"] }) {
   return (
     <span className="flex items-center gap-px">
       {[1, 2, 3, 4, 5].map((i) => (
-        <svg key={i} viewBox="0 0 8 8" fill="currentColor" className={`h-2 w-2 ${i <= tier ? c.star : "text-gray-700"}`}>
+        <svg key={i} viewBox="0 0 8 8" fill="currentColor" className={`h-2 w-2 ${i <= tier ? c.star : "text-gray-400 dark:text-gray-700"}`}>
           <path d="M4 .5 5 3h2.5L5.5 4.5l.75 2.5L4 5.5 1.75 7l.75-2.5L.5 3H3Z" />
         </svg>
       ))}
@@ -70,17 +70,17 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onMobileClose} />
       )}
       <aside className={`
-        flex w-56 shrink-0 flex-col border-r border-gray-800 bg-gray-900 h-full
+        flex w-56 shrink-0 flex-col border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 h-full
         fixed inset-y-0 left-0 z-40 transition-transform duration-300
         ${mobileOpen ? "translate-x-0" : "-translate-x-full"}
         md:relative md:translate-x-0 md:z-auto
       `}>
 
         {/* Header */}
-        <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-gray-800 px-3 pt-safe">
+        <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 pt-safe">
           <button
             onClick={() => router.push("/home")}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
             title="Back to Hub"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
@@ -99,17 +99,17 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         {/* Bot list */}
         <nav className="flex-1 overflow-y-auto py-2">
           <div className="px-3 pb-1 pt-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600">Opponents</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">Opponents</p>
           </div>
           {BOTS.map((bot) => {
             const c = BOT_COLORS[bot.color];
             return (
               <div key={bot.id} className="flex items-center gap-2 px-2 py-1 group">
-                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ${c.ring} bg-gray-900/60`}>
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ${c.ring} bg-white/60 dark:bg-gray-900/60`}>
                   <span className={`text-[10px] font-bold ${c.text}`}>{bot.name[0]}</span>
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-xs font-medium text-gray-300 truncate">{bot.name}</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{bot.name}</span>
                   <StarMini tier={bot.tier} color={bot.color} />
                 </div>
                 <button
@@ -127,9 +127,9 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
           {/* Recent matches */}
           {recentMatches.length > 0 && (
             <>
-              <div className="mx-3 my-2 border-t border-gray-800" />
+              <div className="mx-3 my-2 border-t border-gray-200 dark:border-gray-800" />
               <div className="px-3 pb-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600">Recent matches</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">Recent matches</p>
               </div>
               {recentMatches.map((m) => {
                 const bot = BOTS.find(b => b.id === m.botId);
@@ -138,7 +138,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
                   <button
                     key={m.name}
                     onClick={() => router.push(`/room/${m.name}`)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-gray-800 transition-colors"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   >
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} />
                     <span className="truncate text-xs text-gray-500">vs {bot?.name ?? m.botId}</span>
@@ -150,20 +150,20 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-gray-800 px-2 pt-2 pb-safe space-y-0.5">
+        <div className="border-t border-gray-200 dark:border-gray-800 px-2 pt-2 pb-safe space-y-0.5">
           <button
             onClick={() => router.push("/dashboard")}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
             {avatarUrl
-              ? <img src={avatarUrl} alt={username} className="h-7 w-7 rounded-full object-cover shrink-0 ring-1 ring-gray-700" />
-              : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300 ring-1 ring-gray-600">{username[0]?.toUpperCase()}</span>
+              ? <img src={avatarUrl} alt={username} className="h-7 w-7 rounded-full object-cover shrink-0 ring-1 ring-gray-300 dark:ring-gray-700" />
+              : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-bold text-gray-700 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-gray-600">{username[0]?.toUpperCase()}</span>
             }
             <span className="truncate text-sm font-medium">{username}</span>
           </button>
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
               <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clipRule="evenodd" />

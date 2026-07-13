@@ -17,7 +17,7 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <p className="text-center text-red-400">
+      <p className="text-center text-red-600 dark:text-red-400">
         Invalid reset link. Please request a new one from the login page.
       </p>
     );
@@ -58,12 +58,12 @@ function ResetPasswordForm() {
     return (
       <div className="text-center space-y-4">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 mx-auto">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-7 w-7 text-emerald-400">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-7 w-7 text-emerald-600 dark:text-emerald-400">
             <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-gray-100">Password updated</h2>
-        <p className="text-sm text-gray-400">You can now sign in with your new password.</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Password updated</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400">You can now sign in with your new password.</p>
         <button
           onClick={() => router.push("/")}
           className="mt-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
@@ -77,7 +77,7 @@ function ResetPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-gray-400">New password</label>
+        <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">New password</label>
         <div className="relative">
           <input
             type={show ? "text" : "password"}
@@ -85,13 +85,13 @@ function ResetPasswordForm() {
             onChange={e => setPassword(e.target.value)}
             required
             minLength={8}
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 pr-10 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2.5 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             placeholder="Min. 8 characters"
           />
           <button
             type="button"
             onClick={() => setShow(v => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
           >
             {show ? (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -109,18 +109,18 @@ function ResetPasswordForm() {
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-gray-400">Confirm password</label>
+        <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Confirm password</label>
         <input
           type={show ? "text" : "password"}
           value={confirm}
           onChange={e => setConfirm(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
           placeholder="Repeat new password"
         />
       </div>
 
-      {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</p>}
+      {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
 
       <button
         type="submit"
@@ -135,9 +135,9 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 bg-gray-950">
-      <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-900 p-8 shadow-xl">
-        <h1 className="mb-1 text-xl font-bold text-gray-100">Set a new password</h1>
+    <main className="flex min-h-screen items-center justify-center px-4 bg-gray-50 dark:bg-gray-950">
+      <div className="w-full max-w-sm rounded-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-8 shadow-xl">
+        <h1 className="mb-1 text-xl font-bold text-gray-900 dark:text-gray-100">Set a new password</h1>
         <p className="mb-6 text-sm text-gray-500">Choose something strong and memorable.</p>
         <Suspense fallback={<p className="text-sm text-gray-500">Loading…</p>}>
           <ResetPasswordForm />

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { WordmarkFull } from "@/components/Wordmark";
 
 type View = "login" | "signup" | "forgot";
 
@@ -99,10 +100,10 @@ export default function AuthPage() {
   if (view === "forgot") {
     return (
       <main className="flex min-h-screen items-center justify-center px-4">
-        <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-8 shadow-xl">
+        <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 p-8 shadow-xl">
           <button
             onClick={() => switchView("login")}
-            className="mb-5 flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            className="mb-5 flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -110,21 +111,21 @@ export default function AuthPage() {
             Back to sign in
           </button>
 
-          <h1 className="mb-1 text-xl font-bold tracking-tight text-gray-100">Forgot password?</h1>
+          <h1 className="mb-1 text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Forgot password?</h1>
           <p className="mb-6 text-sm text-gray-500">
             Enter your email and we'll send you a reset link.
           </p>
 
           {forgotSent ? (
             <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-4 text-center space-y-1">
-              <p className="text-sm font-medium text-emerald-400">Check your inbox</p>
+              <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Check your inbox</p>
               <p className="text-xs text-gray-500">
-                If <span className="text-gray-300">{forgotEmail}</span> is registered, a reset link is on its way. It expires in 1 hour.
+                If <span className="text-gray-700 dark:text-gray-300">{forgotEmail}</span> is registered, a reset link is on its way. It expires in 1 hour.
               </p>
             </div>
           ) : (
             <form onSubmit={handleForgot} className="flex flex-col gap-3">
-              <label className="flex flex-col gap-1 text-sm text-gray-400">
+              <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
                 Email address
                 <input
                   type="email"
@@ -132,10 +133,10 @@ export default function AuthPage() {
                   onChange={e => setForgotEmail(e.target.value)}
                   required
                   placeholder="alice@example.com"
-                  className="rounded-lg bg-gray-800 px-3 py-2 text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+                  className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
                 />
               </label>
-              {error && <p className="text-xs text-red-400">{error}</p>}
+              {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
               <button
                 type="submit"
                 disabled={loading}
@@ -153,18 +154,17 @@ export default function AuthPage() {
   // ── Login / Signup view ───────────────────────────────────────────────────
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-8 shadow-xl">
-        <h1 className="mb-1 text-2xl font-bold tracking-tight">Grounds</h1>
-        <p className="mb-6 text-sm text-gray-500">for Debate</p>
+      <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 p-8 shadow-xl">
+        <WordmarkFull className="mb-6 block text-2xl" />
 
         {/* Tabs */}
-        <div className="mb-6 flex rounded-lg bg-gray-800 p-1">
+        <div className="mb-6 flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
           {(["login", "signup"] as const).map((t) => (
             <button
               key={t}
               onClick={() => switchView(t)}
               className={`flex-1 rounded-md py-1.5 text-sm font-medium capitalize transition-colors ${
-                view === t ? "bg-gray-700 text-white" : "text-gray-400 hover:text-gray-200"
+                view === t ? "bg-gray-200 dark:bg-gray-700 text-white" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
               }`}
             >
               {t}
@@ -175,28 +175,28 @@ export default function AuthPage() {
         {/* Signup success — email verification notice */}
         {signupDone && (
           <div className="mb-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 px-4 py-3">
-            <p className="text-xs text-indigo-300">
-              Account created! We sent a verification link to <span className="font-medium text-indigo-200">{form.email}</span>. Check your inbox to verify your account.
+            <p className="text-xs text-indigo-700 dark:text-indigo-300">
+              Account created! We sent a verification link to <span className="font-medium text-indigo-800 dark:text-indigo-200">{form.email}</span>. Check your inbox to verify your account.
             </p>
           </div>
         )}
 
         <form onSubmit={view === "login" ? handleLogin : handleSignup} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm text-gray-400">
+          <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
             Username
             <input value={form.username} onChange={set("username")} placeholder="alice" autoComplete="username"
-              className="rounded-lg bg-gray-800 px-3 py-2 text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+              className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
           </label>
 
           {view === "signup" && (
-            <label className="flex flex-col gap-1 text-sm text-gray-400">
+            <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
               Email
               <input value={form.email} onChange={set("email")} type="email" placeholder="alice@example.com"
-                className="rounded-lg bg-gray-800 px-3 py-2 text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+                className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
             </label>
           )}
 
-          <label className="flex flex-col gap-1 text-sm text-gray-400">
+          <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
             Password
             <div className="relative">
               <input
@@ -205,12 +205,12 @@ export default function AuthPage() {
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 autoComplete={view === "login" ? "current-password" : "new-password"}
-                className="w-full rounded-lg bg-gray-800 px-3 py-2 pr-10 text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 tabIndex={-1}
               >
                 {showPassword ? (
@@ -234,14 +234,14 @@ export default function AuthPage() {
               <button
                 type="button"
                 onClick={() => switchView("forgot")}
-                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
               >
                 Forgot password?
               </button>
             </div>
           )}
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
           <button type="submit" disabled={loading}
             className="mt-2 rounded-lg bg-indigo-600 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50 transition-colors">

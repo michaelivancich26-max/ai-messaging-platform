@@ -6,6 +6,8 @@ import { useSession, signOut } from "next-auth/react";
 import NotificationBell from "./NotificationBell";
 import GavelsPill from "./GavelsPill";
 import DMPanel from "./DMPanel";
+import { Wordmark } from "./Wordmark";
+import { useTheme } from "./ThemeProvider";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -41,6 +43,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [showDM, setShowDM] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
     if (!userId) return;
@@ -51,16 +54,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const isActive = (href: string) => href === "/home" ? pathname === "/home" : pathname.startsWith(href);
 
   const Avatar = ({ size }: { size: string }) => avatarUrl
-    ? <img src={avatarUrl} alt={username} className={`${size} rounded-full object-cover ring-1 ring-gray-700`} />
-    : <span className={`${size} flex items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300 ring-1 ring-gray-600`}>{username[0]?.toUpperCase()}</span>;
+    ? <img src={avatarUrl} alt={username} className={`${size} rounded-full object-cover ring-1 ring-gray-300 dark:ring-gray-700`} />
+    : <span className={`${size} flex items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-bold text-gray-700 dark:text-gray-300 ring-1 ring-gray-300 dark:ring-gray-600`}>{username[0]?.toUpperCase()}</span>;
 
   return (
     <div className="flex h-full">
       {/* Desktop left rail */}
-      <aside className="hidden md:flex md:flex-col w-52 shrink-0 border-r border-gray-800 bg-gray-900 pt-safe">
-        <div className="flex items-center gap-2 px-4 h-14 border-b border-gray-800">
-          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-indigo-400"><path d="M10 1.5 3 4v5c0 4 3 7.5 7 9.5 4-2 7-5.5 7-9.5V4l-7-2.5Z" /></svg>
-          <span className="text-sm font-bold tracking-tight text-gray-100">Grounds</span>
+      <aside className="hidden md:flex md:flex-col w-52 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pt-safe">
+        <div className="flex items-center gap-2 px-4 h-14 border-b border-gray-200 dark:border-gray-800">
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-brand-green"><path d="M10 1.5 3 4v5c0 4 3 7.5 7 9.5 4-2 7-5.5 7-9.5V4l-7-2.5Z" /></svg>
+          <Wordmark className="text-sm" />
           <div className="ml-auto">{userId && <NotificationBell userId={userId} username={username} />}</div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
@@ -68,27 +71,36 @@ export default function AppShell({ children }: { children: ReactNode }) {
             const active = isActive(href);
             return (
               <button key={href} onClick={() => router.push(href)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${active ? "bg-indigo-600/15 text-indigo-300" : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"}`}>
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${active ? "bg-brand-green/15 text-brand-green" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"}`}>
                 <Icon className="h-5 w-5 shrink-0" />
                 {label}
               </button>
             );
           })}
         </nav>
-        <div className="border-t border-gray-800 p-2 pb-safe space-y-1">
+        <div className="border-t border-gray-200 dark:border-gray-800 p-2 pb-safe space-y-1">
           <div className="px-1 pb-1"><GavelsPill /></div>
           <button onClick={() => setShowDM(true)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors">
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0"><path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" /><path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" /></svg>
             Messages
           </button>
           <button onClick={() => router.push("/dashboard")}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 transition-colors">
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
             <Avatar size="h-7 w-7" />
             <span className="truncate">{username}</span>
           </button>
+          <button onClick={toggleTheme}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+            {theme === "dark" ? (
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0"><path d="M10 2a.75.75 0 0 1 .75.75v1a.75.75 0 0 1-1.5 0v-1A.75.75 0 0 1 10 2Zm4.95 2.05a.75.75 0 0 1 0 1.06l-.7.7a.75.75 0 1 1-1.06-1.06l.7-.7a.75.75 0 0 1 1.06 0ZM18 10a.75.75 0 0 1-.75.75h-1a.75.75 0 0 1 0-1.5h1A.75.75 0 0 1 18 10ZM5.05 5.05a.75.75 0 0 1-1.06 0l-.7-.7a.75.75 0 0 1 1.06-1.06l.7.7a.75.75 0 0 1 0 1.06Zm-1.3 4.95a.75.75 0 0 1-.75.75h-1a.75.75 0 0 1 0-1.5h1a.75.75 0 0 1 .75.75ZM10 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm5.66 8.6a.75.75 0 0 1 1.06 1.06l-.7.7a.75.75 0 0 1-1.06-1.06l.7-.7Zm-11.32 0 .7.7a.75.75 0 0 1-1.06 1.06l-.7-.7a.75.75 0 0 1 1.06-1.06ZM10 16.25a.75.75 0 0 1 .75.75v1a.75.75 0 0 1-1.5 0v-1a.75.75 0 0 1 .75-.75Z" /></svg>
+            ) : (
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0"><path fillRule="evenodd" d="M7.455 2.004a.75.75 0 0 1 .26.77 7 7 0 0 0 9.958 7.967.75.75 0 0 1 1.067.853A8.5 8.5 0 1 1 6.647 1.921a.75.75 0 0 1 .808.083Z" clipRule="evenodd" /></svg>
+            )}
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
           <button onClick={() => signOut({ callbackUrl: "/" })}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors">
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0"><path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clipRule="evenodd" /><path fillRule="evenodd" d="M19 10a.75.75 0 0 0-.75-.75H8.704l1.048-1.068a.75.75 0 1 0-1.064-1.056l-2.5 2.53a.75.75 0 0 0 0 1.056l2.5 2.53a.75.75 0 1 0 1.064-1.056L8.704 10.75H18.25A.75.75 0 0 0 19 10Z" clipRule="evenodd" /></svg>
             Sign out
           </button>
@@ -98,12 +110,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {/* Main column */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Mobile top bar */}
-        <div className="md:hidden flex items-center gap-3 h-12 shrink-0 border-b border-gray-800 bg-gray-900 px-4 pt-safe">
-          <span className="text-sm font-bold tracking-tight text-gray-100">Grounds</span>
+        <div className="md:hidden flex items-center gap-3 h-12 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 pt-safe">
+          <Wordmark className="text-sm" />
           <div className="ml-auto flex items-center gap-2">
             <GavelsPill compact />
             {userId && <NotificationBell userId={userId} username={username} />}
-            <button onClick={() => setShowDM(true)} className="text-gray-400 hover:text-gray-200" aria-label="Messages">
+            <button onClick={() => setShowDM(true)} className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Messages">
               <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" /><path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" /></svg>
             </button>
           </div>
@@ -112,12 +124,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="md:hidden flex shrink-0 border-t border-gray-800 bg-gray-900 pb-safe">
+        <nav className="md:hidden flex shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pb-safe">
           {NAV.map(({ href, label, Icon }) => {
             const active = isActive(href);
             return (
               <button key={href} onClick={() => router.push(href)}
-                className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${active ? "text-indigo-400" : "text-gray-500"}`}>
+                className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-500"}`}>
                 <Icon className="h-5 w-5" />
                 {label}
               </button>

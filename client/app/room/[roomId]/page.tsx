@@ -1008,19 +1008,19 @@ export default function RoomPage() {
       {/* Channel list — only for non-DM, non-arena rooms */}
       {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && (
         <div className={`
-          border-r border-gray-800 flex flex-col bg-gray-900
+          border-r border-gray-200 dark:border-gray-800 flex flex-col bg-white dark:bg-gray-900
           ${mobileView === "channels" ? "flex" : "hidden"}
           w-full md:w-44 md:flex md:shrink-0
         `}>
-          <div className="flex min-h-14 items-center border-b border-gray-800 px-3 gap-2 pt-safe">
+          <div className="flex min-h-14 items-center border-b border-gray-200 dark:border-gray-800 px-3 gap-2 pt-safe">
             {/* Mobile: hamburger to open sidebar */}
-            <button className="md:hidden shrink-0 rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+            <button className="md:hidden shrink-0 rounded p-1 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
               onClick={() => setMobileSidebarOpen(true)}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                 <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
               </svg>
             </button>
-            <span className="text-xs font-semibold text-gray-300 truncate">
+            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">
               {isBotRoom
                 ? `vs ${getBotById((roomMeta as any)?.botId)?.name ?? "Bot"}`
                 : isCompetitiveRoom
@@ -1046,12 +1046,12 @@ export default function RoomPage() {
         ${mobileView === "chat" || roomId.startsWith("dm-") ? "flex" : "hidden"}
         flex-1 md:flex
       `}>
-      <header className="flex items-center gap-2 border-b border-gray-800 px-3 md:px-6 pb-2.5 pt-safe">
+      <header className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 md:px-6 pb-2.5 pt-safe">
         {/* Back to Debate Board — always visible for non-DM rooms */}
         {!roomId.startsWith("dm-") && (
           <button
             onClick={() => router.push("/lobby")}
-            className="shrink-0 flex items-center gap-1 rounded-lg px-1.5 py-1 text-gray-500 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+            className="shrink-0 flex items-center gap-1 rounded-lg px-1.5 py-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
             title="Back to Common Grounds"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
@@ -1062,7 +1062,7 @@ export default function RoomPage() {
         )}
         {/* Mobile-only: back to channel list for multi-channel rooms */}
         {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && (
-          <button className="md:hidden shrink-0 rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-gray-300"
+          <button className="md:hidden shrink-0 rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300"
             onClick={() => setMobileView("channels")} title="Channels">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
               <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
@@ -1082,7 +1082,7 @@ export default function RoomPage() {
         </span>
         {/* Fishbowl seat counter */}
         {(roomMeta as any)?.isFishbowl && (roomMeta as any)?.fishbowlSeats && (
-          <span className="hidden sm:flex shrink-0 items-center gap-1 rounded-full bg-cyan-900/40 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-400">
+          <span className="hidden sm:flex shrink-0 items-center gap-1 rounded-full bg-cyan-100 dark:bg-cyan-900/40 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-600 dark:text-cyan-400">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
               <path d="M8 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM5 9.5a3 3 0 0 0-3 3 .5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5 3 3 0 0 0-3-3H5Z" />
             </svg>
@@ -1095,8 +1095,8 @@ export default function RoomPage() {
             onClick={() => { setSpectatorChatOpen(v => !v); if (sidebarOpen) setSidebarOpen(false); }}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
               spectatorChatOpen
-                ? "border-cyan-600 bg-cyan-900/40 text-cyan-300"
-                : "border-gray-700 text-gray-500 hover:border-cyan-700/60 hover:text-cyan-500"
+                ? "border-cyan-600 bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300"
+                : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-cyan-700/60 hover:text-cyan-500"
             }`}
             title={spectatorChatOpen ? "Hide spectator chat" : "Show spectator chat"}
           >
@@ -1120,8 +1120,8 @@ export default function RoomPage() {
             }}
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
               sidebarOpen && sidebarChannel
-                ? "border-gray-500 bg-gray-700/60 text-gray-300"
-                : "border-gray-700 text-gray-500 hover:border-gray-600 hover:text-gray-400"
+                ? "border-gray-300 dark:border-gray-500 bg-gray-200/60 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300"
+                : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-600 dark:hover:text-gray-400"
             }`}
             title={sidebarChannel ? (sidebarOpen ? "Hide side chat" : "Show side chat") : "Add side chat"}
           >
@@ -1138,8 +1138,8 @@ export default function RoomPage() {
             onClick={() => setDebateMode(debateTurn?.mode === "structured" ? "open" : "structured")}
             className={`ml-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
               debateTurn?.mode === "structured"
-                ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
-                : "border-gray-700 text-gray-500 hover:border-indigo-600/40 hover:text-indigo-400"
+                ? "border-indigo-500 bg-indigo-600/20 text-indigo-700 dark:text-indigo-300"
+                : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-indigo-600/40 hover:text-indigo-600 dark:hover:text-indigo-400"
             }`}
             title={debateTurn?.mode === "structured" ? "Switch to free chat" : "Enable structured turn-based debate"}
           >
@@ -1153,7 +1153,7 @@ export default function RoomPage() {
         {!roomId.startsWith("dm-") && (
           <button
             onClick={() => { setInviteOpen(v => !v); setInviteQuery(""); setInviteResults([]); setInviteStatus({}); }}
-            className={`${(isOwner || isAdmin) ? "" : "ml-auto"} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors`}
+            className={`${(isOwner || isAdmin) ? "" : "ml-auto"} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors`}
             title="Invite user"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -1165,7 +1165,7 @@ export default function RoomPage() {
         {/* Single panel button — opens unified Room/Settings/AI panel */}
         <button
           onClick={() => { setPanelOpen(v => !v); }}
-          className={`${(isOwner || isAdmin) && !roomId.startsWith("dm-") ? "ml-2" : (roomId.startsWith("dm-") ? "ml-auto" : "")} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors`}
+          className={`${(isOwner || isAdmin) && !roomId.startsWith("dm-") ? "ml-2" : (roomId.startsWith("dm-") ? "ml-auto" : "")} relative rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors`}
           title="Room panel">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
             <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
@@ -1180,7 +1180,7 @@ export default function RoomPage() {
 
       {/* Invite modal */}
       {inviteOpen && !roomId.startsWith("dm-") && (
-        <div className="border-b border-gray-800 bg-gray-900/80 px-4 py-3">
+        <div className="border-b border-gray-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <input
@@ -1189,24 +1189,24 @@ export default function RoomPage() {
                 onChange={e => setInviteQuery(e.target.value)}
                 placeholder="Search by username…"
                 autoFocus
-                className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
               {inviteResults.length > 0 && (
-                <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-lg border border-gray-700 bg-gray-900 shadow-xl">
+                <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl">
                   {inviteResults.map(u => {
                     const st = inviteStatus[u.username];
                     return (
-                      <div key={u.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-800 transition-colors">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-700 text-xs font-bold text-gray-300">
+                      <div key={u.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-xs font-bold text-gray-700 dark:text-gray-300">
                           {u.username[0].toUpperCase()}
                         </span>
-                        <span className="flex-1 text-sm text-gray-200">{u.username}</span>
+                        <span className="flex-1 text-sm text-gray-800 dark:text-gray-200">{u.username}</span>
                         <button
                           onClick={() => sendInvite(u.username)}
                           disabled={!!st}
                           className={`rounded-full px-3 py-0.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-                            st === "sent" ? "bg-emerald-600/20 text-emerald-400" :
-                            st === "error" ? "bg-red-600/20 text-red-400" :
+                            st === "sent" ? "bg-emerald-600/20 text-emerald-600 dark:text-emerald-400" :
+                            st === "error" ? "bg-red-600/20 text-red-600 dark:text-red-400" :
                             "bg-indigo-600 text-white hover:bg-indigo-500"
                           }`}
                         >
@@ -1220,7 +1220,7 @@ export default function RoomPage() {
             </div>
             <button
               onClick={() => setInviteOpen(false)}
-              className="rounded-lg p-1.5 text-gray-600 hover:bg-gray-800 hover:text-gray-400 transition-colors"
+              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                 <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
@@ -1265,7 +1265,7 @@ export default function RoomPage() {
 
       {/* Live betting for competitive matches (spectators bet on the outcome) */}
       {isCompetitiveRoom && userId && (
-        <div className="shrink-0 border-b border-gray-800 bg-gray-950/40 px-3 py-2">
+        <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-950/40 px-3 py-2">
           <div className="mx-auto max-w-md">
             <BetPanel roomName={roomId} userId={userId} />
           </div>
@@ -1274,24 +1274,24 @@ export default function RoomPage() {
 
       {/* Opinionated badge when there's no proposition/DebateHeader */}
       {!roomId.startsWith("dm-") && isOpinionated && !activeChannel?.isSubDebate && !(roomMeta as any)?.proposition && (
-        <div className="shrink-0 flex items-center gap-1.5 border-b border-amber-900/30 bg-amber-950/20 px-4 py-1.5">
+        <div className="shrink-0 flex items-center gap-1.5 border-b border-amber-900/30 bg-amber-100 dark:bg-amber-950/20 px-4 py-1.5">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-amber-500">
             <path fillRule="evenodd" d="M1 8.74c0 .983.713 1.825 1.69 1.943L3 10.698V13.5a.5.5 0 0 0 .724.447L8 11.82l4.276 2.127A.5.5 0 0 0 13 13.5v-2.802l.31-.016A2 2 0 0 0 15 8.74V5a3 3 0 0 0-3-3H4a3 3 0 0 0-3 3v3.74Z" clipRule="evenodd" />
           </svg>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Opinionated chat</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Opinionated chat</span>
           <span className="text-[10px] text-amber-600">· messages don&apos;t affect your Grounds Score</span>
         </div>
       )}
 
       {/* Fishbowl spectator banner */}
       {(roomMeta as any)?.isFishbowl && myFishbowlRole === "SPECTATOR" && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-cyan-900/40 bg-cyan-950/20 px-4 py-2">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-cyan-400">
+        <div className="shrink-0 flex items-center gap-3 border-b border-cyan-900/40 bg-cyan-100 dark:bg-cyan-950/20 px-4 py-2">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400">
             <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
             <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clipRule="evenodd" />
           </svg>
           <div className="flex-1 min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400">Spectating</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Spectating</span>
             <span className="ml-2 text-xs text-cyan-600">You can watch but not send messages</span>
           </div>
           <button
@@ -1305,14 +1305,14 @@ export default function RoomPage() {
 
       {/* Seat request notifications (owner only) */}
       {isOwner && seatRequests.length > 0 && (
-        <div className="shrink-0 space-y-1 border-b border-cyan-900/40 bg-cyan-950/10 px-4 py-2">
+        <div className="shrink-0 space-y-1 border-b border-cyan-900/40 bg-cyan-100 dark:bg-cyan-950/10 px-4 py-2">
           {seatRequests.map(req => (
             <div key={req.userId} className="flex items-center gap-3">
-              <span className="flex-1 text-xs text-cyan-300">
+              <span className="flex-1 text-xs text-cyan-700 dark:text-cyan-300">
                 <span className="font-semibold">{req.username}</span> is requesting a debate seat
               </span>
               <button onClick={() => grantSeat(req.userId)} className="rounded-full bg-cyan-600 px-3 py-0.5 text-xs font-semibold text-white hover:bg-cyan-500 transition-colors">Grant</button>
-              <button onClick={() => setSeatRequests(prev => prev.filter(r => r.userId !== req.userId))} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">Dismiss</button>
+              <button onClick={() => setSeatRequests(prev => prev.filter(r => r.userId !== req.userId))} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">Dismiss</button>
             </div>
           ))}
         </div>
@@ -1320,61 +1320,61 @@ export default function RoomPage() {
 
       {/* Competitive proposition bar — always visible to all parties (betting-driven) */}
       {isCompetitiveRoom && matchState === "active" && betLabels && (
-        <div className="shrink-0 border-b border-gray-800 bg-gray-950/50 px-4 py-2">
+        <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 px-4 py-2">
           <div className="mb-1 flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Proposition</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Proposition</span>
             {winCondition.type === "proposition" && (
-              <span className="text-[10px] text-gray-600">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-600">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
             )}
             {/* Forfeit lives here only for proposition rooms; exchanges/time rooms carry it in their own banners */}
             {winCondition.type === "proposition" && !isSpectator && (
-              <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+              <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
             )}
           </div>
-          <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-800">
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
             <div className="bg-emerald-500 transition-all duration-700" style={{ width: `${Math.round(betPriceA * 100)}%` }} />
             <div className="bg-rose-500 transition-all duration-700" style={{ width: `${Math.round((1 - betPriceA) * 100)}%` }} />
           </div>
           <div className="mt-1 flex items-center justify-between text-[10px]">
-            <span className="font-semibold text-emerald-300">{betLabels.a} · {Math.round(betPriceA * 100)}%</span>
-            <span className="font-semibold text-rose-300">{Math.round((1 - betPriceA) * 100)}% · {betLabels.b}</span>
+            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{betLabels.a} · {Math.round(betPriceA * 100)}%</span>
+            <span className="font-semibold text-rose-700 dark:text-rose-300">{Math.round((1 - betPriceA) * 100)}% · {betLabels.b}</span>
           </div>
         </div>
       )}
 
       {/* Match progress banner */}
       {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "exchanges" && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-amber-900/30 bg-amber-950/15 px-4 py-2">
+        <div className="shrink-0 flex items-center gap-3 border-b border-amber-900/30 bg-amber-100 dark:bg-amber-950/15 px-4 py-2">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
             <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
           </svg>
           <div className="flex flex-1 items-center gap-2 min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Training Grounds Match</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Training Grounds Match</span>
             <span className="text-[10px] text-amber-700">·</span>
             <span className="text-[10px] text-amber-600/80">{myTurnCount} / {winCondition.limit} exchanges</span>
             <div className="flex gap-0.5 ml-1">
               {Array.from({ length: winCondition.limit }).map((_, i) => (
-                <span key={i} className={`h-1.5 w-1.5 rounded-full transition-colors ${i < myTurnCount ? "bg-amber-500" : "bg-gray-700"}`} />
+                <span key={i} className={`h-1.5 w-1.5 rounded-full transition-colors ${i < myTurnCount ? "bg-amber-500" : "bg-gray-200 dark:bg-gray-700"}`} />
               ))}
             </div>
           </div>
-          <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+          <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
       {(isBotRoom || isCompetitiveRoom) && matchState === "active" && winCondition.type === "time" && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-indigo-900/30 bg-indigo-950/15 px-4 py-2">
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-indigo-400">
+        <div className="shrink-0 flex items-center gap-3 border-b border-indigo-900/30 bg-indigo-100 dark:bg-indigo-950/15 px-4 py-2">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-400">
             <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
           </svg>
           <div className="flex flex-1 items-center gap-2 min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Training Grounds Match</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Training Grounds Match</span>
             <span className="text-[10px] text-indigo-700">·</span>
             {timeLeft !== null && (
-              <span className={`text-[10px] font-mono font-bold ${timeLeft <= 30 ? "text-red-400" : "text-indigo-300"}`}>
+              <span className={`text-[10px] font-mono font-bold ${timeLeft <= 30 ? "text-red-600 dark:text-red-400" : "text-indigo-700 dark:text-indigo-300"}`}>
                 {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
               </span>
             )}
-            <div className="flex-1 h-1.5 rounded-full bg-gray-800 overflow-hidden mx-1">
+            <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden mx-1">
               {timeLeft !== null && (
                 <div
                   className="h-full bg-indigo-500 transition-all duration-1000"
@@ -1383,24 +1383,24 @@ export default function RoomPage() {
               )}
             </div>
           </div>
-          <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+          <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
       {isBotRoom && matchState === "active" && winCondition.type === "proposition" && (
-        <div className="shrink-0 border-b border-violet-900/30 bg-violet-950/10 px-4 py-2 space-y-1.5">
+        <div className="shrink-0 border-b border-violet-900/30 bg-violet-100 dark:bg-violet-950/10 px-4 py-2 space-y-1.5">
           <div className="flex items-center gap-2">
-            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-violet-400">
+            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-violet-600 dark:text-violet-400">
               <path d="M7.457 3.843A1.5 1.5 0 0 1 8.5 3.002L13 3a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1l-4.5-.002a1.5 1.5 0 0 1-1.043-.841L6.9 3.75l.557.093zM3 8.998l4.5.002a1.5 1.5 0 0 1 1.043.841L9.1 11.25l-.557-.093A1.5 1.5 0 0 1 7.5 11.998L3 12a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1z"/>
             </svg>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">Proposition Bar</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">Proposition Bar</span>
             <span className="text-[10px] text-violet-700">·</span>
             <span className="text-[10px] text-violet-500/70">win at {winCondition.threshold}%</span>
-            <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-900/20 transition-colors">Forfeit</button>
+            <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
           </div>
           {/* Sliding proposition bar */}
           <div className="flex items-center gap-2">
-            <span className="text-[9px] font-bold text-red-400 shrink-0 w-8 text-right">Bot</span>
-            <div className="relative flex-1 h-3 rounded-full bg-gray-800 overflow-hidden">
+            <span className="text-[9px] font-bold text-red-600 dark:text-red-400 shrink-0 w-8 text-right">Bot</span>
+            <div className="relative flex-1 h-3 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
               {/* Bot zone (left) */}
               <div className="absolute inset-y-0 left-0 bg-red-600/50 rounded-full transition-all duration-700" style={{ width: `${100 - propositionScore}%` }} />
               {/* Human zone (right) */}
@@ -1408,32 +1408,32 @@ export default function RoomPage() {
               {/* Center needle */}
               <div className="absolute inset-y-0 w-0.5 bg-white/80 transition-all duration-700" style={{ left: `${propositionScore}%`, transform: "translateX(-50%)" }} />
             </div>
-            <span className="text-[9px] font-bold text-emerald-400 shrink-0 w-8">You</span>
+            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0 w-8">You</span>
           </div>
         </div>
       )}
       {isSpectator && (
-        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-red-900/30 bg-red-950/20 px-4 py-2">
+        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-red-900/30 bg-red-100 dark:bg-red-950/20 px-4 py-2">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
           </span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-red-400">Spectating — you're watching this match live</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">Spectating — you're watching this match live</span>
         </div>
       )}
       {(isBotRoom || isCompetitiveRoom) && matchState === "judging" && (
-        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-amber-900/30 bg-amber-950/15 px-4 py-3">
-          <svg className="h-4 w-4 animate-spin text-amber-400" viewBox="0 0 24 24" fill="none">
+        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-amber-900/30 bg-amber-100 dark:bg-amber-950/15 px-4 py-3">
+          <svg className="h-4 w-4 animate-spin text-amber-600 dark:text-amber-400" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-xs font-medium text-amber-400">Judging the debate…</span>
+          <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Judging the debate…</span>
         </div>
       )}
       {(isBotRoom || isCompetitiveRoom) && matchState === "ended" && matchResult && resultDismissed && (
-        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-gray-800 bg-gray-950/60 px-4 py-1.5">
-          <span className="text-[11px] font-medium text-gray-400">This match has ended.</span>
-          <button onClick={() => setResultDismissed(false)} className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/25 transition-colors">View result</button>
+        <div className="shrink-0 flex items-center justify-center gap-2 border-b border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-950/60 px-4 py-1.5">
+          <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">This match has ended.</span>
+          <button onClick={() => setResultDismissed(false)} className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors">View result</button>
         </div>
       )}
 
@@ -1452,21 +1452,21 @@ export default function RoomPage() {
                 : `${onlineMembers.find(m => m.userId === matchResult.winnerId)?.username
                     ?? (matchResult.winnerId === matchResult.challengerId ? "Challenger" : "Opponent")} Wins`;
               return (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
-                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-50/85 dark:bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-100/80 dark:bg-gray-800/80 p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
                     <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
                   </button>
-                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-950 ring-2 ring-amber-700">
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-amber-400">
+                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-6 text-center space-y-4">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950 ring-2 ring-amber-700">
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-amber-600 dark:text-amber-400">
                         <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z" />
                       </svg>
                     </div>
                     <div>
-                      <h2 className="text-2xl font-bold text-amber-400">{heading}</h2>
+                      <h2 className="text-2xl font-bold text-amber-600 dark:text-amber-400">{heading}</h2>
                       <p className="mt-0.5 text-xs text-gray-500">{matchResult.isTeam ? "Team match" : "1v1 match"} · you spectated</p>
                     </div>
-                    <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
+                    <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400 italic">"{matchResult.verdict}"</p>
                     <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
                       Back to Battle Grounds
                     </button>
@@ -1480,32 +1480,32 @@ export default function RoomPage() {
               const myEloBefore = (matchResult.eloBefore ?? {})[userId] ?? myEloAfter;
               const myEloChange = myEloAfter - myEloBefore;
               return (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
-                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-50/85 dark:bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-100/80 dark:bg-gray-800/80 p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
                     <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
                   </button>
-                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
-                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
+                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-6 text-center space-y-4">
+                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-100 dark:bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-100 dark:bg-red-950 ring-2 ring-red-800"}`}>
                       {won ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-400">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-600 dark:text-emerald-400">
                           <circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/>
                         </svg>
                       ) : (
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-400">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-600 dark:text-red-400">
                           <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/>
                         </svg>
                       )}
                     </div>
                     <div>
-                      <h2 className={`text-2xl font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                      <h2 className={`text-2xl font-bold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                         {won ? "Your Team Won!" : "Your Team Lost"}
                       </h2>
                       <p className="mt-0.5 text-xs text-gray-500">Team {matchResult.winningSide} takes it</p>
                     </div>
-                    <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
-                    <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
+                    <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400 italic">"{matchResult.verdict}"</p>
+                    <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-100 dark:bg-emerald-950/40 ring-emerald-900/40" : "bg-red-100 dark:bg-red-950/30 ring-red-900/30"}`}>
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Your ELO Change</p>
-                      <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                         {myEloChange >= 0 ? "+" : ""}{myEloChange} → {myEloAfter}
                       </p>
                     </div>
@@ -1525,32 +1525,32 @@ export default function RoomPage() {
                 ? matchResult.challengerEloAfter
                 : matchResult.challengedEloAfter) ?? 0;
               return (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
-                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-50/85 dark:bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-100/80 dark:bg-gray-800/80 p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
                     <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
                   </button>
-                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
-                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
+                  <div className="mx-4 w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-6 text-center space-y-4">
+                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-100 dark:bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-100 dark:bg-red-950 ring-2 ring-red-800"}`}>
                       {won ? (
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-400">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-600 dark:text-emerald-400">
                           <circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/>
                         </svg>
                       ) : (
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-400">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-600 dark:text-red-400">
                           <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/>
                         </svg>
                       )}
                     </div>
                     <div>
-                      <h2 className={`text-2xl font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                      <h2 className={`text-2xl font-bold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                         {won ? "You Won!" : "You Lost"}
                       </h2>
                       <p className="mt-0.5 text-xs text-gray-500">Competitive Match</p>
                     </div>
-                    <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
-                    <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
+                    <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400 italic">"{matchResult.verdict}"</p>
+                    <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-100 dark:bg-emerald-950/40 ring-emerald-900/40" : "bg-red-100 dark:bg-red-950/30 ring-red-900/30"}`}>
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">ELO Change</p>
-                      <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      <p className={`text-xl font-bold tabular-nums mt-0.5 ${myEloChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                         {myEloChange >= 0 ? "+" : ""}{myEloChange} → {myEloAfter}
                       </p>
                     </div>
@@ -1564,33 +1564,33 @@ export default function RoomPage() {
             const bot = getBotById(matchResult.botId);
             const won = matchResult.winner === "human";
             return (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-950/85 backdrop-blur-sm">
-                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-800/80 p-2 text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors">
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-50/85 dark:bg-gray-950/85 backdrop-blur-sm">
+                  <button onClick={() => setResultDismissed(true)} aria-label="Close result and view transcript" className="absolute right-3 top-3 z-10 rounded-full bg-gray-100/80 dark:bg-gray-800/80 p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
                     <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L8 6.94l1.47-1.47a.75.75 0 1 1 1.06 1.06L9.06 8l1.47 1.47a.75.75 0 1 1-1.06 1.06L8 9.06 6.53 10.53a.75.75 0 0 1-1.06-1.06L6.94 8 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd"/></svg>
                   </button>
-                <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-6 text-center space-y-4">
-                  <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-950 ring-2 ring-red-800"}`}>
+                <div className="mx-4 w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-6 text-center space-y-4">
+                  <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${won ? "bg-emerald-100 dark:bg-emerald-950 ring-2 ring-emerald-700" : "bg-red-100 dark:bg-red-950 ring-2 ring-red-800"}`}>
                     {won ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-400">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8 text-emerald-600 dark:text-emerald-400">
                         <circle cx="12" cy="12" r="10" />
                         <polyline points="9 12 11 14 15 10" />
                       </svg>
                     ) : (
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-400">
+                      <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-red-600 dark:text-red-400">
                         <path fillRule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                       </svg>
                     )}
                   </div>
                   <div>
-                    <h2 className={`text-2xl font-bold ${won ? "text-emerald-400" : "text-red-400"}`}>
+                    <h2 className={`text-2xl font-bold ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                       {won ? "You Won!" : "You Lost"}
                     </h2>
                     {bot && <p className="mt-0.5 text-sm text-gray-500">vs. {bot.name} — {bot.title}</p>}
                   </div>
-                  <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
-                  <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
+                  <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400 italic">"{matchResult.verdict}"</p>
+                  <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-100 dark:bg-emerald-950/40 ring-emerald-900/40" : "bg-red-100 dark:bg-red-950/30 ring-red-900/30"}`}>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Grounds Score Impact</p>
-                    <p className={`text-xl font-bold tabular-nums mt-0.5 ${won ? "text-emerald-400" : "text-red-400"}`}>
+                    <p className={`text-xl font-bold tabular-nums mt-0.5 ${won ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
                       {matchResult.scoreImpact > 0 ? "+" : ""}{matchResult.scoreImpact.toFixed(1)}
                     </p>
                   </div>
@@ -1608,18 +1608,18 @@ export default function RoomPage() {
           })()}
 
           {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && !activeChannel ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-gray-600">Select a channel to start chatting</div>
+            <div className="flex flex-1 items-center justify-center text-sm text-gray-500 dark:text-gray-600">Select a channel to start chatting</div>
           ) : (
             <>
               {/* Competitive: topic + stances banner */}
               {isCompetitiveRoom && parsedMatchConfig?.topic && (
-                <div className="shrink-0 border-b border-gray-800 bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-violet-400">
+                <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-400">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
                   </svg>
-                  <span className="flex-1 text-xs text-gray-300 leading-snug">{parsedMatchConfig.topic}</span>
+                  <span className="flex-1 text-xs text-gray-700 dark:text-gray-300 leading-snug">{parsedMatchConfig.topic}</span>
                   {myStanceInMatch && (
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${myStanceInMatch === "affirmative" ? "bg-emerald-900/40 text-emerald-400" : "bg-red-900/40 text-red-400"}`}>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${myStanceInMatch === "affirmative" ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" : "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"}`}>
                       You: {myStanceInMatch === "affirmative" ? "FOR" : "AGAINST"}
                     </span>
                   )}
@@ -1628,16 +1628,16 @@ export default function RoomPage() {
 
               {/* Arena: topic banner */}
               {isBotRoom && matchTopic && (
-                <div className="shrink-0 border-b border-gray-800 bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
+                <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 px-4 py-2.5 flex items-center gap-2.5">
                   <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-500">
                     <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.979l-3.136 1.015a.75.75 0 0 1-1.12-.814l.853-3.574-2.79-2.39a.75.75 0 0 1 .427-1.318l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
                   </svg>
-                  <span className="flex-1 text-xs text-gray-300 leading-snug">{matchTopic}</span>
+                  <span className="flex-1 text-xs text-gray-700 dark:text-gray-300 leading-snug">{matchTopic}</span>
                   {matchStance && (
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                       matchStance === "affirmative"
-                        ? "bg-emerald-900/40 text-emerald-400"
-                        : "bg-red-900/40 text-red-400"
+                        ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"
+                        : "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
                     }`}>
                       {matchStance === "affirmative" ? "FOR" : "AGAINST"}
                     </span>
@@ -1645,16 +1645,16 @@ export default function RoomPage() {
                 </div>
               )}
               {activeChannel?.isSubDebate && activeChannel.proposition && (
-                <div className="shrink-0 border-b border-amber-900/40 bg-amber-950/20 px-4 py-2 flex items-start gap-2">
+                <div className="shrink-0 border-b border-amber-900/40 bg-amber-100 dark:bg-amber-950/20 px-4 py-2 flex items-start gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500">
                     <path fillRule="evenodd" d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 0 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                     <path d="M3 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM3 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" />
                   </svg>
                   <div>
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Sub-debate</span>
-                    <p className="text-xs text-amber-200/80 leading-relaxed">{activeChannel.proposition}</p>
+                    <p className="text-xs text-amber-800/80 dark:text-amber-200/80 leading-relaxed">{activeChannel.proposition}</p>
                     {activeChannel.parentMessagePreview && (
-                      <p className="mt-0.5 text-[10px] italic text-gray-600 line-clamp-1">"{activeChannel.parentMessagePreview}"</p>
+                      <p className="mt-0.5 text-[10px] italic text-gray-500 dark:text-gray-600 line-clamp-1">"{activeChannel.parentMessagePreview}"</p>
                     )}
                   </div>
                 </div>
@@ -1699,7 +1699,7 @@ export default function RoomPage() {
 
       {/* Active polls */}
       {activePolls.length > 0 && (
-        <div className="shrink-0 max-h-64 overflow-y-auto border-t border-gray-800/60">
+        <div className="shrink-0 max-h-64 overflow-y-auto border-t border-gray-200/60 dark:border-gray-800/60">
           {activePolls.map(poll => (
             <PollCard
               key={poll.id}
@@ -1724,11 +1724,11 @@ export default function RoomPage() {
           ? `${names[0]} and ${names[1]} are typing`
           : `${names[0]} and ${names.length - 1} others are typing`;
         return (
-          <div className="flex items-center gap-2 px-5 py-1.5 text-xs text-gray-400">
+          <div className="flex items-center gap-2 px-5 py-1.5 text-xs text-gray-600 dark:text-gray-400">
             <span className="flex gap-0.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="h-1.5 w-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-300 dark:bg-gray-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-300 dark:bg-gray-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-gray-300 dark:bg-gray-400 animate-bounce" style={{ animationDelay: "300ms" }} />
             </span>
             <span>{label}</span>
           </div>

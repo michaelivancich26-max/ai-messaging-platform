@@ -82,7 +82,7 @@ function BotAvatar({ bot, large = false }: { bot: Bot; large?: boolean }) {
   const dim = large ? "h-20 w-20" : "h-14 w-14";
   const iconSize = large ? 36 : 26;
   return (
-    <div className={`${dim} rounded-2xl flex items-center justify-center ring-2 ${c.ring} bg-gray-900`}>
+    <div className={`${dim} rounded-2xl flex items-center justify-center ring-2 ${c.ring} bg-white dark:bg-gray-900`}>
       <span className={c.text}>
         <BotIcon id={bot.id} size={iconSize} />
       </span>
@@ -97,7 +97,7 @@ function StarRow({ tier, color }: { tier: number; color: Bot["color"] }) {
   return (
     <div className="flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((i) => (
-        <svg key={i} viewBox="0 0 16 16" fill="currentColor" className={`h-3.5 w-3.5 ${i <= tier ? c.star : "text-gray-700"}`}>
+        <svg key={i} viewBox="0 0 16 16" fill="currentColor" className={`h-3.5 w-3.5 ${i <= tier ? c.star : "text-gray-400 dark:text-gray-700"}`}>
           <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
         </svg>
       ))}
@@ -213,29 +213,29 @@ function MatchSetupModal({
 
   const optionCls = (active: boolean) =>
     `flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition-colors ${
-      active ? "border-indigo-600 bg-indigo-950/30" : "border-gray-800 hover:border-gray-700"
+      active ? "border-indigo-600 bg-indigo-100 dark:bg-indigo-950/30" : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
     }`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div
-        className="w-full max-w-sm rounded-2xl bg-gray-900 ring-1 ring-gray-800 flex flex-col"
+        className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 flex flex-col"
         style={{ maxHeight: "92vh" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-gray-800 shrink-0">
-          <div className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center ring-1 ${c.ring} bg-gray-950`}>
+        <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-gray-200 dark:border-gray-800 shrink-0">
+          <div className={`h-10 w-10 shrink-0 rounded-xl flex items-center justify-center ring-1 ${c.ring} bg-gray-50 dark:bg-gray-950`}>
             <span className={c.text}><BotIcon id={bot.id} size={20} /></span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-100">Challenge {bot.name}</p>
+            <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Challenge {bot.name}</p>
             <p className={`text-[11px] ${c.text}`}>{bot.title} · {bot.tierName}</p>
           </div>
           {/* Step indicator */}
           <div className="flex items-center gap-1 shrink-0">
-            <div className={`h-1.5 w-4 rounded-full transition-colors ${step === "topic" ? "bg-indigo-500" : "bg-gray-700"}`} />
-            <div className={`h-1.5 w-4 rounded-full transition-colors ${step === "condition" ? "bg-indigo-500" : "bg-gray-700"}`} />
+            <div className={`h-1.5 w-4 rounded-full transition-colors ${step === "topic" ? "bg-indigo-500" : "bg-gray-200 dark:bg-gray-700"}`} />
+            <div className={`h-1.5 w-4 rounded-full transition-colors ${step === "condition" ? "bg-indigo-500" : "bg-gray-200 dark:bg-gray-700"}`} />
           </div>
         </div>
 
@@ -252,7 +252,7 @@ function MatchSetupModal({
                 value={topicInput}
                 onChange={e => setTopicInput(e.target.value)}
                 placeholder="Type your own topic, or pick one below…"
-                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-3.5 py-2.5 text-sm text-gray-100 placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors"
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
 
@@ -260,52 +260,52 @@ function MatchSetupModal({
             <div className="px-5 pb-3 shrink-0 grid grid-cols-2 gap-3">
               {/* Stance */}
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-1.5">My stance</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600 mb-1.5">My stance</p>
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => setStance("affirmative")}
-                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${stance === "affirmative" ? "bg-emerald-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${stance === "affirmative" ? "bg-emerald-700 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                   >
                     FOR
                   </button>
                   <button
                     onClick={() => setStance("negative")}
-                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${stance === "negative" ? "bg-red-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${stance === "negative" ? "bg-red-700 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                   >
                     AGAINST
                   </button>
                 </div>
-                <p className="mt-1 text-[9px] text-gray-600">{stance === "affirmative" ? "You argue for the proposition" : "You argue against it"}</p>
+                <p className="mt-1 text-[9px] text-gray-500 dark:text-gray-600">{stance === "affirmative" ? "You argue for the proposition" : "You argue against it"}</p>
               </div>
 
               {/* Turn order */}
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-1.5">First move</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600 mb-1.5">First move</p>
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => setBotFirst(false)}
-                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${!botFirst ? "bg-indigo-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${!botFirst ? "bg-indigo-700 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                   >
                     Me
                   </button>
                   <button
                     onClick={() => setBotFirst(true)}
-                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${botFirst ? "bg-indigo-700 text-white" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-semibold transition-colors ${botFirst ? "bg-indigo-700 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                   >
                     Bot
                   </button>
                 </div>
-                <p className="mt-1 text-[9px] text-gray-600">{botFirst ? "Bot makes the opening argument" : "You open the debate"}</p>
+                <p className="mt-1 text-[9px] text-gray-500 dark:text-gray-600">{botFirst ? "Bot makes the opening argument" : "You open the debate"}</p>
               </div>
             </div>
 
             {/* Divider + category pills */}
             <div className="px-5 pb-2 shrink-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 mb-2">or choose from catalog</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600 mb-2">or choose from catalog</p>
               <div className="flex gap-1.5 flex-wrap">
                 <button
                   onClick={() => setActiveCategory(null)}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${activeCategory === null ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${activeCategory === null ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                 >
                   All
                 </button>
@@ -313,7 +313,7 @@ function MatchSetupModal({
                   <button
                     key={g.category}
                     onClick={() => setActiveCategory(g.category === activeCategory ? null : g.category)}
-                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${activeCategory === g.category ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${activeCategory === g.category ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                   >
                     {g.category}
                   </button>
@@ -329,8 +329,8 @@ function MatchSetupModal({
                   onClick={() => setTopicInput(topic)}
                   className={`w-full text-left rounded-xl border px-3.5 py-2.5 text-xs leading-snug transition-colors ${
                     topicInput === topic
-                      ? "border-indigo-600 bg-indigo-950/30 text-gray-100"
-                      : "border-gray-800 text-gray-400 hover:border-gray-700 hover:text-gray-300"
+                      ? "border-indigo-600 bg-indigo-100 dark:bg-indigo-950/30 text-gray-900 dark:text-gray-100"
+                      : "border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-700 dark:hover:text-gray-300"
                   }`}
                 >
                   {topic}
@@ -339,8 +339,8 @@ function MatchSetupModal({
             </div>
 
             {/* Actions */}
-            <div className="flex gap-2 px-5 py-4 border-t border-gray-800 shrink-0">
-              <button onClick={onClose} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800 transition-colors">
+            <div className="flex gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
+              <button onClick={onClose} className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 py-2 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                 Cancel
               </button>
               <button
@@ -359,22 +359,22 @@ function MatchSetupModal({
           <>
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 min-h-0">
               {/* Selected topic recap */}
-              <div className="rounded-xl bg-gray-800/50 px-3 py-2 flex items-start gap-2">
+              <div className="rounded-xl bg-gray-100/50 dark:bg-gray-800/50 px-3 py-2 flex items-start gap-2">
                 <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-500">
                   <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.979l-3.136 1.015a.75.75 0 0 1-1.12-.814l.853-3.574-2.79-2.39a.75.75 0 0 1 .427-1.318l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
                 </svg>
-                <p className="text-[11px] text-gray-400 leading-snug">{effectiveTopic}</p>
+                <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-snug">{effectiveTopic}</p>
               </div>
 
               <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Win Condition</p>
 
               {/* Option: Exchanges */}
               <div className={optionCls(type === "exchanges")} onClick={() => setType("exchanges")}>
-                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "exchanges" ? "border-indigo-500" : "border-gray-600"}`}>
+                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "exchanges" ? "border-indigo-500" : "border-gray-300 dark:border-gray-600"}`}>
                   {type === "exchanges" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-200">Exchange Limit</p>
+                  <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Exchange Limit</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Match ends after N back-and-forth exchanges.</p>
                   {type === "exchanges" && (
                     <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -382,7 +382,7 @@ function MatchSetupModal({
                         <button
                           key={n}
                           onClick={e => { e.stopPropagation(); setExchangeLimit(n); }}
-                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${exchangeLimit === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${exchangeLimit === n ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                         >
                           {n}
                         </button>
@@ -394,11 +394,11 @@ function MatchSetupModal({
 
               {/* Option: Time */}
               <div className={optionCls(type === "time")} onClick={() => setType("time")}>
-                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "time" ? "border-indigo-500" : "border-gray-600"}`}>
+                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "time" ? "border-indigo-500" : "border-gray-300 dark:border-gray-600"}`}>
                   {type === "time" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-200">Time Limit</p>
+                  <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Time Limit</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">Match is judged when the clock runs out.</p>
                   {type === "time" && (
                     <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -406,7 +406,7 @@ function MatchSetupModal({
                         <button
                           key={n}
                           onClick={e => { e.stopPropagation(); setTimeMinutes(n); }}
-                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${timeMinutes === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                          className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${timeMinutes === n ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                         >
                           {n} min
                         </button>
@@ -418,11 +418,11 @@ function MatchSetupModal({
 
               {/* Option: Proposition bar */}
               <div className={optionCls(type === "proposition")} onClick={() => setType("proposition")}>
-                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "proposition" ? "border-indigo-500" : "border-gray-600"}`}>
+                <div className={`mt-0.5 h-3.5 w-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${type === "proposition" ? "border-indigo-500" : "border-gray-300 dark:border-gray-600"}`}>
                   {type === "proposition" && <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-200">Proposition Bar</p>
+                  <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">Proposition Bar</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">AI scores each exchange live. First to dominate wins.</p>
                   {type === "proposition" && (
                     <div className="mt-2 space-y-1.5">
@@ -432,18 +432,18 @@ function MatchSetupModal({
                           <button
                             key={n}
                             onClick={e => { e.stopPropagation(); setPropThreshold(n); }}
-                            className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${propThreshold === n ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}`}
+                            className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${propThreshold === n ? "bg-indigo-600 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"}`}
                           >
                             {n}%
                           </button>
                         ))}
                       </div>
-                      <div className="mt-2 h-2 rounded-full bg-gray-800 overflow-hidden relative">
+                      <div className="mt-2 h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden relative">
                         <div className="absolute inset-y-0 left-0 bg-red-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
                         <div className="absolute inset-y-0 right-0 bg-emerald-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
-                        <div className="absolute inset-y-0 bg-gray-700" style={{ left: `${100 - propThreshold}%`, right: `${100 - propThreshold}%` }} />
+                        <div className="absolute inset-y-0 bg-gray-200 dark:bg-gray-700" style={{ left: `${100 - propThreshold}%`, right: `${100 - propThreshold}%` }} />
                       </div>
-                      <p className="text-[10px] text-gray-600">Win zone starts at {propThreshold}% on either side</p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-600">Win zone starts at {propThreshold}% on either side</p>
                     </div>
                   )}
                 </div>
@@ -451,8 +451,8 @@ function MatchSetupModal({
             </div>
 
             {/* Actions */}
-            <div className="flex gap-2 px-5 py-4 border-t border-gray-800 shrink-0">
-              <button onClick={() => setStep("topic")} className="flex-1 rounded-xl border border-gray-700 py-2 text-xs font-semibold text-gray-400 hover:bg-gray-800 transition-colors">
+            <div className="flex gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-800 shrink-0">
+              <button onClick={() => setStep("topic")} className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 py-2 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                 ← Back
               </button>
               <button onClick={confirm} className={`flex-1 rounded-xl py-2 text-xs font-semibold text-white transition-colors ${c.btn}`}>
@@ -499,7 +499,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
   }
 
   return (
-    <div className={`flex flex-col rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden transition-all duration-200 hover:border-gray-700 hover:shadow-lg hover:shadow-black/30`}>
+    <div className={`flex flex-col rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden transition-all duration-200 hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-lg hover:shadow-black/30`}>
       {/* Avatar area */}
       <div className={`flex flex-col items-center gap-3 bg-gradient-to-b ${c.gradient} px-4 py-7`}>
         <BotAvatar bot={bot} large />
@@ -519,7 +519,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
           </span>
         </div>
         <div className="mb-3">
-          <span className={`inline-flex rounded-full bg-gray-800/80 px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-gray-700/40 ${c.text}`}>
+          <span className={`inline-flex rounded-full bg-gray-100/80 dark:bg-gray-800/80 px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-gray-300/40 dark:ring-gray-700/40 ${c.text}`}>
             {bot.specialty}
           </span>
         </div>
@@ -528,21 +528,21 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
         <p className="flex-1 text-xs leading-relaxed text-gray-500">{bot.bio}</p>
 
         {/* Weakness */}
-        <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-950/20 px-2.5 py-2 ring-1 ring-red-900/20">
+        <div className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-100 dark:bg-red-950/20 px-2.5 py-2 ring-1 ring-red-900/20">
           <span className="mt-px shrink-0 text-[9px] font-bold uppercase tracking-wider text-red-500">Weak</span>
-          <p className="text-[10px] leading-relaxed text-red-400/70">{bot.flaw}</p>
+          <p className="text-[10px] leading-relaxed text-red-600/70 dark:text-red-400/70">{bot.flaw}</p>
         </div>
 
         {/* Stats */}
-        <div className="mt-4 flex items-center gap-2 border-t border-gray-800 pt-3 text-[10px]">
-          <span className="font-semibold text-emerald-400">{bot.wins.toLocaleString()}W</span>
-          <span className="text-gray-600">·</span>
-          <span className="font-semibold text-red-400">{bot.losses.toLocaleString()}L</span>
-          <span className="ml-auto text-gray-600">{winRate}% win rate</span>
+        <div className="mt-4 flex items-center gap-2 border-t border-gray-200 dark:border-gray-800 pt-3 text-[10px]">
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">{bot.wins.toLocaleString()}W</span>
+          <span className="text-gray-500 dark:text-gray-600">·</span>
+          <span className="font-semibold text-red-600 dark:text-red-400">{bot.losses.toLocaleString()}L</span>
+          <span className="ml-auto text-gray-500 dark:text-gray-600">{winRate}% win rate</span>
         </div>
 
         {/* Challenge button */}
-        {error && <p className="mt-2 text-[10px] text-red-400">{error}</p>}
+        {error && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
         <button
           onClick={() => setModalOpen(true)}
           disabled={challenging || !userId}
@@ -592,33 +592,33 @@ function ArenaLeaderboard() {
   return (
     <div className="mx-auto w-full max-w-2xl px-6 pb-14">
       <div className="mb-4 flex items-center gap-2">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 text-amber-400">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 text-amber-600 dark:text-amber-400">
           <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-3.044 0" />
         </svg>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Training Grounds Leaderboard</h2>
-        <span className="text-[10px] text-gray-600">by arena ELO</span>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Training Grounds Leaderboard</h2>
+        <span className="text-[10px] text-gray-500 dark:text-gray-600">by arena ELO</span>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900/60">
+      <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60">
         {loading ? (
-          <div className="py-14 text-center text-sm text-gray-600">Loading…</div>
+          <div className="py-14 text-center text-sm text-gray-500 dark:text-gray-600">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="py-14 text-center text-sm text-gray-600">No arena matches played yet. Beat a bot to get ranked.</div>
+          <div className="py-14 text-center text-sm text-gray-500 dark:text-gray-600">No arena matches played yet. Beat a bot to get ranked.</div>
         ) : (
           rows.map((entry, i) => {
             const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
             const isMe = entry.id === myId;
             const rate = entry.wins + entry.losses > 0 ? Math.round((entry.wins / (entry.wins + entry.losses)) * 100) : 0;
             return (
-              <div key={entry.id} className={`flex items-center gap-3 border-b border-gray-800 px-4 py-3 last:border-0 ${isMe ? "bg-amber-950/20" : ""}`}>
+              <div key={entry.id} className={`flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3 last:border-0 ${isMe ? "bg-amber-100 dark:bg-amber-950/20" : ""}`}>
                 <span className="w-6 text-center text-xs text-gray-500">{medal ?? `${i + 1}`}</span>
                 <button
                   onClick={() => router.push(`/u/${encodeURIComponent(entry.username)}`)}
-                  className={`flex-1 truncate text-left text-sm font-medium hover:underline ${isMe ? "text-amber-300" : "text-gray-200"}`}
+                  className={`flex-1 truncate text-left text-sm font-medium hover:underline ${isMe ? "text-amber-700 dark:text-amber-300" : "text-gray-800 dark:text-gray-200"}`}
                 >
                   {entry.username}{isMe && <span className="ml-1 text-xs text-gray-500">(you)</span>}
                 </button>
                 <span className="text-xs text-gray-500">{entry.wins}W {entry.losses}L · {rate}%</span>
-                <span className="rounded border border-amber-800 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">⚡{entry.elo}</span>
+                <span className="rounded border border-amber-800 bg-amber-100 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">⚡{entry.elo}</span>
               </div>
             );
           })
@@ -637,18 +637,18 @@ function ArenaContent() {
   return (
     <div className="flex h-full">
       <ArenaSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
-      <main className="flex flex-1 flex-col overflow-y-auto bg-gray-950">
+      <main className="flex flex-1 flex-col overflow-y-auto bg-gray-50 dark:bg-gray-950">
 
         {/* Mobile top bar */}
-        <div className="flex min-h-12 shrink-0 items-center border-b border-gray-800 px-4 md:hidden pt-safe">
-          <button onClick={() => setMobileSidebarOpen(true)} className="rounded p-1.5 text-gray-400 hover:bg-gray-800">
+        <div className="flex min-h-12 shrink-0 items-center border-b border-gray-200 dark:border-gray-800 px-4 md:hidden pt-safe">
+          <button onClick={() => setMobileSidebarOpen(true)} className="rounded p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" /></svg>
           </button>
-          <span className="ml-3 text-sm font-semibold text-amber-400">Training Grounds</span>
+          <span className="ml-3 text-sm font-semibold text-amber-600 dark:text-amber-400">Training Grounds</span>
         </div>
 
         {/* Hero */}
-        <div className="relative shrink-0 border-b border-gray-800 bg-gradient-to-b from-gray-900 via-gray-900/90 to-gray-950 px-6 py-14 text-center">
+        <div className="relative shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gradient-to-b from-white dark:from-gray-900 via-white/90 dark:via-gray-900/90 to-gray-50 dark:to-gray-950 px-6 py-14 text-center">
           {/* decorative glow */}
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute left-1/2 top-0 h-64 w-96 -translate-x-1/2 rounded-full bg-indigo-500/5 blur-3xl" />
@@ -656,18 +656,18 @@ function ArenaContent() {
 
           <div className="relative mx-auto max-w-xl">
             <div className="mb-5 flex justify-center">
-              <div className="rounded-2xl bg-indigo-950 p-4 ring-1 ring-indigo-900/60">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-10 w-10 text-indigo-400">
+              <div className="rounded-2xl bg-indigo-100 dark:bg-indigo-950 p-4 ring-1 ring-indigo-900/60">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-10 w-10 text-indigo-600 dark:text-indigo-400">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
                 </svg>
               </div>
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-white">Training Grounds</h1>
-            <p className="mt-3 text-base text-gray-400">
+            <p className="mt-3 text-base text-gray-600 dark:text-gray-400">
               Choose your opponent. Each bot has a unique debating style and difficulty level.
               Send the first message to open any topic — your opponent will respond.
             </p>
-            <div className="mt-5 flex items-center justify-center gap-4 text-xs text-gray-600">
+            <div className="mt-5 flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-600">
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 10 opponents across 5 tiers
@@ -684,7 +684,7 @@ function ArenaContent() {
         <div className="mx-auto w-full max-w-5xl px-6 py-10">
           <div className="mb-6 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Choose your opponent</h2>
-            <div className="flex items-center gap-1.5 text-[10px] text-gray-600">
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-600">
               <span className="flex h-3 w-3 items-center justify-center">★</span>
               <span>= difficulty</span>
             </div>
@@ -697,7 +697,7 @@ function ArenaContent() {
           </div>
 
           {/* Footer note */}
-          <p className="mt-10 text-center text-[11px] text-gray-700">
+          <p className="mt-10 text-center text-[11px] text-gray-400 dark:text-gray-700">
             Bot rooms are private and only visible to you. Win rates are illustrative.
           </p>
         </div>

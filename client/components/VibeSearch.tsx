@@ -31,14 +31,14 @@ export default function VibeSearch({ onSearch, onClose, searching, resultStatus 
   }
 
   return (
-    <div className="border-b border-gray-800 bg-gray-950 px-4 py-3">
+    <div className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 px-4 py-3">
       <form onSubmit={handleSubmit} className="flex items-center gap-2">
         <div className="relative flex-1">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 20 20"
             fill="currentColor"
-            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-indigo-400"
+            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-indigo-600 dark:text-indigo-400"
           >
             <path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z" />
           </svg>
@@ -47,7 +47,7 @@ export default function VibeSearch({ onSearch, onClose, searching, resultStatus 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Describe what you're looking for…"
-            className="w-full rounded-lg border border-gray-700 bg-gray-900 py-2 pl-9 pr-3 text-sm text-gray-100 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 py-2 pl-9 pr-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
           />
         </div>
         <button
@@ -70,7 +70,7 @@ export default function VibeSearch({ onSearch, onClose, searching, resultStatus 
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg p-2 text-gray-500 hover:bg-gray-800 hover:text-gray-300 transition-colors"
+          className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
             <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
@@ -78,7 +78,7 @@ export default function VibeSearch({ onSearch, onClose, searching, resultStatus 
         </button>
       </form>
       {resultStatus === "not_found" && (
-        <p className="mt-1.5 text-xs text-amber-400">No matching message found.</p>
+        <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">No matching message found.</p>
       )}
     </div>
   );

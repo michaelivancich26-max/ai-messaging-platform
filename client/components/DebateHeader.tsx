@@ -49,7 +49,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
 
   // Always render the bar — gray track when no positions yet, colored when there are
   const scoreBar = (
-    <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-800">
+    <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
       {total > 0 && stances.map((stance, i) => {
         const pct = ((stanceScores[stance] ?? 0) / total) * 100;
         if (pct === 0) return null;
@@ -65,15 +65,15 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
   );
 
   return (
-    <div className="border-b border-gray-800 bg-gray-900/60 shrink-0">
+    <div className="border-b border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 shrink-0">
 
       {/* ── Collapsed strip (mobile only) ── */}
       <div className={`md:hidden ${collapsed ? "block" : "hidden"} px-4 py-2 space-y-1.5`}>
         <div className="flex items-center gap-2">
-          <p className="flex-1 truncate text-xs text-gray-300">{proposition}</p>
+          <p className="flex-1 truncate text-xs text-gray-700 dark:text-gray-300">{proposition}</p>
           <button
             onClick={() => setCollapsed(false)}
-            className="shrink-0 rounded-full p-1 text-gray-500 hover:text-gray-300 transition-colors"
+            className="shrink-0 rounded-full p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
             aria-label="Expand debate header"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -89,7 +89,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
         <div className="flex items-center gap-2 mb-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Proposition</p>
           {isOpinionated && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-400">
+            <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5">
                 <path fillRule="evenodd" d="M1 8.74c0 .983.713 1.825 1.69 1.943L3 10.698V13.5a.5.5 0 0 0 .724.447L8 11.82l4.276 2.127A.5.5 0 0 0 13 13.5v-2.802l.31-.016A2 2 0 0 0 15 8.74V5a3 3 0 0 0-3-3H4a3 3 0 0 0-3 3v3.74Z" clipRule="evenodd" />
               </svg>
@@ -98,7 +98,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
           )}
           <button
             onClick={() => setCollapsed(true)}
-            className="md:hidden ml-auto shrink-0 rounded-full p-1 text-gray-500 hover:text-gray-300 transition-colors"
+            className="md:hidden ml-auto shrink-0 rounded-full p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
             aria-label="Collapse debate header"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -107,7 +107,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
           </button>
         </div>
 
-        <p className="text-sm font-medium text-gray-100 leading-snug mb-3 line-clamp-2">{proposition}</p>
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-snug mb-3 line-clamp-2">{proposition}</p>
 
         {/* Score bar — always visible, gray when no data */}
         <div className="mb-3">
@@ -116,7 +116,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
             {onDetailsClick && (
               <button
                 onClick={onDetailsClick}
-                className="shrink-0 rounded p-0.5 text-gray-600 hover:text-indigo-400 transition-colors"
+                className="shrink-0 rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                 title="Score details & formula"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -134,7 +134,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
                 return (
                   <span key={stance} className="text-[10px] font-semibold">
                     <span className={`inline-block h-1.5 w-1.5 rounded-full ${pal.dot} mr-1`} />
-                    <span className="text-gray-400">{stance} {pct}%</span>
+                    <span className="text-gray-600 dark:text-gray-400">{stance} {pct}%</span>
                   </span>
                 );
               })}
@@ -144,9 +144,9 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
 
         {/* Position picker */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-gray-600 shrink-0">Your stance:</span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-600 shrink-0">Your stance:</span>
           {cooldownRemaining > 0 && (
-            <span className="flex items-center gap-1 rounded-full bg-gray-800 px-2 py-0.5 text-[9px] font-semibold text-gray-500">
+            <span className="flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[9px] font-semibold text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5">
                 <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
               </svg>
@@ -193,8 +193,8 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
               onClick={() => onSetDebateMode(debateTurn?.mode === "structured" ? "open" : "structured")}
               className={`ml-auto flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all ${
                 debateTurn?.mode === "structured"
-                  ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
-                  : "border-gray-700 text-gray-500 hover:border-indigo-600/40 hover:text-indigo-400"
+                  ? "border-indigo-500 bg-indigo-600/20 text-indigo-700 dark:text-indigo-300"
+                  : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-indigo-600/40 hover:text-indigo-600 dark:hover:text-indigo-400"
               }`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">

@@ -20,9 +20,9 @@ export default function CredibilityBadge({ score }: Props) {
     : "disputed";
 
   const style = {
-    reliable: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-    mixed:    "bg-amber-500/20  text-amber-300  border-amber-500/30",
-    disputed: "bg-red-500/20    text-red-300    border-red-500/30",
+    reliable: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+    mixed:    "bg-amber-500/20  text-amber-700 dark:text-amber-300  border-amber-500/30",
+    disputed: "bg-red-500/20    text-red-700 dark:text-red-300    border-red-500/30",
   }[tier];
 
   const label = {
@@ -41,11 +41,11 @@ export default function CredibilityBadge({ score }: Props) {
         {label}
       </span>
       {hovered && (
-        <span className="absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg bg-gray-900 px-3 py-2 text-xs text-gray-200 shadow-xl ring-1 ring-gray-700">
-          <span className="block font-semibold text-gray-100 mb-1">Credibility</span>
-          <span className="block text-emerald-400">✓ {supported} supported</span>
-          <span className="block text-red-400">✗ {refuted} refuted</span>
-          <span className="block text-amber-400">~ {contested} contested</span>
+        <span className="absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-800 dark:text-gray-200 shadow-xl ring-1 ring-gray-300 dark:ring-gray-700">
+          <span className="block font-semibold text-gray-900 dark:text-gray-100 mb-1">Credibility</span>
+          <span className="block text-emerald-600 dark:text-emerald-400">✓ {supported} supported</span>
+          <span className="block text-red-600 dark:text-red-400">✗ {refuted} refuted</span>
+          <span className="block text-amber-600 dark:text-amber-400">~ {contested} contested</span>
         </span>
       )}
     </span>

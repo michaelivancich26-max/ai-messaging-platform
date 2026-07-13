@@ -36,7 +36,7 @@ interface Position {
 
 function OddsBar({ a, b }: { a: number; b: number }) {
   return (
-    <div className="flex h-2 overflow-hidden rounded-full bg-gray-800">
+    <div className="flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
       <div className="bg-emerald-500 transition-all duration-500" style={{ width: pct(a) }} />
       <div className="bg-rose-500 transition-all duration-500" style={{ width: pct(b) }} />
     </div>
@@ -81,25 +81,25 @@ export default function BetsPage() {
     return () => { clearInterval(id); socket.off("gavelsUpdate", onGavels); socket.off("oddsUpdate", onOdds); socket.off("marketSettled", onSettled); };
   }, [loadMarkets, loadWallet]);
 
-  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-950 text-gray-600 text-sm">Loading…</div>;
+  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
 
   const openPositions = positions.filter((p) => p.status === "open");
   const settledPositions = positions.filter((p) => p.status === "settled");
 
   return (
-    <div className="flex h-full flex-col bg-gray-950 text-white">
+    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950 text-white">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-800 px-4 py-3 pt-safe">
-        <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 hover:text-gray-300 transition-colors">
+      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3 pt-safe">
+        <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
           </svg>
         </button>
         <div className="flex items-center gap-2">
-          <span className="text-amber-400"><GavelIcon className="h-5 w-5" /></span>
+          <span className="text-amber-600 dark:text-amber-400"><GavelIcon className="h-5 w-5" /></span>
           <h1 className="text-base font-bold text-white">Betting Grounds</h1>
         </div>
-        <span className="ml-auto flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-300 ring-1 ring-amber-700/40">
+        <span className="ml-auto flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-700 dark:text-amber-300 ring-1 ring-amber-700/40">
           <GavelIcon className="h-4 w-4" />
           {gavels == null ? "…" : money(gavels)} <span className="font-medium text-amber-500/70">Gavels</span>
         </span>
@@ -115,11 +115,11 @@ export default function BetsPage() {
                 const pnl = p.value - p.cost;
                 return (
                   <button key={i} onClick={() => router.push(`/room/${p.roomName}`)}
-                    className="flex w-full items-center gap-3 rounded-xl bg-gray-900 ring-1 ring-gray-800 px-4 py-3 text-left hover:ring-gray-700 transition-colors">
-                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${p.side === "A" ? "bg-emerald-900/40 text-emerald-300" : "bg-rose-900/40 text-rose-300"}`}>{p.label}</span>
+                    className="flex w-full items-center gap-3 rounded-xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 px-4 py-3 text-left hover:ring-gray-300 dark:hover:ring-gray-700 transition-colors">
+                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${p.side === "A" ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" : "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300"}`}>{p.label}</span>
                     <span className="text-xs text-gray-500">{p.shares.toFixed(0)} shares</span>
-                    <span className="ml-auto text-sm font-semibold text-gray-200">{money(p.value)}</span>
-                    <span className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span>
+                    <span className="ml-auto text-sm font-semibold text-gray-800 dark:text-gray-200">{money(p.value)}</span>
+                    <span className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span>
                   </button>
                 );
               })}
@@ -137,11 +137,11 @@ export default function BetsPage() {
             Live markets
           </h2>
           {loading ? (
-            <p className="py-16 text-center text-sm text-gray-600">Loading…</p>
+            <p className="py-16 text-center text-sm text-gray-500 dark:text-gray-600">Loading…</p>
           ) : markets.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-800 py-16 text-center">
-              <p className="text-sm font-medium text-gray-400">No live matches to bet on right now</p>
-              <p className="mt-1 text-xs text-gray-600">When players start ranked 1v1 or team debates, their odds open here.</p>
+            <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 py-16 text-center">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No live matches to bet on right now</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">When players start ranked 1v1 or team debates, their odds open here.</p>
               <button onClick={() => router.push("/compete")} className="mt-4 rounded-xl bg-violet-600 px-5 py-2 text-xs font-semibold text-white hover:bg-violet-500">
                 Go to Battle Grounds
               </button>
@@ -149,18 +149,18 @@ export default function BetsPage() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {markets.map((m) => (
-                <div key={m.roomName} className="flex flex-col gap-3 rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-4">
+                <div key={m.roomName} className="flex flex-col gap-3 rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-4">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-violet-950/50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300 ring-1 ring-violet-800/50">{m.matchType === "team" ? "Team" : "1v1"}</span>
+                    <span className="rounded-full bg-violet-100 dark:bg-violet-950/50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300 ring-1 ring-violet-800/50">{m.matchType === "team" ? "Team" : "1v1"}</span>
                   </div>
-                  <p className="text-sm font-medium leading-snug text-gray-100 line-clamp-2">&ldquo;{m.topic || "Live debate"}&rdquo;</p>
+                  <p className="text-sm font-medium leading-snug text-gray-900 dark:text-gray-100 line-clamp-2">&ldquo;{m.topic || "Live debate"}&rdquo;</p>
                   <OddsBar a={m.priceA} b={m.priceB} />
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-emerald-300">{m.labelA} · {pct(m.priceA)}</span>
-                    <span className="font-semibold text-rose-300">{pct(m.priceB)} · {m.labelB}</span>
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-300">{m.labelA} · {pct(m.priceA)}</span>
+                    <span className="font-semibold text-rose-700 dark:text-rose-300">{pct(m.priceB)} · {m.labelB}</span>
                   </div>
                   <div className="flex items-center gap-3 text-[10px] text-gray-500">
-                    <span className="flex items-center gap-1 text-amber-400/90"><GavelIcon className="h-3 w-3" /> {money(m.volume)} staked</span>
+                    <span className="flex items-center gap-1 text-amber-600/90 dark:text-amber-400/90"><GavelIcon className="h-3 w-3" /> {money(m.volume)} staked</span>
                     <span>{m.bettors} {m.bettors === 1 ? "bettor" : "bettors"}</span>
                   </div>
                   <div className="flex gap-1.5">
@@ -169,7 +169,7 @@ export default function BetsPage() {
                       <GavelIcon className="h-3.5 w-3.5" /> Bet
                     </button>
                     <button onClick={() => router.push(`/room/${m.roomName}?spectate=1`)}
-                      className="shrink-0 rounded-xl bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700">
+                      className="shrink-0 rounded-xl bg-gray-100 dark:bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
                     </button>
                   </div>
@@ -183,9 +183,9 @@ export default function BetsPage() {
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Past bets</h2>
           {settledPositions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-800 py-10 text-center">
-              <p className="text-sm font-medium text-gray-400">No settled bets yet</p>
-              <p className="mt-1 text-xs text-gray-600">Once a match you bet on ends, its result shows up here.</p>
+            <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-800 py-10 text-center">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No settled bets yet</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">Once a match you bet on ends, its result shows up here.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -193,12 +193,12 @@ export default function BetsPage() {
                 const pnl = p.value - p.cost;
                 return (
                   <button key={i} onClick={() => router.push(`/room/${p.roomName}`)}
-                    className="flex w-full items-center gap-3 rounded-xl bg-gray-900 ring-1 ring-gray-800 px-4 py-3 text-left hover:ring-gray-700 transition-colors">
-                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${p.side === "A" ? "bg-emerald-900/40 text-emerald-300" : "bg-rose-900/40 text-rose-300"}`}>{p.label}</span>
-                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${p.won ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400"}`}>{p.won ? "Won" : "Lost"}</span>
+                    className="flex w-full items-center gap-3 rounded-xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 px-4 py-3 text-left hover:ring-gray-300 dark:hover:ring-gray-700 transition-colors">
+                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${p.side === "A" ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" : "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300"}`}>{p.label}</span>
+                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${p.won ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"}`}>{p.won ? "Won" : "Lost"}</span>
                     <span className="text-xs text-gray-500">staked {money(p.cost)}</span>
-                    <span className="ml-auto text-sm font-semibold text-gray-200">{money(p.value)}</span>
-                    <span className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span>
+                    <span className="ml-auto text-sm font-semibold text-gray-800 dark:text-gray-200">{money(p.value)}</span>
+                    <span className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span>
                   </button>
                 );
               })}

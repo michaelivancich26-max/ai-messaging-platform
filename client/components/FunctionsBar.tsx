@@ -73,10 +73,10 @@ export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }:
   ];
 
   return (
-    <div className="relative flex items-center gap-2 border-t border-gray-800 bg-gray-950 px-4 py-2" ref={ref}>
+    <div className="relative flex items-center gap-2 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 px-4 py-2" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-full border border-gray-700 bg-gray-900 px-4 py-1.5 text-xs font-medium text-gray-300 hover:border-gray-600 hover:text-gray-100 transition-colors"
+        className="flex items-center gap-1.5 rounded-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
           <path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z" />
@@ -89,13 +89,13 @@ export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }:
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-4 mb-2 w-48 rounded-xl border border-gray-800 bg-gray-900 py-1 shadow-xl">
+        <div className="absolute bottom-full left-4 mb-2 w-48 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 py-1 shadow-xl">
           {functions.map((fn) => (
             <button
               key={fn.label}
               onClick={fn.onClick}
               disabled={fn.loading}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-gray-100 disabled:opacity-40 transition-colors"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-40 transition-colors"
             >
               <span className="text-gray-500">{fn.icon}</span>
               {fn.label}
@@ -104,7 +104,7 @@ export default function FunctionsBar({ onSummarize, summarizing, onVibeSearch }:
         </div>
       )}
       {copied && (
-        <span className="rounded-full bg-gray-800 px-3 py-1 text-xs text-green-400 ring-1 ring-green-500/30">
+        <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-3 py-1 text-xs text-green-600 dark:text-green-400 ring-1 ring-green-500/30">
           Link copied!
         </span>
       )}

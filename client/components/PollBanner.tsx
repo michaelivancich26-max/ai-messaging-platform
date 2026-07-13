@@ -28,21 +28,21 @@ export default function PollBanner({ suggestion, onDismiss, onConfirm }: Props) 
   const canCreate = question.trim() && options.filter(o => o.trim()).length >= 2;
 
   return (
-    <div className="mx-4 my-2 rounded-xl border border-indigo-500/30 bg-indigo-950/40 p-3">
+    <div className="mx-4 my-2 rounded-xl border border-indigo-500/30 bg-indigo-100 dark:bg-indigo-950/40 p-3">
       <div className="flex items-start gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-          className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400">
+          className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400">
           <path d="M13 4.5a2.5 2.5 0 1 1 .702 1.737L6.97 9.604a2.518 2.518 0 0 1 0 .792l6.733 3.367a2.5 2.5 0 1 1-.671 1.341l-6.733-3.367a2.5 2.5 0 1 1 0-3.474l6.733-3.367A2.52 2.52 0 0 1 13 4.5Z" />
         </svg>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-indigo-300 font-medium">AI suggests a poll</p>
+          <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium">AI suggests a poll</p>
           {!expanded && (
-            <p className="mt-0.5 text-sm text-gray-200 truncate">{suggestion.question}</p>
+            <p className="mt-0.5 text-sm text-gray-800 dark:text-gray-200 truncate">{suggestion.question}</p>
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={() => setExpanded(v => !v)}
-            className="rounded px-2 py-1 text-xs text-indigo-400 hover:bg-indigo-500/10 transition-colors">
+            className="rounded px-2 py-1 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 transition-colors">
             {expanded ? "Collapse" : "Edit"}
           </button>
           <button
@@ -51,7 +51,7 @@ export default function PollBanner({ suggestion, onDismiss, onConfirm }: Props) 
             className="rounded px-2 py-1 text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors">
             Create poll
           </button>
-          <button onClick={onDismiss} className="ml-1 text-gray-600 hover:text-gray-400 transition-colors">
+          <button onClick={onDismiss} className="ml-1 text-gray-500 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
               <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
             </svg>
@@ -63,16 +63,16 @@ export default function PollBanner({ suggestion, onDismiss, onConfirm }: Props) 
         <div className="mt-3 space-y-2">
           <input value={question} onChange={e => setQuestion(e.target.value)}
             maxLength={200} placeholder="Poll question"
-            className="w-full rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+            className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
           <div className="space-y-1.5">
             {options.map((opt, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 <input value={opt} onChange={e => updateOption(i, e.target.value)}
                   maxLength={100} placeholder={`Option ${i + 1}`}
-                  className="flex-1 rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />
+                  className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
                 {options.length > 2 && (
                   <button onClick={() => removeOption(i)}
-                    className="text-gray-600 hover:text-red-400 transition-colors">
+                    className="text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                       <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
                     </svg>
@@ -83,7 +83,7 @@ export default function PollBanner({ suggestion, onDismiss, onConfirm }: Props) 
           </div>
           {options.length < 4 && (
             <button onClick={addOption}
-              className="text-xs text-gray-500 hover:text-indigo-400 transition-colors">
+              className="text-xs text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
               + Add option
             </button>
           )}
