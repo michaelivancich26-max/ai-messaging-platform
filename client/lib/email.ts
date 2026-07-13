@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 
-const APP_NAME = "Veritas";
+const APP_NAME = "Grounds for Debate";
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY);

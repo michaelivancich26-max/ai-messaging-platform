@@ -369,7 +369,7 @@ export default function CompetePage() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 text-violet-400">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
-          <h1 className="text-base font-bold text-white">Challenge Board</h1>
+          <h1 className="text-base font-bold text-white">Battle Grounds</h1>
         </div>
         <EloBadge elo={myElo} className="ml-1" />
         <div className="ml-auto">

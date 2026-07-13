@@ -1,6 +1,6 @@
 {
-  "name": "Veritas",
-  "short_name": "Veritas",
+  "name": "Grounds for Debate",
+  "short_name": "Grounds",
   "description": "AI fact-checked debate platform",
   "start_url": "/home",
   "display": "standalone",

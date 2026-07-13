@@ -287,7 +287,7 @@ export default function RoomPanel({
               <div className="flex items-center justify-between rounded-lg bg-gray-800/60 px-3 py-2">
                 <div>
                   <p className="text-sm text-gray-200">Opinionated chat</p>
-                  <p className="text-[10px] text-gray-500">Subjective discussion — no Veritas impact</p>
+                  <p className="text-[10px] text-gray-500">Subjective discussion — no Grounds impact</p>
                 </div>
                 <button type="button" onClick={() => setEditOpinionated(v => !v)}
                   className={`relative h-5 w-9 rounded-full transition-colors ${editOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>

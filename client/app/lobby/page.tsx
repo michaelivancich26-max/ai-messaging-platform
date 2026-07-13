@@ -292,7 +292,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
           <div className="flex items-center justify-between rounded-xl bg-amber-950/30 border border-amber-900/40 px-4 py-3">
             <div>
               <p className="text-sm font-medium text-gray-200">Opinionated chat</p>
-              <p className="text-xs text-gray-500">Subjective discussion — no Veritas score impact</p>
+              <p className="text-xs text-gray-500">Subjective discussion — no Grounds Score impact</p>
             </div>
             <button type="button" onClick={() => setIsOpinionated(v => !v)}
               className={`relative h-6 w-11 rounded-full transition-colors ${isOpinionated ? "bg-amber-500" : "bg-gray-700"}`}>
@@ -464,7 +464,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
             <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
           </svg>
         </button>
-        <h1 className="text-sm font-semibold text-gray-100">Debate Board</h1>
+        <h1 className="text-sm font-semibold text-gray-100">Common Grounds</h1>
         <div className="ml-auto flex items-center gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search debates…"
             className="w-32 sm:w-52 rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-100 placeholder-gray-600 outline-none ring-1 ring-gray-700 focus:ring-indigo-500" />

@@ -55,7 +55,7 @@ function VeritasSummary({ cred, arenaBonus }: { cred: CredScore; arenaBonus: num
   const rated = cred.total >= 3 || arenaBonus !== 0;
   return (
     <div className="rounded-2xl bg-gray-900 ring-1 ring-gray-800 p-5 space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Veritas Score</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Grounds Score</p>
       <div className="flex items-end gap-3">
         <span className="text-4xl font-bold tabular-nums text-gray-100">{rated ? displayScore.toFixed(1) : "—"}</span>
         {accuracy !== null && cred.total >= 3 && <span className="mb-1 text-sm text-gray-500">{accuracy}% accuracy</span>}
@@ -155,8 +155,8 @@ export default function PublicProfilePage() {
                 {/* Stats */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <StatCard value={data.stats.debateCount} label="Debates joined" />
-                  <StatCard value={data.stats.arenaMatchCount} label="Arena matches" />
-                  <StatCard value={`${data.stats.arenaWins}W ${data.stats.arenaLosses}L`} label="Arena record" />
+                  <StatCard value={data.stats.arenaMatchCount} label="Bot matches" />
+                  <StatCard value={`${data.stats.arenaWins}W ${data.stats.arenaLosses}L`} label="Bot record" />
                   <StatCard value={`${data.stats.dailyStreak}🔥`} label="Day streak" sub={data.stats.longestStreak ? `best ${data.stats.longestStreak}` : undefined} />
                 </div>
 

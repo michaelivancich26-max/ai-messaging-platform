@@ -14,19 +14,19 @@ const NAV: { href: string; label: string; Icon: (p: IconProps) => ReactNode }[] 
   { href: "/home", label: "Home", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" /></svg>
   ) },
-  { href: "/lobby", label: "Debates", Icon: ({ className }) => (
+  { href: "/lobby", label: "Common Grounds", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path fillRule="evenodd" d="M10 3c-4.31 0-8 2.69-8 6 0 1.56.83 2.98 2.17 4.04L3 17l3.86-1.6c.98.38 2.05.6 3.14.6 4.31 0 8-2.69 8-6s-3.69-6-8-6Z" clipRule="evenodd" /></svg>
   ) },
-  { href: "/compete", label: "Compete", Icon: ({ className }) => (
+  { href: "/compete", label: "Battle Grounds", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h4.017l-1.75 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 14.25 8h-4.017l1.75-6.093Z" /></svg>
   ) },
-  { href: "/arena", label: "Arena", Icon: ({ className }) => (
+  { href: "/arena", label: "Training Grounds", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M15.5 3H14V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v1H4.5A1.5 1.5 0 0 0 3 4.5v1A2.5 2.5 0 0 0 5.5 8h.28A4.01 4.01 0 0 0 9 10.9V13H7a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.1A4.01 4.01 0 0 0 14.22 8h.28A2.5 2.5 0 0 0 17 5.5v-1A1.5 1.5 0 0 0 15.5 3ZM5.5 6.5A.5.5 0 0 1 5 6V5h1v1.5h-.5Zm10 0H15V5h1v1a.5.5 0 0 1-.5.5ZM6 16h8a1 1 0 0 1 1 1H5a1 1 0 0 1 1-1Z" /></svg>
   ) },
   { href: "/learn", label: "Learn", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a.999.999 0 0 1 .356-.257l4-1.714a1 1 0 1 1 .788 1.838L7.667 9.088l1.94.831a1 1 0 0 0 .787 0l7-3a1 1 0 0 0 0-1.838l-7-3ZM3.31 9.397 5 10.12v4.102a8.969 8.969 0 0 0-1.05-.174 1 1 0 0 1-.89-.89 11.115 11.115 0 0 1 .25-3.762ZM9.3 16.573A9.026 9.026 0 0 0 7 14.935v-3.957l1.818.78a3 3 0 0 0 2.364 0l5.508-2.361a11.026 11.026 0 0 1 .25 3.762 1 1 0 0 1-.89.89 8.968 8.968 0 0 0-5.75 2.524 1 1 0 0 1-1.4 0ZM6 18a1 1 0 0 0 1-1v-2.065a8.935 8.935 0 0 0-2-.712V17a1 1 0 0 0 1 1Z" /></svg>
   ) },
-  { href: "/bets", label: "Bets", Icon: ({ className }) => (
+  { href: "/bets", label: "Betting Grounds", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-11.75a.75.75 0 0 0-1.5 0v.316a3 3 0 0 0-.727.198c-.782.33-1.523 1.008-1.523 2.036 0 .953.626 1.573 1.28 1.933.585.323 1.322.501 1.906.644l.048.012c.657.164 1.08.281 1.351.431.213.118.24.209.24.284 0 .073-.026.16-.24.28-.212.12-.573.222-1.135.222-.669 0-1.09-.219-1.32-.462a.75.75 0 0 0-1.088 1.031A3.11 3.11 0 0 0 9.25 13.4v.348a.75.75 0 0 0 1.5 0v-.316a3 3 0 0 0 .727-.198c.782-.33 1.523-1.008 1.523-2.036 0-.953-.626-1.573-1.28-1.933-.585-.323-1.322-.501-1.906-.644l-.048-.012c-.657-.164-1.08-.281-1.351-.431-.213-.118-.24-.209-.24-.284 0-.073.026-.16.24-.28.212-.12.573-.222 1.135-.222.669 0 1.09.219 1.32.462a.75.75 0 0 0 1.088-1.031A3.11 3.11 0 0 0 10.75 6.6v-.35Z" clipRule="evenodd" /></svg>
   ) },
 ];
@@ -60,7 +60,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <aside className="hidden md:flex md:flex-col w-52 shrink-0 border-r border-gray-800 bg-gray-900 pt-safe">
         <div className="flex items-center gap-2 px-4 h-14 border-b border-gray-800">
           <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-indigo-400"><path d="M10 1.5 3 4v5c0 4 3 7.5 7 9.5 4-2 7-5.5 7-9.5V4l-7-2.5Z" /></svg>
-          <span className="text-sm font-bold tracking-tight text-gray-100">Veritas</span>
+          <span className="text-sm font-bold tracking-tight text-gray-100">Grounds</span>
           <div className="ml-auto">{userId && <NotificationBell userId={userId} username={username} />}</div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
@@ -99,7 +99,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <div className="flex flex-1 flex-col min-w-0">
         {/* Mobile top bar */}
         <div className="md:hidden flex items-center gap-3 h-12 shrink-0 border-b border-gray-800 bg-gray-900 px-4 pt-safe">
-          <span className="text-sm font-bold tracking-tight text-gray-100">Veritas</span>
+          <span className="text-sm font-bold tracking-tight text-gray-100">Grounds</span>
           <div className="ml-auto flex items-center gap-2">
             <GavelsPill compact />
             {userId && <NotificationBell userId={userId} username={username} />}

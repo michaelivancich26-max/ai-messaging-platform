@@ -125,7 +125,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
         {!collapsed && (
           <button onClick={() => router.push("/home")}
             className="flex-1 truncate text-sm font-semibold text-gray-100 hover:text-indigo-400 transition-colors text-left">
-            Veritas
+            Grounds
           </button>
         )}
         {userId && (
@@ -165,7 +165,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                   className={`h-3 w-3 transition-transform ${roomsOpen ? "rotate-90" : ""}`}>
                   <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                 </svg>
-                Debates
+                Common Grounds
               </button>
               <button onClick={() => onBrowseClick ? onBrowseClick() : router.push("/lobby")}
                 className="ml-auto rounded p-0.5 text-gray-600 hover:text-indigo-400 transition-colors" title="Browse rooms">

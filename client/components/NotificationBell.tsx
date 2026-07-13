@@ -23,7 +23,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
 
   // Update browser tab title with unread count
   useEffect(() => {
-    document.title = unread > 0 ? `(${unread}) Veritas` : "Veritas";
+    document.title = unread > 0 ? `(${unread}) Grounds for Debate` : "Grounds for Debate";
   }, [unread]);
 
   // Fetch on mount
@@ -195,7 +195,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                       {" invited you to their debate team"}
                     </p>
                     {n.content && <p className="mt-0.5 truncate text-[11px] text-gray-500">"{n.content}"</p>}
-                    <p className="mt-1 text-[11px] font-semibold text-violet-400">Open Compete → Team Matches →</p>
+                    <p className="mt-1 text-[11px] font-semibold text-violet-400">Open Battle Grounds → Team Matches →</p>
                   </div>
                 </div>
               </div>

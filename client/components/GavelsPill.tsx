@@ -40,7 +40,7 @@ export default function GavelsPill({ compact = false }: { compact?: boolean }) {
   return (
     <button
       onClick={() => router.push("/bets")}
-      title="Betting hub"
+      title="Betting Grounds"
       className={`flex items-center gap-1.5 rounded-full bg-amber-500/10 font-semibold text-amber-300 ring-1 ring-amber-700/40 transition-colors hover:bg-amber-500/20 ${compact ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`}
     >
       <GavelIcon />

@@ -97,7 +97,7 @@ export default function BetsPage() {
         </button>
         <div className="flex items-center gap-2">
           <span className="text-amber-400"><GavelIcon className="h-5 w-5" /></span>
-          <h1 className="text-base font-bold text-white">Betting</h1>
+          <h1 className="text-base font-bold text-white">Betting Grounds</h1>
         </div>
         <span className="ml-auto flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-sm font-bold text-amber-300 ring-1 ring-amber-700/40">
           <GavelIcon className="h-4 w-4" />
@@ -143,7 +143,7 @@ export default function BetsPage() {
               <p className="text-sm font-medium text-gray-400">No live matches to bet on right now</p>
               <p className="mt-1 text-xs text-gray-600">When players start ranked 1v1 or team debates, their odds open here.</p>
               <button onClick={() => router.push("/compete")} className="mt-4 rounded-xl bg-violet-600 px-5 py-2 text-xs font-semibold text-white hover:bg-violet-500">
-                Go to Compete
+                Go to Battle Grounds
               </button>
             </div>
           ) : (

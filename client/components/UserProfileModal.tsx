@@ -32,7 +32,7 @@ function ScoreBar({ cred }: { cred: CredScore }) {
   return (
     <div className="rounded-xl bg-gray-800/60 ring-1 ring-gray-700/40 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Veritas Score</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Grounds Score</p>
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${tier.bg} ${tier.color} ${tier.ring}`}>
           {tier.label}
         </span>

@@ -106,13 +106,13 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "veritas", group: "Veritas Score", icon: "⭐", unit: "pts",
+    groupId: "veritas", group: "Grounds Score", icon: "⭐", unit: "pts",
     metric: (s) => Math.round(s.veritasScore),
     tiers: [
-      { tier: "bronze",   name: "Rated",       description: "Reach a Veritas score of 10",  target: 10 },
-      { tier: "silver",   name: "Credible",    description: "Reach a Veritas score of 25",  target: 25 },
-      { tier: "gold",     name: "Authority",   description: "Reach a Veritas score of 50",  target: 50 },
-      { tier: "platinum", name: "Oracle",      description: "Reach a Veritas score of 100", target: 100 },
+      { tier: "bronze",   name: "Rated",       description: "Reach a Grounds score of 10",  target: 10 },
+      { tier: "silver",   name: "Credible",    description: "Reach a Grounds score of 25",  target: 25 },
+      { tier: "gold",     name: "Authority",   description: "Reach a Grounds score of 50",  target: 50 },
+      { tier: "platinum", name: "Oracle",      description: "Reach a Grounds score of 100", target: 100 },
     ],
   },
   {
@@ -203,9 +203,9 @@ const GROUPS: GroupDef[] = [
     groupId: "veteran", group: "Veteran", icon: "🎖️", unit: "days",
     metric: (s) => s.accountAgeDays,
     tiers: [
-      { tier: "bronze",   name: "Settled In",  description: "30 days on Veritas",  target: 30 },
-      { tier: "silver",   name: "Established", description: "180 days on Veritas", target: 180 },
-      { tier: "gold",     name: "Veteran",     description: "1 year on Veritas",   target: 365 },
+      { tier: "bronze",   name: "Settled In",  description: "30 days on Grounds for Debate",  target: 30 },
+      { tier: "silver",   name: "Established", description: "180 days on Grounds for Debate", target: 180 },
+      { tier: "gold",     name: "Veteran",     description: "1 year on Grounds for Debate",   target: 365 },
     ],
   },
 ];

@@ -89,7 +89,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
             <span className="text-xs">Hub</span>
           </button>
           <div className="ml-auto flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Arena</span>
+            <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Training Grounds</span>
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-amber-500">
               <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
             </svg>

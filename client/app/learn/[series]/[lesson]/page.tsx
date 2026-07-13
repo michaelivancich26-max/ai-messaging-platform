@@ -240,7 +240,7 @@ export default function LessonPage() {
               onClick={() => router.push(`/arena?challenge=${lesson.practice!.botId}`)}
               className={`w-full rounded-xl border ${c.border} ${c.bg} py-3 text-sm font-semibold ${c.text} transition-colors hover:brightness-125`}
             >
-              Practice in Arena — {lesson.practice.cta}
+              Practice in Training Grounds — {lesson.practice.cta}
             </button>
           )}
 

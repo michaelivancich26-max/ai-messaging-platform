@@ -3,13 +3,13 @@ import "./globals.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "Veritas",
+  title: "Grounds for Debate",
   description: "AI fact-checked debate platform",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Veritas",
+    title: "Grounds for Debate",
   },
 };
 

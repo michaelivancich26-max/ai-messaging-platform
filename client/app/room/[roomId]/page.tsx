@@ -1052,7 +1052,7 @@ export default function RoomPage() {
           <button
             onClick={() => router.push("/lobby")}
             className="shrink-0 flex items-center gap-1 rounded-lg px-1.5 py-1 text-gray-500 hover:bg-gray-800 hover:text-gray-200 transition-colors"
-            title="Back to Debate Board"
+            title="Back to Common Grounds"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
               <path fillRule="evenodd" d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -1279,7 +1279,7 @@ export default function RoomPage() {
             <path fillRule="evenodd" d="M1 8.74c0 .983.713 1.825 1.69 1.943L3 10.698V13.5a.5.5 0 0 0 .724.447L8 11.82l4.276 2.127A.5.5 0 0 0 13 13.5v-2.802l.31-.016A2 2 0 0 0 15 8.74V5a3 3 0 0 0-3-3H4a3 3 0 0 0-3 3v3.74Z" clipRule="evenodd" />
           </svg>
           <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Opinionated chat</span>
-          <span className="text-[10px] text-amber-600">· messages don&apos;t affect your Veritas Score</span>
+          <span className="text-[10px] text-amber-600">· messages don&apos;t affect your Grounds Score</span>
         </div>
       )}
 
@@ -1349,7 +1349,7 @@ export default function RoomPage() {
             <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
           </svg>
           <div className="flex flex-1 items-center gap-2 min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Arena Match</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Training Grounds Match</span>
             <span className="text-[10px] text-amber-700">·</span>
             <span className="text-[10px] text-amber-600/80">{myTurnCount} / {winCondition.limit} exchanges</span>
             <div className="flex gap-0.5 ml-1">
@@ -1367,7 +1367,7 @@ export default function RoomPage() {
             <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
           </svg>
           <div className="flex flex-1 items-center gap-2 min-w-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Arena Match</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Training Grounds Match</span>
             <span className="text-[10px] text-indigo-700">·</span>
             {timeLeft !== null && (
               <span className={`text-[10px] font-mono font-bold ${timeLeft <= 30 ? "text-red-400" : "text-indigo-300"}`}>
@@ -1468,7 +1468,7 @@ export default function RoomPage() {
                     </div>
                     <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
                     <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
-                      Back to Compete
+                      Back to Battle Grounds
                     </button>
                   </div>
                 </div>
@@ -1510,7 +1510,7 @@ export default function RoomPage() {
                       </p>
                     </div>
                     <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
-                      Return to Compete
+                      Return to Battle Grounds
                     </button>
                   </div>
                 </div>
@@ -1555,7 +1555,7 @@ export default function RoomPage() {
                       </p>
                     </div>
                     <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
-                      Return to Challenge Board
+                      Return to Battle Grounds
                     </button>
                   </div>
                 </div>
@@ -1589,7 +1589,7 @@ export default function RoomPage() {
                   </div>
                   <p className="text-xs leading-relaxed text-gray-400 italic">"{matchResult.verdict}"</p>
                   <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-950/40 ring-emerald-900/40" : "bg-red-950/30 ring-red-900/30"}`}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Veritas Score Impact</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Grounds Score Impact</p>
                     <p className={`text-xl font-bold tabular-nums mt-0.5 ${won ? "text-emerald-400" : "text-red-400"}`}>
                       {matchResult.scoreImpact > 0 ? "+" : ""}{matchResult.scoreImpact.toFixed(1)}
                     </p>
@@ -1599,7 +1599,7 @@ export default function RoomPage() {
                       onClick={() => router.push("/arena")}
                       className="flex-1 rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 transition-colors"
                     >
-                      Return to Arena
+                      Return to Training Grounds
                     </button>
                   </div>
                 </div>
