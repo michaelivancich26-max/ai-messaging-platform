@@ -1,18 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import LiveMatches from "@/components/LiveMatches";
-import { GavelIcon } from "@/components/GavelsPill";
-
-const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
-const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-
-interface Position {
-  roomName: string; side: "A" | "B"; label: string;
-  shares: number; cost: number; value: number; status: "open" | "settled"; won: boolean | null;
-}
 
 const MODES: { href: string; label: string; blurb: string; accent: string; icon: React.ReactNode }[] = [
   { href: "/lobby", label: "Common Grounds", blurb: "Join live rooms", accent: "text-indigo-600 dark:text-indigo-400",
@@ -29,15 +19,6 @@ export default function HomePage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
-  const userId: string = (session?.user as any)?.id ?? "";
-  const [openBets, setOpenBets] = useState<Position[]>([]);
-
-  useEffect(() => {
-    if (!userId) return;
-    fetch(`${SERVER}/api/wallet?userId=${userId}`).then(r => r.json())
-      .then(d => setOpenBets((d?.positions ?? []).filter((p: Position) => p.status === "open")))
-      .catch(() => {});
-  }, [userId]);
 
   if (status === "loading") {
     return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
@@ -49,46 +30,10 @@ export default function HomePage() {
 
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Welcome back{username ? `, ${username}` : ""}</h1>
-          <p className="mt-0.5 text-sm text-gray-500">Watch live debates and back who you think wins.</p>
+          <p className="mt-0.5 text-sm text-gray-500">Pick a room, sharpen an argument, or watch a debate unfold.</p>
         </div>
 
-        {/* Live now — bet the board */}
-        <section>
-          <div className="mb-3 flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-            </span>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Live now</h2>
-            <span className="text-xs text-gray-500 dark:text-gray-600">— bet the board</span>
-          </div>
-          <LiveMatches variant="grid" />
-        </section>
-
-        {/* Your open bets */}
-        {openBets.length > 0 && (
-          <section>
-            <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-              <GavelIcon className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" /> Your open bets
-            </h2>
-            <div className="space-y-2">
-              {openBets.map((p, i) => {
-                const pnl = p.value - p.cost;
-                return (
-                  <button key={i} onClick={() => router.push(`/room/${p.roomName}?spectate=1`)}
-                    className="flex w-full items-center gap-3 rounded-xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 px-4 py-3 text-left hover:ring-gray-300 dark:hover:ring-gray-700 transition-colors">
-                    <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ${p.side === "A" ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" : "bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300"}`}>{p.label}</span>
-                    <span className="text-xs text-gray-500">{p.shares.toFixed(0)} shares</span>
-                    <span className="ml-auto text-sm font-semibold text-gray-800 dark:text-gray-200">{money(p.value)}</span>
-                    <span className={`text-xs font-semibold ${pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* Play */}
+        {/* Play — the primary action, so it leads */}
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Play</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -103,6 +48,19 @@ export default function HomePage() {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Live now */}
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            </span>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Live now</h2>
+            <span className="text-xs text-gray-500 dark:text-gray-600">— watch a debate in progress</span>
+          </div>
+          <LiveMatches variant="grid" />
         </section>
 
       </div>
