@@ -11,6 +11,7 @@ import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
+import { TOPIC_CATALOG, isCategoryId, pickTopic } from "./services/topics";
 import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -168,6 +169,46 @@ io.on("connection", (socket) => {
       sids.delete(socket.id);
       if (sids.size === 0) userSockets.delete(socketUser.id);
     }
+    // Don't pair people who closed the tab, and don't leave their opponent
+    // arguing with nobody. Both no-op if the user still has another socket.
+    if (!userSockets.has(socketUser.id)) {
+      leaveRapidQueue(socketUser.id).catch(() => {});
+      forfeitRapidMatchesFor(socketUser.id).catch(() => {});
+    }
+  });
+
+  socket.on("rapidQueueJoin", async (payload: { categoryId?: string | null }) => {
+    try {
+      const raw = payload?.categoryId ?? null;
+      const categoryId = raw && isCategoryId(raw) ? raw : null;   // unknown category => any
+      const pairing = await joinRapidQueue(socketUser.id, categoryId);
+      if (!pairing) {
+        socket.emit("rapidQueueWaiting", { categoryId });
+        return;
+      }
+      try {
+        await startRapidMatch(pairing);
+      } catch (e) {
+        console.error("[startRapidMatch]", e);
+        // Both players were already claimed out of the pool, so tell each of
+        // them it fell through — otherwise the one who was waiting just hangs.
+        for (const side of [pairing.a, pairing.b]) {
+          for (const sid of userSockets.get(side.userId) ?? []) {
+            io.to(sid).emit("rapidQueueLeft", {});
+            io.to(sid).emit("error", { message: "Could not start the round. Try again." });
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[rapidQueueJoin]", e);
+      socket.emit("error", { message: "Could not join the queue." });
+      leaveRapidQueue(socketUser.id).catch(() => {});
+    }
+  });
+
+  socket.on("rapidQueueLeave", async () => {
+    await leaveRapidQueue(socketUser.id);
+    socket.emit("rapidQueueLeft", {});
   });
 
   socket.on("joinRoom", async (payload: { roomId: string; roomName: string; password?: string }) => {
@@ -1624,36 +1665,37 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
 });
 
 // POST /api/competitive/complete — AI judge + ELO update (idempotent)
-app.post("/api/competitive/complete", async (req, res) => {
-  try {
-    const { roomName, forcedWinner } = req.body as { roomName: string; forcedWinner?: string };
-    if (!roomName) return res.status(400).json({ error: "roomName required" });
-
+// Judge a competitive match, settle ELO, and broadcast the result. Idempotent —
+// both clients race to call this, and a Rapid Fire forfeit calls it server-side,
+// so the second caller gets the stored result rather than a second judgement.
+// Returns null only when the room or match doesn't exist.
+async function completeCompetitiveMatch(roomName: string, forcedWinner?: string): Promise<any | null> {
+  {
     // Idempotent: return existing result
     const existing = await prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "CompetitiveMatch" WHERE "roomName" = $1 AND status = 'complete' LIMIT 1`, roomName,
     );
     if (existing.length > 0) {
       const m = existing[0];
-      return res.json({
+      return {
         winnerId: m.winnerId, verdict: m.verdict,
         challengerEloChange: (m.challengerEloAfter ?? m.challengerEloBefore) - m.challengerEloBefore,
         challengedEloChange: (m.challengedEloAfter ?? m.challengedEloBefore) - m.challengedEloBefore,
         challengerEloAfter: m.challengerEloAfter, challengedEloAfter: m.challengedEloAfter,
         challengerId: m.challengerId, challengedId: m.challengedId,
-      });
+      };
     }
 
     // Fetch match
     const matches = await prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "CompetitiveMatch" WHERE "roomName" = $1 LIMIT 1`, roomName,
     );
-    if (matches.length === 0) return res.status(404).json({ error: "Match not found" });
+    if (matches.length === 0) return null;
     const match = matches[0];
 
     // Fetch room messages for transcript
     const roomRows = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
-    if (!roomRows) return res.status(404).json({ error: "Room not found" });
+    if (!roomRows) return null;
 
     const messages = await prisma.message.findMany({
       where: { roomId: roomRows.id },
@@ -1666,33 +1708,54 @@ app.post("/api/competitive/complete", async (req, res) => {
       .map(m => `${m.user?.username ?? "User"}: ${m.content}`)
       .join("\n");
 
-    // AI judge
-    const Anthropic = (await import("@anthropic-ai/sdk")).default;
-    const anthropic = new Anthropic();
+    // The real proposition lives in Room.matchConfig — a raw column, so Prisma's
+    // select can't reach it. Falling back to the first message is a poor guess:
+    // it's whatever the opener happened to type.
+    let proposition = "";
+    try {
+      const cfgRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(
+        `SELECT "matchConfig" FROM "Room" WHERE name = $1`, roomName,
+      );
+      const cfg = cfgRows[0]?.matchConfig ? JSON.parse(cfgRows[0].matchConfig) : null;
+      if (typeof cfg?.topic === "string") proposition = cfg.topic;
+    } catch { /* fall back to the transcript below */ }
+    if (!proposition) proposition = transcript.split("\n")[0] ?? "";
+
     let winnerId = forcedWinner ?? match.challengerId;
     let verdict = "The debate was inconclusive.";
-    try {
-      const judgePrompt =
-        `You are an impartial debate judge. One debater (ID: ${match.challengerId}) argued ${match.challengerStance} the proposition: "${transcript.split("\n")[0]}". ` +
-        `The other (ID: ${match.challengedId}) argued ${match.challengedStance}. ` +
-        `Based on logic, evidence quality, and persuasion, decide who argued better. ` +
-        `Return ONLY valid JSON: {"winnerId":"${match.challengerId}" or "${match.challengedId}","verdict":"one concise sentence"}\n\nTranscript:\n${transcript}`;
-      const response = await anthropic.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 150,
-        messages: [{ role: "user", content: judgePrompt }],
-      });
-      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-      // Slice to the last "}" so trailing prose after the JSON object doesn't break the parse.
-      const jsonStart = raw.indexOf("{");
-      const jsonEnd = raw.lastIndexOf("}");
-      const parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw);
-      if (!forcedWinner && (parsed.winnerId === match.challengerId || parsed.winnerId === match.challengedId)) {
-        winnerId = parsed.winnerId;
+
+    if (forcedWinner) {
+      // A forced winner means a forfeit — the result is already settled, so
+      // don't ask the judge. It burns a call and returns a verdict that praises
+      // whichever side argued better, which reads as a contradiction next to a
+      // winner decided by someone walking out.
+      verdict = "Won by forfeit — the other debater left the debate.";
+    } else {
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const anthropic = new Anthropic();
+      try {
+        const judgePrompt =
+          `You are an impartial debate judge. One debater (ID: ${match.challengerId}) argued ${match.challengerStance} the proposition: "${proposition}". ` +
+          `The other (ID: ${match.challengedId}) argued ${match.challengedStance}. ` +
+          `Based on logic, evidence quality, and persuasion, decide who argued better. ` +
+          `Return ONLY valid JSON: {"winnerId":"${match.challengerId}" or "${match.challengedId}","verdict":"one concise sentence"}\n\nTranscript:\n${transcript}`;
+        const response = await anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 150,
+          messages: [{ role: "user", content: judgePrompt }],
+        });
+        const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+        // Slice to the last "}" so trailing prose after the JSON object doesn't break the parse.
+        const jsonStart = raw.indexOf("{");
+        const jsonEnd = raw.lastIndexOf("}");
+        const parsed = JSON.parse(jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw);
+        if (parsed.winnerId === match.challengerId || parsed.winnerId === match.challengedId) {
+          winnerId = parsed.winnerId;
+        }
+        if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
+      } catch (e) {
+        console.error("[competitive judge]", e);
       }
-      if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
-    } catch (e) {
-      console.error("[competitive judge]", e);
     }
 
     // Calculate ELO
@@ -1703,9 +1766,12 @@ app.post("/api/competitive/complete", async (req, res) => {
       challengerWon,
     );
 
-    // Update ELO in User table
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET elo = $1 WHERE id = $2`, challengerEloAfter, match.challengerId);
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET elo = $1 WHERE id = $2`, challengedEloAfter, match.challengedId);
+    // Rapid Fire settles on its own ladder — short rounds against strangers
+    // shouldn't move the Battle Grounds rating. Column name is derived from a
+    // boolean, so it's safe to interpolate.
+    const eloCol = match.isRapid ? "rapidElo" : "elo";
+    await prisma.$executeRawUnsafe(`UPDATE "User" SET "${eloCol}" = $1 WHERE id = $2`, challengerEloAfter, match.challengerId);
+    await prisma.$executeRawUnsafe(`UPDATE "User" SET "${eloCol}" = $1 WHERE id = $2`, challengedEloAfter, match.challengedId);
 
     // Mark match complete
     await prisma.$executeRawUnsafe(
@@ -1733,6 +1799,16 @@ app.post("/api/competitive/complete", async (req, res) => {
       if (uid) bumpDailyStreak(uid).catch(() => {});
     }
 
+    return payload;
+  }
+}
+
+app.post("/api/competitive/complete", async (req, res) => {
+  try {
+    const { roomName, forcedWinner } = req.body as { roomName: string; forcedWinner?: string };
+    if (!roomName) return res.status(400).json({ error: "roomName required" });
+    const payload = await completeCompetitiveMatch(roomName, forcedWinner);
+    if (!payload) return res.status(404).json({ error: "Match not found" });
     res.json(payload);
   } catch (e) {
     console.error("[competitive complete]", e);
@@ -1751,6 +1827,189 @@ app.get("/api/competitive/match/:roomName", async (req, res) => {
   } catch {
     res.status(500).json({ error: "Server error" });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Rapid Fire — queued 1v1 against whoever's waiting
+//
+// Join the pool with a category (or nothing, meaning any). The pairing routine
+// takes the longest-waiting compatible opponent, picks a topic from the agreed
+// category, and deals opposing stances — you can't take a side on a topic you
+// haven't seen yet, so the server assigns them.
+//
+// The round is a normal comp- room: same client rendering, same judge, same
+// proposition bar. It differs in three ways — the topic and stances are dealt
+// rather than chosen, it ends after a fixed few exchanges, and it settles on a
+// separate ELO ladder.
+// ═══════════════════════════════════════════════════════════════════════════
+const RAPID_EXCHANGES = 3;                 // messages per side before the judge is called
+const RAPID_LOCK_KEY = 8123407;            // advisory lock id — serialises pairing
+
+interface RapidPairing {
+  roomName: string;
+  topic: string;
+  categoryId: string;
+  a: { userId: string; stance: string };
+  b: { userId: string; stance: string };
+}
+
+// Add the user to the pool and pair them if anyone compatible is waiting.
+//
+// The whole thing runs under a transaction-scoped advisory lock. Without it two
+// simultaneous joiners can each insert, each fail to see the other's uncommitted
+// row, and both sit waiting with nobody left to pair them. Pairing is rare
+// enough that serialising it costs nothing.
+async function joinRapidQueue(userId: string, categoryId: string | null): Promise<RapidPairing | null> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${RAPID_LOCK_KEY})`);
+
+    await tx.$executeRawUnsafe(
+      `INSERT INTO "DebateQueue" ("userId","categoryId") VALUES ($1,$2)
+       ON CONFLICT ("userId") DO UPDATE SET "categoryId" = $2, "joinedAt" = NOW()`,
+      userId, categoryId,
+    );
+
+    // Compatible = same category, or either side said "any".
+    const rows = await tx.$queryRawUnsafe<{ userId: string; categoryId: string | null }[]>(
+      `SELECT "userId", "categoryId" FROM "DebateQueue"
+       WHERE "userId" <> $1
+         AND ($2::text IS NULL OR "categoryId" IS NULL OR "categoryId" = $2::text)
+       ORDER BY "joinedAt" ASC LIMIT 1`,
+      userId, categoryId,
+    );
+    if (!rows.length) return null;
+    const opponentId = rows[0].userId;
+
+    await tx.$executeRawUnsafe(`DELETE FROM "DebateQueue" WHERE "userId" = ANY($1::text[])`, [userId, opponentId]);
+
+    // Whoever named a category decides it; if both did they already agree.
+    const { categoryId: resolvedCat, topic } = pickTopic(categoryId ?? rows[0].categoryId ?? null);
+
+    // Deal sides at random so neither joining first nor waiting longer is an edge.
+    const joinerIsAffirmative = Math.random() < 0.5;
+    return {
+      roomName: `comp-q${Date.now().toString(36).slice(-5)}-${Math.random().toString(36).slice(2, 7)}`,
+      topic,
+      categoryId: resolvedCat,
+      a: { userId, stance: joinerIsAffirmative ? "affirmative" : "negative" },
+      b: { userId: opponentId, stance: joinerIsAffirmative ? "negative" : "affirmative" },
+    };
+  });
+}
+
+async function leaveRapidQueue(userId: string): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(`DELETE FROM "DebateQueue" WHERE "userId" = $1`, userId);
+  } catch (e) { console.error("[leaveRapidQueue]", e); }
+}
+
+// Build the room for a pairing and tell both players. Mirrors the challenge
+// accept path, minus the Challenge row — there was never a challenge.
+async function startRapidMatch(p: RapidPairing): Promise<void> {
+  const ids = [p.a.userId, p.b.userId];
+  const users = await prisma.$queryRawUnsafe<{ id: string; username: string; rapidElo: number }[]>(
+    `SELECT id, username, "rapidElo" FROM "User" WHERE id = ANY($1::text[])`, ids,
+  );
+  const nameOf = (id: string) => users.find((u) => u.id === id)?.username ?? "Debater";
+  const eloOf = (id: string) => Number(users.find((u) => u.id === id)?.rapidElo ?? 1200);
+
+  const matchConfig = JSON.stringify({
+    isCompetitive: true,
+    isRapid: true,
+    challengerId: p.a.userId,
+    challengedId: p.b.userId,
+    challengerStance: p.a.stance,
+    challengedStance: p.b.stance,
+    topic: p.topic,
+    categoryId: p.categoryId,
+    type: "exchanges",
+    limit: RAPID_EXCHANGES,
+  });
+
+  const room = await prisma.room.create({ data: { name: p.roomName, isPrivate: false, creatorId: p.a.userId } } as any);
+  await prisma.$executeRawUnsafe(`UPDATE "Room" SET "matchConfig" = $1 WHERE "id" = $2`, matchConfig, room.id);
+  await prisma.roomMember.createMany({ data: ids.map((userId) => ({ userId, roomId: room.id })) } as any);
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "CompetitiveMatch"
+       ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance","roomName","challengerEloBefore","challengedEloBefore","isRapid")
+     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,TRUE)`,
+    null, p.a.userId, p.b.userId, p.a.stance, p.b.stance, p.roomName, eloOf(p.a.userId), eloOf(p.b.userId),
+  );
+
+  try {
+    await createProposition({
+      roomName: p.roomName, matchType: "1v1",
+      sideA: [p.a.userId], sideB: [p.b.userId],
+      labelA: nameOf(p.a.userId), labelB: nameOf(p.b.userId),
+    });
+  } catch (e) { console.error("[proposition rapid]", e); }
+
+  for (const side of [p.a, p.b]) {
+    const opponent = side.userId === p.a.userId ? p.b : p.a;
+    for (const sid of userSockets.get(side.userId) ?? []) {
+      io.to(sid).emit("rapidMatchFound", {
+        roomName: p.roomName,
+        topic: p.topic,
+        stance: side.stance,
+        opponent: nameOf(opponent.userId),
+        exchanges: RAPID_EXCHANGES,
+      });
+    }
+  }
+}
+
+// End a rapid round when someone drops. Match completion is otherwise entirely
+// client-driven, so without this an abandoned round stays 'active' forever —
+// and in a queue of strangers, walking out is common rather than exceptional.
+async function forfeitRapidMatchesFor(userId: string): Promise<void> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ roomName: string; challengerId: string; challengedId: string }[]>(
+      `SELECT "roomName","challengerId","challengedId" FROM "CompetitiveMatch"
+       WHERE status = 'active' AND "isRapid" = TRUE AND ($1 IN ("challengerId","challengedId"))`,
+      userId,
+    );
+    // Still online elsewhere (another tab)? Not a walkout.
+    if ((userSockets.get(userId)?.size ?? 0) > 0) return;
+    for (const m of rows) {
+      const opponentId = m.challengerId === userId ? m.challengedId : m.challengerId;
+      io.to(m.roomName).emit("rapidOpponentLeft", { roomName: m.roomName });
+      await completeCompetitiveMatch(m.roomName, opponentId).catch(() => null);
+    }
+  } catch (e) { console.error("[forfeitRapidMatchesFor]", e); }
+}
+
+app.get("/api/topics", (_req, res) => {
+  res.json(TOPIC_CATALOG.map((c) => ({ id: c.id, label: c.label, count: c.topics.length })));
+});
+
+app.get("/api/rapid/queue-size", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ count: bigint }[]>(`SELECT COUNT(*) AS count FROM "DebateQueue"`);
+    res.json({ waiting: Number(rows[0]?.count ?? 0) });
+  } catch { res.json({ waiting: 0 }); }
+});
+
+app.get("/api/rapid/leaderboard", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT u.id, u.username, u."rapidElo" AS elo,
+              COALESCE(w.count, 0)::int AS wins,
+              COALESCE(l.count, 0)::int AS losses
+       FROM "User" u
+       JOIN (SELECT DISTINCT "challengerId" AS uid FROM "CompetitiveMatch" WHERE "isRapid" = TRUE AND status='complete'
+             UNION SELECT DISTINCT "challengedId" FROM "CompetitiveMatch" WHERE "isRapid" = TRUE AND status='complete') p ON p.uid = u.id
+       LEFT JOIN (SELECT "winnerId" AS uid, COUNT(*)::int AS count FROM "CompetitiveMatch"
+                  WHERE "isRapid" = TRUE AND status='complete' GROUP BY "winnerId") w ON w.uid = u.id
+       LEFT JOIN (SELECT uid, COUNT(*)::int AS count FROM (
+                    SELECT "challengerId" AS uid, "winnerId" FROM "CompetitiveMatch" WHERE "isRapid" = TRUE AND status='complete'
+                    UNION ALL
+                    SELECT "challengedId" AS uid, "winnerId" FROM "CompetitiveMatch" WHERE "isRapid" = TRUE AND status='complete'
+                  ) x WHERE "winnerId" IS DISTINCT FROM uid GROUP BY uid) l ON l.uid = u.id
+       ORDER BY u."rapidElo" DESC LIMIT 25`,
+    ).catch(() => [] as any[]);
+    res.json(rows.map((r) => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
+  } catch (e) { console.error("[rapid leaderboard]", e); res.status(500).json({ error: "Server error" }); }
 });
 
 // ─── Team competitive matches (pre-formed teams, 1v1–3v3) ─────────────────────
@@ -3926,6 +4185,9 @@ async function start() {
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "elo" INTEGER NOT NULL DEFAULT 1200`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "arenaElo" INTEGER NOT NULL DEFAULT 1200`);
+    // Rapid Fire has its own ladder so short, stranger-matched rounds can't move
+    // the Battle Grounds rating.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "rapidElo" INTEGER NOT NULL DEFAULT 1200`);
     console.log("[DB] User.elo column ready");
   } catch (e) {
     console.error("[DB] User.elo setup failed:", e);
@@ -3965,6 +4227,25 @@ async function start() {
     console.error("[DB] Challenge table setup failed:", e);
   }
 
+  // Rapid Fire waiting pool. One row per waiting user; rows are claimed by the
+  // pairing routine and deleted, so this table is empty at rest.
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "DebateQueue" (
+        "id"         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "userId"     TEXT NOT NULL UNIQUE,
+        "categoryId" TEXT,                                  -- null = any category
+        "joinedAt"   TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DebateQueue_joinedAt_idx" ON "DebateQueue"("joinedAt")`);
+    // Anyone left in the pool from a previous process is gone — sockets died with it.
+    await prisma.$executeRawUnsafe(`DELETE FROM "DebateQueue"`);
+    console.log("[DB] DebateQueue table ready");
+  } catch (e) {
+    console.error("[DB] DebateQueue table setup failed:", e);
+  }
+
   try {
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "CompetitiveMatch" (
@@ -3988,6 +4269,11 @@ async function start() {
     `);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CompetitiveMatch_challengerId_idx" ON "CompetitiveMatch"("challengerId")`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CompetitiveMatch_challengedId_idx" ON "CompetitiveMatch"("challengedId")`);
+    // Rapid Fire rounds are CompetitiveMatch rows too — they just settle on a
+    // separate ladder, so completion needs to tell them apart.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ADD COLUMN IF NOT EXISTS "isRapid" BOOLEAN NOT NULL DEFAULT FALSE`);
+    // A Rapid Fire round is paired from a queue, so it has no Challenge row.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ALTER COLUMN "challengeId" DROP NOT NULL`);
     console.log("[DB] CompetitiveMatch table ready");
   } catch (e) {
     console.error("[DB] CompetitiveMatch table setup failed:", e);
