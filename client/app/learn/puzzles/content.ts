@@ -375,24 +375,27 @@ export function getPuzzleById(id: string): Puzzle | undefined {
 
 export const DIFFICULTY_ORDER: Difficulty[] = ["easy", "medium", "hard"];
 
+// Each entry is a light-mode pair plus its dark-mode override. The original map
+// was dark-only (bg-*-950/40 text-*-400), which rendered as a pale wash with
+// near-invisible text once light became the default theme.
 export const CATEGORY_COLORS: Record<string, string> = {
-  "Ad Hominem":       "bg-red-950/40 text-red-400",
-  "Straw Man":        "bg-orange-950/40 text-orange-400",
-  "False Dichotomy":  "bg-yellow-950/40 text-yellow-400",
-  "Slippery Slope":   "bg-amber-950/40 text-amber-400",
-  "Appeal to Authority": "bg-blue-950/40 text-blue-400",
-  "Appeal to Popularity": "bg-sky-950/40 text-sky-400",
-  "Appeal to Tradition":  "bg-cyan-950/40 text-cyan-400",
-  "Appeal to Nature":  "bg-emerald-950/40 text-emerald-400",
-  "False Cause":      "bg-purple-950/40 text-purple-400",
-  "Circular Reasoning": "bg-violet-950/40 text-violet-400",
-  "Goalpost Moving":  "bg-pink-950/40 text-pink-400",
-  "No True Scotsman": "bg-rose-950/40 text-rose-400",
-  "Burden of Proof":  "bg-indigo-950/40 text-indigo-400",
-  "Motte and Bailey": "bg-teal-950/40 text-teal-400",
-  "Compound Fallacies": "bg-gray-800 text-gray-400",
-  "Loaded Framing":   "bg-lime-950/40 text-lime-400",
-  "Equivocation":     "bg-fuchsia-950/40 text-fuchsia-400",
-  "Unfalsifiability": "bg-red-950/40 text-red-400",
-  "Causal Reasoning": "bg-blue-950/40 text-blue-400",
+  "Ad Hominem":       "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+  "Straw Man":        "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400",
+  "False Dichotomy":  "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
+  "Slippery Slope":   "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+  "Appeal to Authority": "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
+  "Appeal to Popularity": "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400",
+  "Appeal to Tradition":  "bg-cyan-100 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-400",
+  "Appeal to Nature":  "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
+  "False Cause":      "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400",
+  "Circular Reasoning": "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400",
+  "Goalpost Moving":  "bg-pink-100 text-pink-700 dark:bg-pink-950/40 dark:text-pink-400",
+  "No True Scotsman": "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400",
+  "Burden of Proof":  "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400",
+  "Motte and Bailey": "bg-teal-100 text-teal-800 dark:bg-teal-950/40 dark:text-teal-400",
+  "Compound Fallacies": "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
+  "Loaded Framing":   "bg-lime-100 text-lime-800 dark:bg-lime-950/40 dark:text-lime-400",
+  "Equivocation":     "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-400",
+  "Unfalsifiability": "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+  "Causal Reasoning": "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
 };

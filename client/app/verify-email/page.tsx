@@ -92,7 +92,7 @@ function VerifyEmailContent() {
       <p className="text-sm text-gray-600 dark:text-gray-400">
         We sent a verification link to your email address. Click it to verify your account.
       </p>
-      <p className="text-xs text-gray-500 dark:text-gray-600">Didn't receive it?</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">Didn't receive it?</p>
       {resendDone ? (
         <p className="text-sm text-emerald-600 dark:text-emerald-400">Email resent — check your inbox.</p>
       ) : (

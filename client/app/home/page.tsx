@@ -88,12 +88,13 @@ export default function HomePage() {
     return LESSON_ORDER.find(l => !doneKeys.has(`${l.seriesSlug}/${l.lessonSlug}`)) ?? null;
   }, [lessonsDone]);
 
+  const rated = !!cred && cred.total >= 3;
   const lessonCount = lessonsDone?.length ?? 0;
   const lessonPct = TOTAL_LESSONS > 0 ? Math.round((lessonCount / TOTAL_LESSONS) * 100) : 0;
   const puzzlePct = PUZZLES.length > 0 ? Math.round((puzzlesDone.length / PUZZLES.length) * 100) : 0;
 
   if (status === "loading") {
-    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
+    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
   }
 
   return (
@@ -115,11 +116,13 @@ export default function HomePage() {
             </span>
           </StatChip>
 
-          <StatChip onClick={() => router.push("/dashboard")} title="Your Grounds Score, from how your claims hold up">
+          {/* Unrated below 3 scored claims — same rule the dashboard uses. Showing a
+              bare 0 reads as "you scored zero" rather than "not rated yet". */}
+          <StatChip onClick={() => router.push("/dashboard")} title={rated ? "Your Grounds Score, from how your claims hold up" : "Make at least 3 verified claims to earn a score"}>
             <span className="text-lg leading-none">⚖️</span>
             <span className="min-w-0">
-              <span className="block text-sm font-bold text-gray-900 dark:text-gray-100">{cred ? cred.score : "—"}</span>
-              <span className="block truncate text-[10px] text-gray-500">Grounds Score</span>
+              <span className="block text-sm font-bold text-gray-900 dark:text-gray-100">{rated ? cred!.score : "—"}</span>
+              <span className="block truncate text-[10px] text-gray-500">{rated ? "Grounds Score" : "Unrated"}</span>
             </span>
           </StatChip>
 
@@ -212,7 +215,7 @@ export default function HomePage() {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
             </span>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Live now</h2>
-            <span className="text-xs text-gray-500 dark:text-gray-600">— watch a debate in progress</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">— watch a debate in progress</span>
           </div>
           <LiveMatches variant="grid" />
         </section>

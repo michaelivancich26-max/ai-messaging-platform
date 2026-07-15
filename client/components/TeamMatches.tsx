@@ -95,7 +95,7 @@ function CreateTeamModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="flex w-full max-w-md flex-col rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800" style={{ maxHeight: "92vh" }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4 shrink-0">
-          <h2 className="flex-1 text-sm font-bold text-white">New Team Match</h2>
+          <h2 className="flex-1 text-sm font-bold text-gray-900 dark:text-white">New Team Match</h2>
           <div className="flex items-center gap-1">
             <div className={`h-1.5 w-4 rounded-full ${step === "topic" ? "bg-violet-500" : "bg-gray-200 dark:bg-gray-700"}`} />
             <div className={`h-1.5 w-4 rounded-full ${step === "config" ? "bg-violet-500" : "bg-gray-200 dark:bg-gray-700"}`} />
@@ -109,7 +109,7 @@ function CreateTeamModal({
               <input
                 autoFocus value={topic} onChange={e => setTopic(e.target.value)}
                 placeholder="Type your own topic, or pick one below…"
-                className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none focus:border-violet-500"
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:border-violet-500"
               />
             </div>
             <div className="px-5 pb-2 shrink-0">
@@ -178,7 +178,7 @@ function CreateTeamModal({
                     </button>
                   ))}
                 </div>
-                <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-600">
+                <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
                   {teamSize === 1 ? "Solo — no teammates to invite." : `Invite ${teamSize - 1} teammate${teamSize - 1 > 1 ? "s" : ""} after creating.`}
                 </p>
               </div>
@@ -282,7 +282,7 @@ function LobbyModal({
         </div>
         <div className="space-y-1.5">
           {slots.map((m, i) => (
-            <div key={i} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${m ? "bg-gray-100 dark:bg-gray-800" : "border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-600"}`}>
+            <div key={i} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${m ? "bg-gray-100 dark:bg-gray-800" : "border border-dashed border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400"}`}>
               {m ? (
                 <>
                   <span className={`h-1.5 w-1.5 rounded-full ${m.status === "accepted" ? "bg-emerald-500" : "bg-amber-500"}`} />
@@ -304,13 +304,13 @@ function LobbyModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4">
-          <h2 className="flex-1 text-sm font-bold text-white">Team Lobby</h2>
+          <h2 className="flex-1 text-sm font-bold text-gray-900 dark:text-white">Team Lobby</h2>
           {roster && <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:text-gray-400">{SIZE_LABEL[roster.teamSize]}</span>}
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
         </div>
 
         {!roster ? (
-          <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-600">Loading…</div>
+          <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">Loading…</div>
         ) : (
           <div className="space-y-4 p-5">
             <p className="text-sm font-medium leading-relaxed text-gray-900 dark:text-gray-100">"{roster.topic}"</p>
@@ -328,7 +328,7 @@ function LobbyModal({
                     value={inviteName} onChange={e => setInviteName(e.target.value)}
                     onKeyDown={e => { if (e.key === "Enter") invite(); }}
                     placeholder="Username…"
-                    className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none focus:border-violet-500"
+                    className="flex-1 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:border-violet-500"
                   />
                   <button onClick={invite} disabled={inviting || !inviteName.trim()}
                     className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-40">
@@ -469,7 +469,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
           {open.length === 0 ? (
             <div className="py-16 text-center">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No open team matches</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">Create one and invite your team, or check back soon.</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Create one and invite your team, or check back soon.</p>
             </div>
           ) : open.map(c => (
             <div key={c.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 p-5 hover:border-gray-300 dark:hover:border-gray-700">
@@ -493,7 +493,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
       {sub === "mine" && (
         <div className="space-y-3">
           {mine.length === 0 ? (
-            <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-600">You're not in any team matches yet.</div>
+            <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">You're not in any team matches yet.</div>
           ) : mine.map(m => (
             <div key={m.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 p-5">
               <div className="flex items-center gap-2">
@@ -505,7 +505,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
                 }`}>{m.status}</span>
                 <span className="rounded border border-violet-800 bg-violet-100 dark:bg-violet-950/40 px-1.5 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">{SIZE_LABEL[m.teamSize]}</span>
                 {m.myRole === "captain" && <span className="text-[9px] font-bold uppercase text-violet-600 dark:text-violet-400">Captain</span>}
-                <span className="ml-auto text-[10px] text-gray-500 dark:text-gray-600">Team {m.mySide}</span>
+                <span className="ml-auto text-[10px] text-gray-500 dark:text-gray-400">Team {m.mySide}</span>
               </div>
               <p className="text-sm font-medium leading-relaxed text-gray-900 dark:text-gray-100">"{m.claim}"</p>
               <div className="flex items-center gap-2">
@@ -536,7 +536,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
       {sub === "invites" && (
         <div className="space-y-3">
           {invites.length === 0 ? (
-            <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-600">No pending team invites.</div>
+            <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">No pending team invites.</div>
           ) : invites.map(inv => (
             <div key={inv.memberId} className="flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 p-5">
               <p className="text-xs text-gray-500"><span className="font-semibold text-gray-700 dark:text-gray-300">{inv.captainName}</span> invited you to Team {inv.side} for a {SIZE_LABEL[inv.teamSize]}:</p>

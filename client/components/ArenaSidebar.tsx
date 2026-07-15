@@ -99,7 +99,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         {/* Bot list */}
         <nav className="flex-1 overflow-y-auto py-2">
           <div className="px-3 pb-1 pt-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">Opponents</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Opponents</p>
           </div>
           {BOTS.map((bot) => {
             const c = BOT_COLORS[bot.color];
@@ -129,7 +129,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
             <>
               <div className="mx-3 my-2 border-t border-gray-200 dark:border-gray-800" />
               <div className="px-3 pb-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">Recent matches</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Recent matches</p>
               </div>
               {recentMatches.map((m) => {
                 const bot = BOTS.find(b => b.id === m.botId);

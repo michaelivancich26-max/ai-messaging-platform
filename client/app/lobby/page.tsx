@@ -51,7 +51,7 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
                       </svg>
                     </a>
                   ) : (
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-600">{t.source}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">{t.source}</span>
                   )}
                   <span className="rounded-full bg-amber-200 dark:bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">Official</span>
                 </div>
@@ -98,7 +98,7 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
             onChange={(e) => setPw(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && pw) onConfirm(pw); if (e.key === "Escape") onCancel(); }}
             placeholder="Enter password"
-            className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+            className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
           <button type="button" onClick={() => setShow(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
               {show ? <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" /> : <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06L3.28 2.22Z" clipRule="evenodd" />}
@@ -191,10 +191,10 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Proposition <span className="text-gray-500 dark:text-gray-600">(optional)</span></label>
+            <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Proposition <span className="text-gray-500 dark:text-gray-400">(optional)</span></label>
             <textarea autoFocus value={proposition} onChange={e => setProposition(e.target.value)} placeholder="e.g. AI will replace most jobs by 2035" maxLength={300} rows={2}
-              className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
-            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-600">The statement being debated. Participants take FOR or AGAINST positions.</p>
+              className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">The statement being debated. Participants take FOR or AGAINST positions.</p>
             {matchedRoom && !dismissedMatch && (
               <div className="mt-2 flex items-start gap-2.5 rounded-lg border border-amber-700/50 bg-amber-100 dark:bg-amber-950/30 px-3 py-2.5">
                 <svg viewBox="0 0 20 20" fill="currentColor" className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400">
@@ -224,14 +224,14 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
           {/* Custom stances */}
           <div className="rounded-xl border border-gray-300/60 dark:border-gray-700/60 bg-gray-100/40 dark:bg-gray-800/40 p-3">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Custom stances <span className="text-gray-500 dark:text-gray-600">(optional)</span></p>
+              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Custom stances <span className="text-gray-500 dark:text-gray-400">(optional)</span></p>
               {stances.length < 6 && (
                 <button type="button" onClick={() => setStances(prev => [...prev, ""])}
                   className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">+ Add stance</button>
               )}
             </div>
             {stances.length === 0 && (
-              <p className="text-[10px] text-gray-500 dark:text-gray-600">Leave empty for the default FOR / AGAINST.</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">Leave empty for the default FOR / AGAINST.</p>
             )}
             {stances.map((s, i) => (
               <div key={i} className="mb-1.5 flex gap-1.5">
@@ -239,7 +239,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
                   maxLength={40} placeholder={`Stance ${i + 1}`}
                   className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500/60" />
                 <button type="button" onClick={() => setStances(prev => prev.filter((_, j) => j !== i))}
-                  className="rounded-lg px-2 text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                  className="rounded-lg px-2 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                     <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
                   </svg>
@@ -251,13 +251,13 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
           <div>
             <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Debate name <span className="text-red-600 dark:text-red-400">*</span></label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. ai-jobs-debate" maxLength={40}
-              className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+              className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
           </div>
           {!isFishbowl && (
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Max participants <span className="text-gray-500 dark:text-gray-600">(optional)</span></label>
+              <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Max participants <span className="text-gray-500 dark:text-gray-400">(optional)</span></label>
               <input type="number" value={maxMembers} onChange={e => setMaxMembers(e.target.value)} placeholder="Unlimited" min={2} max={500}
-                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
             </div>
           )}
 
@@ -302,7 +302,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
 
           <div className="flex items-center justify-between rounded-xl bg-gray-100/60 dark:bg-gray-800/60 px-4 py-3">
             <div>
-              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Stance cooldown <span className="text-gray-500 dark:text-gray-600">(seconds)</span></p>
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Stance cooldown <span className="text-gray-500 dark:text-gray-400">(seconds)</span></p>
               <p className="text-xs text-gray-500">How long before participants can switch stances (0 = off)</p>
             </div>
             <input
@@ -326,7 +326,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
               <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Password <span className="text-red-600 dark:text-red-400">*</span></label>
               <div className="relative">
                 <input type={showPw ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Set a password" maxLength={100}
-                  className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                  className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
                 <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                     {showPw ? <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" /> : <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06L3.28 2.22Z" clipRule="evenodd" />}
@@ -340,12 +340,12 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0">
                 <path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z" />
               </svg>
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">AI moderator persona <span className="text-gray-500 dark:text-gray-600">(optional)</span></span>
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">AI moderator persona <span className="text-gray-500 dark:text-gray-400">(optional)</span></span>
             </div>
             <textarea value={aiPersona} onChange={e => setAiPersona(e.target.value)} maxLength={500} rows={2}
               placeholder={"e.g. A rigorous Socratic moderator who demands evidence for every claim."}
-              className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-amber-500" />
-            <p className="mt-1.5 text-[10px] text-gray-500 dark:text-gray-600">The AI fact-checker&apos;s personality. It will evaluate claims and award credibility scores.</p>
+              className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-amber-500" />
+            <p className="mt-1.5 text-[10px] text-gray-500 dark:text-gray-400">The AI fact-checker&apos;s personality. It will evaluate claims and award credibility scores.</p>
           </div>
           {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex gap-2 pt-1">
@@ -467,7 +467,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
         <h1 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Common Grounds</h1>
         <div className="ml-auto flex items-center gap-2">
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search debates…"
-            className="w-32 sm:w-52 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+            className="w-32 sm:w-52 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
           <button onClick={() => onCreateClick()}
             className="rounded-xl bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors">
             + Start debate
@@ -513,9 +513,9 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
       {/* Room list */}
       <div className="flex-1 overflow-y-auto p-6">
         {loading ? (
-          <p className="text-sm text-gray-500 dark:text-gray-600">Loading…</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
         ) : filtered.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-600">No rooms found.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No rooms found.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map(room => {
@@ -563,7 +563,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3 text-[10px] text-gray-500 dark:text-gray-600">
+                <div className="flex items-center gap-3 text-[10px] text-gray-500 dark:text-gray-400">
                   {room.isFishbowl && room.fishbowlSeats ? (
                     <span className="text-cyan-500/80">{room.participantCount}/{room.fishbowlSeats} seats</span>
                   ) : (

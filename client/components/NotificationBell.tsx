@@ -123,7 +123,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
             {notifs.length > 0 && (
               <button
                 onClick={() => setNotifs([])}
-                className="text-[10px] text-gray-500 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
+                className="text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
               >
                 Clear all
               </button>
@@ -132,7 +132,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
 
           <div className="max-h-96 overflow-y-auto">
             {notifs.length === 0 && (
-              <p className="px-4 py-6 text-center text-xs text-gray-500 dark:text-gray-600">No notifications yet</p>
+              <p className="px-4 py-6 text-center text-xs text-gray-500 dark:text-gray-400">No notifications yet</p>
             )}
 
             {/* Pending invites */}
@@ -231,9 +231,9 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                     {n.content && (
                       <p className="mt-0.5 truncate text-[11px] text-gray-500">"{n.content}"</p>
                     )}
-                    <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-600">{new Date(n.createdAt).toLocaleString()}</p>
+                    <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">{new Date(n.createdAt).toLocaleString()}</p>
                   </div>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-gray-500 dark:text-gray-600 mt-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-gray-500 dark:text-gray-400 mt-1">
                     <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                   </svg>
                 </div>

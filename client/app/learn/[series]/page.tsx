@@ -34,7 +34,7 @@ export default function SeriesPage() {
       .catch(() => {});
   }, [userId]);
 
-  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
+  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
   if (!series) return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 text-sm">Series not found.</div>;
 
   const c = COLOR[series.color];
@@ -100,7 +100,7 @@ export default function SeriesPage() {
                   <p className="text-xs text-gray-500 mt-0.5">{lesson.subtitle}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-600">{lesson.readingTime}</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400">{lesson.readingTime}</span>
                   <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-gray-400 dark:text-gray-700 group-hover:text-gray-500 transition-colors">
                     <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                   </svg>

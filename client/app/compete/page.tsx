@@ -99,7 +99,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-lg rounded-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h2 className="text-base font-bold text-white mb-4">Post a Challenge</h2>
+        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-4">Post a Challenge</h2>
 
         {/* Claim */}
         <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1.5">Your claim</label>
@@ -109,7 +109,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           onChange={e => setClaim(e.target.value)}
           placeholder="e.g. Universal basic income would reduce poverty"
           rows={3}
-          className="w-full resize-none rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-4 py-3 text-sm text-white placeholder-gray-500 dark:placeholder-gray-600 focus:border-violet-500 focus:outline-none"
+          className="w-full resize-none rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-violet-500 focus:outline-none"
         />
 
         {/* Stance */}
@@ -217,7 +217,7 @@ function ChallengeCard({
             {WC_LABEL[wc.type]?.(wc) ?? wc.type}
           </span>
         )}
-        <span className="ml-auto text-[10px] text-gray-500 dark:text-gray-600">{timeAgo(challenge.createdAt)}</span>
+        <span className="ml-auto text-[10px] text-gray-500 dark:text-gray-400">{timeAgo(challenge.createdAt)}</span>
       </div>
 
       {/* Action */}
@@ -334,7 +334,7 @@ export default function CompetePage() {
   }
 
   if (status === "loading") {
-    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
+    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
   }
 
   const myUsername = (session?.user as any)?.username ?? session?.user?.name ?? "";
@@ -369,7 +369,7 @@ export default function CompetePage() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 text-violet-600 dark:text-violet-400">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
-          <h1 className="text-base font-bold text-white">Battle Grounds</h1>
+          <h1 className="text-base font-bold text-gray-900 dark:text-white">Battle Grounds</h1>
         </div>
         <EloBadge elo={myElo} className="ml-1" />
         <div className="ml-auto">
@@ -425,13 +425,13 @@ export default function CompetePage() {
             {challenges.length === 0 ? (
               <div className="flex flex-col items-center gap-4 py-20 text-center">
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-800 ring-1 ring-gray-300 dark:ring-gray-700">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-gray-500 dark:text-gray-600">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-gray-500 dark:text-gray-400">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
                   </svg>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No open challenges</p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">Be the first — post a claim and dare someone to debate you.</p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Be the first — post a claim and dare someone to debate you.</p>
                 </div>
                 <button onClick={() => setPostOpen(true)} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
                   Post a Challenge
@@ -449,7 +449,7 @@ export default function CompetePage() {
         {tab === "mine" && (
           <div className="space-y-3 max-w-2xl mx-auto">
             {myChallenges.length === 0 ? (
-              <div className="py-20 text-center text-sm text-gray-500 dark:text-gray-600">You haven't posted any challenges yet.</div>
+              <div className="py-20 text-center text-sm text-gray-500 dark:text-gray-400">You haven't posted any challenges yet.</div>
             ) : (
               myChallenges.map(c => (
                 <div key={c.id}>
@@ -467,7 +467,7 @@ export default function CompetePage() {
               ))
             )}
             <div className="pt-2">
-              <button onClick={() => setPostOpen(true)} className="w-full rounded-xl border border-dashed border-gray-300 dark:border-gray-700 py-3 text-xs text-gray-500 dark:text-gray-600 hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
+              <button onClick={() => setPostOpen(true)} className="w-full rounded-xl border border-dashed border-gray-300 dark:border-gray-700 py-3 text-xs text-gray-500 dark:text-gray-400 hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
                 + Post a new challenge
               </button>
             </div>
@@ -479,7 +479,7 @@ export default function CompetePage() {
           <div className="max-w-lg mx-auto">
             <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60 overflow-hidden">
               {leaderboard.length === 0 ? (
-                <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-600">No ranked players yet.</div>
+                <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">No ranked players yet.</div>
               ) : (
                 leaderboard.map((entry, i) => {
                   const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;

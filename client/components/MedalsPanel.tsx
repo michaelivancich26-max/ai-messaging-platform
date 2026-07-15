@@ -24,8 +24,10 @@ const TIER_RANK: Record<MedalTier, number> = { bronze: 1, silver: 2, gold: 3, pl
 
 const TIER_STYLE: Record<MedalTier, { text: string; bg: string; ring: string; bar: string; label: string }> = {
   bronze:   { text: "text-amber-700 dark:text-amber-300",  bg: "bg-amber-100 dark:bg-amber-950/50",  ring: "ring-amber-700/50",  bar: "bg-amber-500",  label: "Bronze"   },
-  silver:   { text: "text-slate-200",  bg: "bg-slate-700/40",  ring: "ring-slate-400/40",  bar: "bg-slate-300",  label: "Silver"   },
-  gold:     { text: "text-yellow-300", bg: "bg-yellow-950/50", ring: "ring-yellow-600/50", bar: "bg-yellow-400", label: "Gold"     },
+  // silver and gold were written for the old dark-only theme and never given light
+  // variants — slate-200 on white measured 1.2:1, i.e. invisible.
+  silver:   { text: "text-slate-700 dark:text-slate-200",  bg: "bg-slate-200 dark:bg-slate-700/40",  ring: "ring-slate-400/40",  bar: "bg-slate-400 dark:bg-slate-300",  label: "Silver"   },
+  gold:     { text: "text-yellow-700 dark:text-yellow-300", bg: "bg-yellow-100 dark:bg-yellow-950/50", ring: "ring-yellow-600/50", bar: "bg-yellow-500 dark:bg-yellow-400", label: "Gold"     },
   platinum: { text: "text-cyan-800 dark:text-cyan-200",   bg: "bg-cyan-100 dark:bg-cyan-950/50",   ring: "ring-cyan-500/40",   bar: "bg-cyan-300",   label: "Platinum" },
   diamond:  { text: "text-indigo-800 dark:text-indigo-200", bg: "bg-indigo-100 dark:bg-indigo-950/60", ring: "ring-indigo-400/50", bar: "bg-indigo-300", label: "Diamond"  },
 };
@@ -84,7 +86,7 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Medals</p>
         <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 text-xs font-semibold text-gray-700 dark:text-gray-300 tabular-nums">
-          {earned.length} <span className="text-gray-500 dark:text-gray-600">/ {medals.length}</span>
+          {earned.length} <span className="text-gray-500 dark:text-gray-400">/ {medals.length}</span>
         </span>
       </div>
 
@@ -142,7 +144,7 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
                         {fmt(g.value)}/{fmt(nextTarget)}{g.unit === "%" ? "%" : ""}
                       </span>
                     </div>
-                    <p className="mt-0.5 truncate text-[10px] text-gray-500 dark:text-gray-600">Next: {g.next.name} — {g.next.description}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-gray-500 dark:text-gray-400">Next: {g.next.name} — {g.next.description}</p>
                   </>
                 ) : (
                   <p className="mt-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Maxed out — all tiers earned</p>
@@ -205,7 +207,7 @@ function MedalPicker({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4">
-          <h2 className="flex-1 text-sm font-bold text-white">Choose featured medals</h2>
+          <h2 className="flex-1 text-sm font-bold text-gray-900 dark:text-white">Choose featured medals</h2>
           <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:text-gray-400 tabular-nums">{sel.length}/{MAX_FEATURED}</span>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
         </div>
@@ -230,7 +232,7 @@ function MedalPicker({
                     <span className="text-lg leading-none">{m.icon}</span>
                     <span className="min-w-0 flex-1">
                       <span className={`block truncate text-[11px] font-semibold ${on ? s.text : "text-gray-700 dark:text-gray-300"}`}>{m.name}</span>
-                      <span className="block text-[9px] uppercase tracking-wider text-gray-500 dark:text-gray-600">{s.label}</span>
+                      <span className="block text-[9px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{s.label}</span>
                     </span>
                     {on && (
                       <svg viewBox="0 0 16 16" fill="currentColor" className={`h-3.5 w-3.5 shrink-0 ${s.text}`}>
@@ -346,7 +348,7 @@ export function RubricAverages({ avg }: { avg: ClaimAverages }) {
         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rubric Averages</p>
         <span className="text-xs text-gray-500">
           {avg.rated > 0
-            ? <>avg <span className="font-bold text-gray-800 dark:text-gray-200 tabular-nums">{avg.score}</span><span className="text-gray-500 dark:text-gray-600">/100</span> over {avg.rated} claim{avg.rated === 1 ? "" : "s"}</>
+            ? <>avg <span className="font-bold text-gray-800 dark:text-gray-200 tabular-nums">{avg.score}</span><span className="text-gray-500 dark:text-gray-400">/100</span> over {avg.rated} claim{avg.rated === 1 ? "" : "s"}</>
             : "No rated claims yet"}
         </span>
       </div>
@@ -358,7 +360,7 @@ export function RubricAverages({ avg }: { avg: ClaimAverages }) {
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                 <div className={`h-full rounded-full ${d.color} transition-all`} style={{ width: `${Math.min(100, (d.value / 10) * 100)}%` }} />
               </div>
-              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-gray-600 dark:text-gray-400">{d.value.toFixed(1)}<span className="text-gray-500 dark:text-gray-600">/10</span></span>
+              <span className="w-10 shrink-0 text-right text-xs tabular-nums text-gray-600 dark:text-gray-400">{d.value.toFixed(1)}<span className="text-gray-500 dark:text-gray-400">/10</span></span>
             </div>
           ))}
         </div>

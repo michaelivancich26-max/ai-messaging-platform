@@ -50,7 +50,7 @@ export default function PollCard({ poll, currentUserId, canClose, onVote, onClos
           }
           {!isClosed && canClose && (
             <button onClick={() => onClose(poll.id)}
-              className="text-[10px] text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+              className="text-[10px] text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
               close
             </button>
           )}
@@ -105,7 +105,7 @@ export default function PollCard({ poll, currentUserId, canClose, onVote, onClos
         })}
       </ul>
 
-      <p className="mt-2.5 text-[11px] text-gray-500 dark:text-gray-600">
+      <p className="mt-2.5 text-[11px] text-gray-500 dark:text-gray-400">
         {totalVotes} {totalVotes === 1 ? "vote" : "votes"}
         {!isClosed && !myVote && " · tap to vote"}
         {!isClosed && myVote && " · tap another option to change"}

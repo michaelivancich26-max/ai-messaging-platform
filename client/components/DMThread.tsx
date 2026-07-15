@@ -144,7 +144,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
-          <p className="py-12 text-center text-xs text-gray-500 dark:text-gray-600">
+          <p className="py-12 text-center text-xs text-gray-500 dark:text-gray-400">
             No messages yet. Say something to {partner?.username ?? "them"}.
           </p>
         ) : (
@@ -157,7 +157,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
                     ? "bg-indigo-600 text-white"
                     : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"}`}>
                     <p className="whitespace-pre-wrap break-words text-sm">{m.content}</p>
-                    <p className={`mt-0.5 text-[10px] ${mine ? "text-indigo-200" : "text-gray-500 dark:text-gray-600"}`}>{stamp(m.createdAt)}</p>
+                    <p className={`mt-0.5 text-[10px] ${mine ? "text-indigo-200" : "text-gray-500 dark:text-gray-400"}`}>{stamp(m.createdAt)}</p>
                   </div>
                 </div>
               );
@@ -176,7 +176,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             rows={1}
             placeholder={partner ? `Message ${partner.username}…` : "Message…"}
-            className="max-h-32 flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+            className="max-h-32 flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
           />
           <button onClick={send} disabled={!draft.trim() || !roomName}
             className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-40">

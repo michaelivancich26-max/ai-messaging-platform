@@ -253,7 +253,7 @@ function MatchSetupModal({
                 value={topicInput}
                 onChange={e => setTopicInput(e.target.value)}
                 placeholder="Type your own topic, or pick one below…"
-                className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none focus:border-indigo-500 transition-colors"
+                className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
 
@@ -261,7 +261,7 @@ function MatchSetupModal({
             <div className="px-5 pb-3 shrink-0 grid grid-cols-2 gap-3">
               {/* Stance */}
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600 mb-1.5">My stance</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">My stance</p>
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => setStance("affirmative")}
@@ -276,12 +276,12 @@ function MatchSetupModal({
                     AGAINST
                   </button>
                 </div>
-                <p className="mt-1 text-[9px] text-gray-500 dark:text-gray-600">{stance === "affirmative" ? "You argue for the proposition" : "You argue against it"}</p>
+                <p className="mt-1 text-[9px] text-gray-500 dark:text-gray-400">{stance === "affirmative" ? "You argue for the proposition" : "You argue against it"}</p>
               </div>
 
               {/* Turn order */}
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600 mb-1.5">First move</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">First move</p>
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => setBotFirst(false)}
@@ -296,13 +296,13 @@ function MatchSetupModal({
                     Bot
                   </button>
                 </div>
-                <p className="mt-1 text-[9px] text-gray-500 dark:text-gray-600">{botFirst ? "Bot makes the opening argument" : "You open the debate"}</p>
+                <p className="mt-1 text-[9px] text-gray-500 dark:text-gray-400">{botFirst ? "Bot makes the opening argument" : "You open the debate"}</p>
               </div>
             </div>
 
             {/* Divider + category pills */}
             <div className="px-5 pb-2 shrink-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600 mb-2">or choose from catalog</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">or choose from catalog</p>
               <div className="flex gap-1.5 flex-wrap">
                 <button
                   onClick={() => setActiveCategory(null)}
@@ -444,7 +444,7 @@ function MatchSetupModal({
                         <div className="absolute inset-y-0 right-0 bg-emerald-600/60 transition-all" style={{ width: `${100 - propThreshold}%` }} />
                         <div className="absolute inset-y-0 bg-gray-200 dark:bg-gray-700" style={{ left: `${100 - propThreshold}%`, right: `${100 - propThreshold}%` }} />
                       </div>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-600">Win zone starts at {propThreshold}% on either side</p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400">Win zone starts at {propThreshold}% on either side</p>
                     </div>
                   )}
                 </div>
@@ -506,7 +506,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
         <BotAvatar bot={bot} large />
         <div className="text-center">
           <h3 className="text-lg font-bold text-white leading-tight">{bot.name}</h3>
-          <p className={`text-xs font-medium ${c.text}`}>"{bot.title}"</p>
+          <p className={`text-xs font-medium ${c.onGradient}`}>"{bot.title}"</p>
         </div>
       </div>
 
@@ -537,9 +537,9 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
         {/* Stats */}
         <div className="mt-4 flex items-center gap-2 border-t border-gray-200 dark:border-gray-800 pt-3 text-[10px]">
           <span className="font-semibold text-emerald-600 dark:text-emerald-400">{bot.wins.toLocaleString()}W</span>
-          <span className="text-gray-500 dark:text-gray-600">·</span>
+          <span className="text-gray-500 dark:text-gray-400">·</span>
           <span className="font-semibold text-red-600 dark:text-red-400">{bot.losses.toLocaleString()}L</span>
-          <span className="ml-auto text-gray-500 dark:text-gray-600">{winRate}% win rate</span>
+          <span className="ml-auto text-gray-500 dark:text-gray-400">{winRate}% win rate</span>
         </div>
 
         {/* Challenge button */}
@@ -597,13 +597,13 @@ function ArenaLeaderboard() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-3.044 0" />
         </svg>
         <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Training Grounds Leaderboard</h2>
-        <span className="text-[10px] text-gray-500 dark:text-gray-600">by arena ELO</span>
+        <span className="text-[10px] text-gray-500 dark:text-gray-400">by arena ELO</span>
       </div>
       <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/60 dark:bg-gray-900/60">
         {loading ? (
-          <div className="py-14 text-center text-sm text-gray-500 dark:text-gray-600">Loading…</div>
+          <div className="py-14 text-center text-sm text-gray-500 dark:text-gray-400">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="py-14 text-center text-sm text-gray-500 dark:text-gray-600">No arena matches played yet. Beat a bot to get ranked.</div>
+          <div className="py-14 text-center text-sm text-gray-500 dark:text-gray-400">No arena matches played yet. Beat a bot to get ranked.</div>
         ) : (
           rows.map((entry, i) => {
             const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
@@ -665,12 +665,12 @@ function ArenaContent() {
                 </svg>
               </div>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">Training Grounds</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Training Grounds</h1>
             <p className="mt-3 text-base text-gray-600 dark:text-gray-400">
               Choose your opponent. Each bot has a unique debating style and difficulty level.
               Send the first message to open any topic — your opponent will respond.
             </p>
-            <div className="mt-5 flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-600">
+            <div className="mt-5 flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 10 opponents across 5 tiers
@@ -687,7 +687,7 @@ function ArenaContent() {
         <div className="mx-auto w-full max-w-5xl px-6 py-10">
           <div className="mb-6 flex items-center justify-between">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Choose your opponent</h2>
-            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-600">
+            <div className="flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
               <span className="flex h-3 w-3 items-center justify-center">★</span>
               <span>= difficulty</span>
             </div>
@@ -700,7 +700,7 @@ function ArenaContent() {
           </div>
 
           {/* Footer note */}
-          <p className="mt-10 text-center text-[11px] text-gray-400 dark:text-gray-700">
+          <p className="mt-10 text-center text-[11px] text-gray-500 dark:text-gray-400">
             Bot rooms are private and only visible to you. Win rates are illustrative.
           </p>
         </div>

@@ -168,20 +168,26 @@ export function botWinRate(bot: Bot): number {
 export const BOT_COLORS: Record<Bot["color"], {
   gradient: string;
   text: string;
+  /** For text sitting ON `gradient`, which is dark in both themes — `text` would be unreadable there. */
+  onGradient: string;
   subtext: string;
   btn: string;
   dot: string;
   ring: string;
   star: string;
 }> = {
-  red:     { gradient: "from-red-950/50 to-gray-900",     text: "text-red-400",     subtext: "text-red-500/70",     btn: "bg-red-600 hover:bg-red-500 text-white",     dot: "bg-red-500",     ring: "ring-red-900/50",     star: "text-red-400"     },
-  orange:  { gradient: "from-orange-950/50 to-gray-900",  text: "text-orange-400",  subtext: "text-orange-500/70",  btn: "bg-orange-600 hover:bg-orange-500 text-white",  dot: "bg-orange-500",  ring: "ring-orange-900/50",  star: "text-orange-400"  },
-  sky:     { gradient: "from-sky-950/50 to-gray-900",     text: "text-sky-400",     subtext: "text-sky-500/70",     btn: "bg-sky-600 hover:bg-sky-500 text-white",     dot: "bg-sky-500",     ring: "ring-sky-900/50",     star: "text-sky-400"     },
-  zinc:    { gradient: "from-zinc-900/80 to-gray-900",    text: "text-zinc-400",    subtext: "text-zinc-500/70",    btn: "bg-zinc-600 hover:bg-zinc-500 text-white",    dot: "bg-zinc-500",    ring: "ring-zinc-800/50",    star: "text-zinc-400"    },
-  emerald: { gradient: "from-emerald-950/50 to-gray-900", text: "text-emerald-400", subtext: "text-emerald-500/70", btn: "bg-emerald-600 hover:bg-emerald-500 text-white", dot: "bg-emerald-500", ring: "ring-emerald-900/50", star: "text-emerald-400" },
-  cyan:    { gradient: "from-cyan-950/50 to-gray-900",    text: "text-cyan-400",    subtext: "text-cyan-500/70",    btn: "bg-cyan-600 hover:bg-cyan-500 text-white",    dot: "bg-cyan-500",    ring: "ring-cyan-900/50",    star: "text-cyan-400"    },
-  violet:  { gradient: "from-violet-950/50 to-gray-900",  text: "text-violet-400",  subtext: "text-violet-500/70",  btn: "bg-violet-600 hover:bg-violet-500 text-white",  dot: "bg-violet-500",  ring: "ring-violet-900/50",  star: "text-violet-400"  },
-  purple:  { gradient: "from-purple-950/50 to-gray-900",  text: "text-purple-400",  subtext: "text-purple-500/70",  btn: "bg-purple-600 hover:bg-purple-500 text-white",  dot: "bg-purple-500",  ring: "ring-purple-900/50",  star: "text-purple-400"  },
-  amber:   { gradient: "from-amber-950/50 to-gray-900",   text: "text-amber-400",   subtext: "text-amber-500/70",   btn: "bg-amber-600 hover:bg-amber-500 text-white",   dot: "bg-amber-500",   ring: "ring-amber-900/50",   star: "text-amber-400"   },
-  teal:    { gradient: "from-teal-950/50 to-gray-900",    text: "text-teal-400",    subtext: "text-teal-500/70",    btn: "bg-teal-600 hover:bg-teal-500 text-white",    dot: "bg-teal-500",    ring: "ring-teal-900/50",    star: "text-teal-400"    },
+  // `gradient` is the bot's avatar panel and is deliberately dark in both themes —
+  // white text sits on it. Everything else lands on the card body, which is white
+  // in light mode, so the *-400 shades need a darker light-mode partner or they
+  // wash out (text-amber-400 on white measures 1.7:1).
+  red:     { gradient: "from-red-950/50 to-gray-900",     text: "text-red-600 dark:text-red-400",         onGradient: "text-red-300",     subtext: "text-red-700/80 dark:text-red-500/70",         btn: "bg-red-600 hover:bg-red-500 text-white",         dot: "bg-red-500",     ring: "ring-red-300 dark:ring-red-900/50",         star: "text-red-600 dark:text-red-400"     },
+  orange:  { gradient: "from-orange-950/50 to-gray-900",  text: "text-orange-600 dark:text-orange-400",   onGradient: "text-orange-300",  subtext: "text-orange-700/80 dark:text-orange-500/70",   btn: "bg-orange-600 hover:bg-orange-500 text-white",   dot: "bg-orange-500",  ring: "ring-orange-300 dark:ring-orange-900/50",   star: "text-orange-600 dark:text-orange-400"  },
+  sky:     { gradient: "from-sky-950/50 to-gray-900",     text: "text-sky-600 dark:text-sky-400",         onGradient: "text-sky-300",     subtext: "text-sky-700/80 dark:text-sky-500/70",         btn: "bg-sky-600 hover:bg-sky-500 text-white",         dot: "bg-sky-500",     ring: "ring-sky-300 dark:ring-sky-900/50",         star: "text-sky-600 dark:text-sky-400"     },
+  zinc:    { gradient: "from-zinc-900/80 to-gray-900",    text: "text-zinc-600 dark:text-zinc-400",       onGradient: "text-zinc-300",    subtext: "text-zinc-700/80 dark:text-zinc-500/70",       btn: "bg-zinc-600 hover:bg-zinc-500 text-white",       dot: "bg-zinc-500",    ring: "ring-zinc-300 dark:ring-zinc-800/50",      star: "text-zinc-600 dark:text-zinc-400"    },
+  emerald: { gradient: "from-emerald-950/50 to-gray-900", text: "text-emerald-600 dark:text-emerald-400", onGradient: "text-emerald-300", subtext: "text-emerald-700/80 dark:text-emerald-500/70", btn: "bg-emerald-600 hover:bg-emerald-500 text-white", dot: "bg-emerald-500", ring: "ring-emerald-300 dark:ring-emerald-900/50", star: "text-emerald-600 dark:text-emerald-400" },
+  cyan:    { gradient: "from-cyan-950/50 to-gray-900",    text: "text-cyan-700 dark:text-cyan-400",       onGradient: "text-cyan-300",    subtext: "text-cyan-800/80 dark:text-cyan-500/70",       btn: "bg-cyan-600 hover:bg-cyan-500 text-white",       dot: "bg-cyan-500",    ring: "ring-cyan-300 dark:ring-cyan-900/50",       star: "text-cyan-700 dark:text-cyan-400"    },
+  violet:  { gradient: "from-violet-950/50 to-gray-900",  text: "text-violet-600 dark:text-violet-400",   onGradient: "text-violet-300",  subtext: "text-violet-700/80 dark:text-violet-500/70",   btn: "bg-violet-600 hover:bg-violet-500 text-white",   dot: "bg-violet-500",  ring: "ring-violet-300 dark:ring-violet-900/50",   star: "text-violet-600 dark:text-violet-400"  },
+  purple:  { gradient: "from-purple-950/50 to-gray-900",  text: "text-purple-600 dark:text-purple-400",   onGradient: "text-purple-300",  subtext: "text-purple-700/80 dark:text-purple-500/70",   btn: "bg-purple-600 hover:bg-purple-500 text-white",   dot: "bg-purple-500",  ring: "ring-purple-300 dark:ring-purple-900/50",   star: "text-purple-600 dark:text-purple-400"  },
+  amber:   { gradient: "from-amber-950/50 to-gray-900",   text: "text-amber-700 dark:text-amber-400",     onGradient: "text-amber-300",   subtext: "text-amber-800/80 dark:text-amber-500/70",     btn: "bg-amber-600 hover:bg-amber-500 text-white",     dot: "bg-amber-500",   ring: "ring-amber-300 dark:ring-amber-900/50",     star: "text-amber-700 dark:text-amber-400"   },
+  teal:    { gradient: "from-teal-950/50 to-gray-900",    text: "text-teal-700 dark:text-teal-400",       onGradient: "text-teal-300",    subtext: "text-teal-800/80 dark:text-teal-500/70",       btn: "bg-teal-600 hover:bg-teal-500 text-white",       dot: "bg-teal-500",    ring: "ring-teal-300 dark:ring-teal-900/50",       star: "text-teal-600 dark:text-teal-400"    },
 };

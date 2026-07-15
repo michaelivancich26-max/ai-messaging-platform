@@ -152,20 +152,20 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
             <button
               onClick={() => toggleChannelOpinionated(ch.id, !ch.isOpinionated)}
               title={ch.isOpinionated ? "Disable opinions mode" : "Enable opinions mode (no Grounds impact)"}
-              className={`rounded p-0.5 transition-colors ${ch.isOpinionated ? "text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300" : "text-gray-500 dark:text-gray-600 hover:text-amber-600 dark:hover:text-amber-400"}`}>
+              className={`rounded p-0.5 transition-colors ${ch.isOpinionated ? "text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300" : "text-gray-500 dark:text-gray-400 hover:text-amber-600 dark:hover:text-amber-400"}`}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                 <path fillRule="evenodd" d="M1 8.74c0 .983.713 1.825 1.69 1.943L3 10.698V13.5a.5.5 0 0 0 .724.447L8 11.82l4.276 2.127A.5.5 0 0 0 13 13.5v-2.802l.31-.016A2 2 0 0 0 15 8.74V5a3 3 0 0 0-3-3H4a3 3 0 0 0-3 3v3.74Z" clipRule="evenodd" />
               </svg>
             </button>
             <button onClick={() => setRenaming({ type: "channel", id: ch.id, name: ch.name })}
-              className="rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-gray-700 dark:hover:text-gray-300">
+              className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                 <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474Z" />
                 <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9a.75.75 0 0 1 1.5 0v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
               </svg>
             </button>
             <button onClick={() => deleteChannel(ch.id)}
-              className="rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400">
+              className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                 <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
               </svg>
@@ -185,7 +185,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
           <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">Channels</span>
           {canEdit && (
             <button onClick={() => setAddingChannelToSection("root")}
-              className="rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-indigo-600 dark:hover:text-indigo-400" title="Add channel">
+              className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" title="Add channel">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
               </svg>
@@ -200,7 +200,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                 onKeyDown={e => { if (e.key === "Enter") addChannel(null); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
                 onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
                 placeholder="channel-name"
-                className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-600" />
+                className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400" />
               <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(null)}
                 className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500">✓</button>
             </div>
@@ -237,19 +237,19 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
               {canEdit && !isRenamingSection && (
                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 md:opacity-0 max-md:opacity-100">
                   <button onClick={() => setAddingChannelToSection(sec.id)}
-                    className="rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-indigo-600 dark:hover:text-indigo-400">
+                    className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                       <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
                     </svg>
                   </button>
                   <button onClick={() => setRenaming({ type: "section", id: sec.id, name: sec.name })}
-                    className="rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-gray-700 dark:hover:text-gray-300">
+                    className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                       <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474Z" />
                     </svg>
                   </button>
                   <button onClick={() => deleteSection(sec.id)}
-                    className="rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400">
+                    className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                       <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
                     </svg>
@@ -267,7 +267,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                       onKeyDown={e => { if (e.key === "Enter") addChannel(sec.id); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
                       onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
                       placeholder="channel-name"
-                      className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-600" />
+                      className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400" />
                     <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(sec.id)}
                       className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500">✓</button>
                   </div>
@@ -303,7 +303,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                     <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v5A1.5 1.5 0 0 0 2.5 11H5v1.5a.5.5 0 0 0 .82.385l2.235-1.886H13.5A1.5 1.5 0 0 0 15 9.5v-5A1.5 1.5 0 0 0 13.5 3h-11Z" clipRule="evenodd" />
                   </svg>
                   <span className="truncate">{parentCh ? `#${parentCh.name}` : ch.name}</span>
-                  <span className="ml-auto shrink-0 text-[9px] text-gray-500 dark:text-gray-600">side chat</span>
+                  <span className="ml-auto shrink-0 text-[9px] text-gray-500 dark:text-gray-400">side chat</span>
                 </button>
               );
             })}
@@ -338,7 +338,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                       <span className="truncate text-[11px] font-medium">{ch.proposition ?? ch.name}</span>
                     </div>
                     {ch.parentMessagePreview && (
-                      <p className="mt-0.5 pl-4 text-[10px] text-gray-500 dark:text-gray-600 line-clamp-1 italic">↑ "{ch.parentMessagePreview}"</p>
+                      <p className="mt-0.5 pl-4 text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 italic">↑ "{ch.parentMessagePreview}"</p>
                     )}
                   </button>
                   {canEdit && (
@@ -366,10 +366,10 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
               onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setAddingSection(false); setNewSectionName(""); } }}
               onBlur={() => { if (!newSectionName.trim()) setAddingSection(false); }}
               placeholder="Section name"
-              className="w-full rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-600" />
+              className="w-full rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400" />
           ) : (
             <button onClick={() => setAddingSection(true)}
-              className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-gray-500 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
+              className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                 <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
               </svg>

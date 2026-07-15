@@ -13,7 +13,7 @@ export default function DMConversationPage() {
   const partnerUsername = decodeURIComponent(Array.isArray(raw) ? raw[0] : raw ?? "");
 
   if (!userId || !username) {
-    return <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-600">Loading…</div>;
+    return <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">Loading…</div>;
   }
 
   return <DMThread userId={userId} username={username} partnerUsername={partnerUsername} />;

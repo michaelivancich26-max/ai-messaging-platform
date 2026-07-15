@@ -145,7 +145,7 @@ export default function RoomPanel({
                     </span>
                   )}
                   {meta?.maxMembers && (
-                    <span className="text-[10px] text-gray-500 dark:text-gray-600">max {meta.maxMembers}</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">max {meta.maxMembers}</span>
                   )}
                 </div>
                 {meta?.proposition && (
@@ -171,7 +171,7 @@ export default function RoomPanel({
                         : <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-700 dark:text-gray-300 shrink-0">{m.username[0].toUpperCase()}</span>
                       }
                       <span className="text-xs text-gray-800 dark:text-gray-200 truncate">{m.username}</span>
-                      {m.userId === currentUserId && <span className="text-[10px] text-gray-500 dark:text-gray-600 shrink-0">(you)</span>}
+                      {m.userId === currentUserId && <span className="text-[10px] text-gray-500 dark:text-gray-400 shrink-0">(you)</span>}
                     </div>
                     <div className="flex items-center gap-1 shrink-0 ml-2">
                       {isFishbowl && canEdit && m.userId !== currentUserId && (
@@ -182,14 +182,14 @@ export default function RoomPanel({
                           </button>
                         ) : (
                           <button onClick={() => onRevokeSeat?.(m.userId)}
-                            className="rounded px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
+                            className="rounded px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
                             spectate
                           </button>
                         )
                       )}
                       {canEdit && m.userId !== currentUserId && (
                         <button onClick={() => setConfirmKick(m)}
-                          className="rounded px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-600 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                          className="rounded px-1.5 py-0.5 text-[10px] text-gray-500 dark:text-gray-400 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                           kick
                         </button>
                       )}
@@ -199,22 +199,22 @@ export default function RoomPanel({
                 return (
                   <div className="space-y-3">
                     <div>
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                         {isFishbowl ? `Debaters · ${participants.length}${meta?.fishbowlSeats ? `/${meta.fishbowlSeats}` : ""}` : `Online · ${onlineMembers.length}`}
                       </p>
                       {participants.length === 0 ? (
-                        <p className="text-xs text-gray-500 dark:text-gray-600">Nobody online</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Nobody online</p>
                       ) : (
                         <ul className="space-y-1">{participants.map(m => <MemberRow key={m.userId} m={m} />)}</ul>
                       )}
                     </div>
                     {isFishbowl && (
                       <div>
-                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                           Spectators · {spectators.length}
                         </p>
                         {spectators.length === 0 ? (
-                          <p className="text-xs text-gray-500 dark:text-gray-600">No spectators</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">No spectators</p>
                         ) : (
                           <ul className="space-y-1">{spectators.map(m => <MemberRow key={m.userId} m={m} />)}</ul>
                         )}
@@ -233,7 +233,7 @@ export default function RoomPanel({
                 <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Proposition</label>
                 <textarea value={editProposition} onChange={e => setEditProposition(e.target.value)}
                   maxLength={300} rows={2} placeholder="The statement being debated…"
-                  className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                  className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
               </div>
               {/* Stance editor */}
               <div className="pt-2 border-t border-gray-200 dark:border-gray-800">
@@ -251,7 +251,7 @@ export default function RoomPanel({
                       />
                       <button
                         onClick={() => setEditStances(prev => prev.filter((_, j) => j !== i))}
-                        className="rounded-lg px-2 text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        className="rounded-lg px-2 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                           <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
@@ -274,14 +274,14 @@ export default function RoomPanel({
                 <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Description</label>
                 <textarea value={editDesc} onChange={e => setEditDesc(e.target.value)}
                   maxLength={200} rows={2} placeholder="What's this debate about?"
-                  className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                  className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
               </div>
 
               <div>
                 <label className="mb-1 block text-[10px] text-gray-500 uppercase tracking-wider">Max participants</label>
                 <input type="number" value={editMax} onChange={e => setEditMax(e.target.value)}
                   placeholder="Unlimited" min={2} max={500}
-                  className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                  className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
               </div>
 
               <div className="flex items-center justify-between rounded-lg bg-gray-100/60 dark:bg-gray-800/60 px-3 py-2">
@@ -328,7 +328,7 @@ export default function RoomPanel({
                   <div className="relative">
                     <input type={showPw ? "text" : "password"} value={editPassword}
                       onChange={e => setEditPassword(e.target.value)} placeholder="New password"
-                      className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-9 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                      className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-9 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
                     <button type="button" onClick={() => setShowPw(v => !v)}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                       {showPw
@@ -366,12 +366,12 @@ export default function RoomPanel({
             <div className="px-4 py-2">
               {canEdit && (
                 <>
-                  <p className="pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">@Claude Persona</p>
+                  <p className="pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">@Claude Persona</p>
                   <textarea value={editPersona} onChange={e => setEditPersona(e.target.value)}
                     maxLength={500} rows={3}
                     placeholder="e.g. A Victorian professor who quotes Shakespeare when disappointed."
-                    className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
-                  <p className="mt-1 mb-3 text-[10px] text-gray-500 dark:text-gray-600">The AI adopts this voice when flagging issues.</p>
+                    className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                  <p className="mt-1 mb-3 text-[10px] text-gray-500 dark:text-gray-400">The AI adopts this voice when flagging issues.</p>
                   {saveMsg && (
                     <p className={`mb-2 text-xs ${saveMsg === "Saved." ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{saveMsg}</p>
                   )}

@@ -60,7 +60,7 @@ export default function LessonPage() {
     }
   }
 
-  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
+  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
   if (!series || !lesson) return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 text-sm">Lesson not found.</div>;
 
   const c = COLOR[series.color];
@@ -77,7 +77,7 @@ export default function LessonPage() {
           </svg>
         </button>
         <div className="flex items-center gap-1.5 text-xs min-w-0 flex-1">
-          <span className="text-gray-500 dark:text-gray-600 truncate hidden sm:block">Learn</span>
+          <span className="text-gray-500 dark:text-gray-400 truncate hidden sm:block">Learn</span>
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-gray-400 dark:text-gray-700 shrink-0 hidden sm:block"><path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
           <button onClick={() => router.push(`/learn/${series.slug}`)} className={`truncate hover:underline ${c.text} hidden sm:block`}>{series.title}</button>
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-gray-400 dark:text-gray-700 shrink-0 hidden sm:block"><path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
@@ -98,9 +98,9 @@ export default function LessonPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${c.pill}`}>{series.title}</span>
-            <span className="text-[10px] text-gray-500 dark:text-gray-600">{lesson.readingTime}</span>
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">{lesson.readingTime}</span>
           </div>
-          <h1 className="text-2xl font-bold text-white leading-tight">{lesson.title}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">{lesson.title}</h1>
           <p className={`text-base font-medium ${c.text}`}>{lesson.subtitle}</p>
         </div>
 
@@ -111,7 +111,7 @@ export default function LessonPage() {
         <div className="space-y-8">
           {lesson.sections.map((section) => (
             <div key={section.heading} className="space-y-4">
-              <h2 className="text-base font-bold text-white">{section.heading}</h2>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">{section.heading}</h2>
               <div className="space-y-2">
                 {section.body.split("\n\n").map((para, i) => (
                   <p key={i} className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">{para}</p>
@@ -125,7 +125,7 @@ export default function LessonPage() {
                         <span className={`text-[10px] font-bold uppercase tracking-wider ${ex.type === "bad" ? "text-red-500" : "text-emerald-500"}`}>
                           {ex.type === "bad" ? "✗ Fallacy" : "✓ Better"}
                         </span>
-                        <span className="text-[10px] text-gray-500 dark:text-gray-600">{ex.label}</span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">{ex.label}</span>
                       </div>
                       <p className="text-xs leading-relaxed text-gray-700 dark:text-gray-300 italic">"{ex.text}"</p>
                     </div>
@@ -151,7 +151,7 @@ export default function LessonPage() {
 
         {/* Quiz */}
         <div className="space-y-6">
-          <h2 className="text-base font-bold text-white">Check Your Understanding</h2>
+          <h2 className="text-base font-bold text-gray-900 dark:text-white">Check Your Understanding</h2>
           {lesson.quiz.map((q, qi) => {
             const isSubmitted = submitted.has(qi);
             const sel = selected[qi];
@@ -159,7 +159,7 @@ export default function LessonPage() {
             return (
               <div key={qi} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 space-y-4">
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-snug">
-                  <span className="text-gray-500 dark:text-gray-600 mr-2">{qi + 1}.</span>{q.question}
+                  <span className="text-gray-500 dark:text-gray-400 mr-2">{qi + 1}.</span>{q.question}
                 </p>
                 <div className="space-y-2">
                   {q.options.map((opt, oi) => {
@@ -167,7 +167,7 @@ export default function LessonPage() {
                     if (isSubmitted) {
                       if (oi === q.correctIndex) cls = "border-emerald-700 bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300";
                       else if (oi === sel) cls = "border-red-700 bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-300";
-                      else cls = "border-gray-200 dark:border-gray-800 bg-gray-100/20 dark:bg-gray-800/20 text-gray-500 dark:text-gray-600";
+                      else cls = "border-gray-200 dark:border-gray-800 bg-gray-100/20 dark:bg-gray-800/20 text-gray-500 dark:text-gray-400";
                     } else if (sel === oi) {
                       cls = `border-current ${c.text} bg-gray-100/60 dark:bg-gray-800/60`;
                     }
@@ -221,7 +221,7 @@ export default function LessonPage() {
             <button
               onClick={markComplete}
               disabled={completing}
-              className="w-full rounded-xl bg-gray-200 dark:bg-gray-700 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+              className="w-full rounded-xl bg-gray-200 dark:bg-gray-700 py-3 text-sm font-semibold text-gray-900 dark:text-white transition-colors hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
             >
               {completing ? "Saving…" : "Mark as Complete"}
             </button>

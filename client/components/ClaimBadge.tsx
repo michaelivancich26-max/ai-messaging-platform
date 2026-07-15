@@ -39,7 +39,7 @@ export default function ClaimBadge({ claim, canChallenge, onChallenge }: Props) 
 
         {claim.status !== "PENDING" && claim.score != null && (
           <span className="rounded-full border border-gray-300 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:text-gray-400 tabular-nums">
-            {Math.round(claim.score)}<span className="font-normal text-gray-500 dark:text-gray-600">/100</span>
+            {Math.round(claim.score)}<span className="font-normal text-gray-500 dark:text-gray-400">/100</span>
           </span>
         )}
         {claim.status !== "PENDING" && canChallenge && (

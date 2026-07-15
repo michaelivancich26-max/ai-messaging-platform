@@ -116,7 +116,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
             {onDetailsClick && (
               <button
                 onClick={onDetailsClick}
-                className="shrink-0 rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                className="shrink-0 rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                 title="Score details & formula"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -144,7 +144,7 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
 
         {/* Position picker */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-gray-500 dark:text-gray-600 shrink-0">Your stance:</span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 shrink-0">Your stance:</span>
           {cooldownRemaining > 0 && (
             <span className="flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[9px] font-semibold text-gray-500">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5">
