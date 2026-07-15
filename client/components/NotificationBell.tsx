@@ -42,7 +42,10 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
     function onNotification(n: AppNotification) {
       setNotifs(prev => [n, ...prev.filter(x => x.id !== n.id)]);
     }
-    function onInviteAccepted({ roomName }: { roomName: string; isDM: boolean }) {
+    function onInviteAccepted({ roomName, isDM }: { roomName: string; isDM: boolean }) {
+      // DMs live at /messages/<username>, and the Open DM button has already
+      // navigated there — the raw dm-<id>-<id> room name is not a URL.
+      if (isDM) return;
       router.push(`/room/${roomName}`);
     }
     socket.on("notification", onNotification);
@@ -154,7 +157,12 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                           <p className="mt-0.5 text-[10px] text-gray-500">{new Date(n.createdAt).toLocaleString()}</p>
                           <div className="mt-2 flex gap-2">
                             <button
-                              onClick={() => respondInvite(n.id, true)}
+                              onClick={() => {
+                                respondInvite(n.id, true);
+                                // Fall back to the list if the sender is unknown — the raw
+                                // dm-<id>-<id> room name is not a URL we can navigate to.
+                                if (isDM) { router.push(n.fromUsername ? `/messages/${encodeURIComponent(n.fromUsername)}` : "/messages"); setOpen(false); }
+                              }}
                               className="rounded-full bg-indigo-600 px-3 py-0.5 text-[11px] font-semibold text-white hover:bg-indigo-500 transition-colors"
                             >
                               {isDM ? "Open DM" : "Accept"}

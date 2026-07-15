@@ -14,19 +14,6 @@ interface Room {
   creatorId: string | null;
 }
 
-interface DMRoom {
-  id: string;
-  name: string;
-  participant1Id: string;
-  participant2Id: string;
-}
-
-interface User {
-  id: string;
-  username: string;
-  avatarUrl?: string | null;
-}
-
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 function LockIcon() {
@@ -49,11 +36,8 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
   const router = useRouter();
 
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [dms, setDMs] = useState<DMRoom[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [roomsOpen, setRoomsOpen] = useState(true);
-  const [dmsOpen, setDmsOpen] = useState(true);
 
   const userId: string = (session?.user as any)?.id ?? "";
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
@@ -66,8 +50,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
       .then(data => {
         if (Array.isArray(data.rooms)) setRooms(data.rooms);
-        if (Array.isArray(data.dms)) setDMs(data.dms);
-        if (Array.isArray(data.users)) setUsers(data.users);
       })
       .catch(() => {
         // On error (network, rate-limit, etc.) keep whatever data is already in state
@@ -78,11 +60,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       .catch(() => {});
   }, [status, userId]);
 
-  function dmPartnerName(dm: DMRoom) {
-    const otherId = dm.participant1Id === userId ? dm.participant2Id : dm.participant1Id;
-    return users.find(u => u.id === otherId)?.username ?? "Unknown";
-  }
-
   function handleRoomClick(room: Room) {
     if (room.isPrivate && room.creatorId !== userId && !isAdmin) {
       // Navigate to lobby which handles password modal
@@ -90,15 +67,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
     } else {
       router.push(`/room/${room.name}`);
     }
-  }
-
-  async function openDM(u: User) {
-    const res = await fetch(`${SERVER}/api/dm`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId1: userId, userId2: u.id }),
-    });
-    const data = await res.json();
-    if (res.ok) router.push(`/room/${data.name}`);
   }
 
   return (
@@ -212,50 +180,6 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
           )}
         </div>
 
-        {/* DMs */}
-        <div className="mt-2">
-          {collapsed ? (
-            <button onClick={() => { setCollapsed(false); setDmsOpen(true); }}
-              className="flex w-full items-center justify-center py-2 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" />
-                <path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" />
-              </svg>
-            </button>
-          ) : (
-            <div className="flex items-center px-3 py-1">
-              <button onClick={() => setDmsOpen(v => !v)}
-                className="flex flex-1 items-center gap-1 text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
-                  className={`h-3 w-3 transition-transform ${dmsOpen ? "rotate-90" : ""}`}>
-                  <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                </svg>
-                Direct Messages
-              </button>
-            </div>
-          )}
-
-          {!collapsed && dmsOpen && (
-            <>
-              <ul className="mt-0.5">
-                {dms.length === 0 ? (
-                  <li className="px-3 py-2 text-xs text-gray-500 dark:text-gray-600">No DMs yet</li>
-                ) : dms.map(dm => (
-                  <li key={dm.id}>
-                    <button onClick={() => router.push(`/room/${dm.name}`)}
-                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 transition-colors text-left
-                        ${activeRoomName === dm.name ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"}`}>
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-xs font-bold text-violet-600 dark:text-violet-400">
-                        {dmPartnerName(dm)[0]?.toUpperCase()}
-                      </span>
-                      <span className="truncate text-sm">{dmPartnerName(dm)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
       </nav>
 
       {/* Profile + Sign out */}

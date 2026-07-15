@@ -4,7 +4,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import NotificationBell from "./NotificationBell";
-import DMPanel from "./DMPanel";
 import { Wordmark } from "./Wordmark";
 import { useTheme } from "./ThemeProvider";
 
@@ -37,7 +36,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const userId: string = (session?.user as any)?.id ?? "";
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [showDM, setShowDM] = useState(false);
+  const [dmUnread, setDmUnread] = useState(0);
   const { theme, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -45,6 +44,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
     fetch(`${SERVER}/api/users/${userId}/profile`).then(r => r.json())
       .then(d => setAvatarUrl(d.avatarUrl ?? null)).catch(() => {});
   }, [userId]);
+
+  // Poll the unread badge. Re-runs on navigation so opening a thread, which
+  // marks it read, clears the badge without waiting for the next tick.
+  useEffect(() => {
+    if (!userId) return;
+    const load = () => fetch(`${SERVER}/api/dm/unread-count?userId=${userId}`)
+      .then(r => r.json()).then(d => setDmUnread(d?.unread ?? 0)).catch(() => {});
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+  }, [userId, pathname]);
 
   const isActive = (href: string, match?: string[]) => href === "/home"
     ? pathname === "/home"
@@ -76,10 +86,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="border-t border-gray-200 dark:border-gray-800 p-2 pb-safe space-y-1">
-          <button onClick={() => setShowDM(true)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
+          <button onClick={() => router.push("/messages")}
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${isActive("/messages") ? "bg-brand-green/15 text-brand-green" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"}`}>
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0"><path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" /><path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" /></svg>
             Messages
+            {dmUnread > 0 && (
+              <span className="ml-auto rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{dmUnread > 99 ? "99+" : dmUnread}</span>
+            )}
           </button>
           <button onClick={() => router.push("/dashboard")}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
@@ -110,8 +123,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <Wordmark className="text-sm" />
           <div className="ml-auto flex items-center gap-2">
             {userId && <NotificationBell userId={userId} username={username} />}
-            <button onClick={() => setShowDM(true)} className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Messages">
+            <button onClick={() => router.push("/messages")} className="relative text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Messages">
               <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" /><path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" /></svg>
+              {dmUnread > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[9px] font-bold text-white">{dmUnread > 9 ? "9+" : dmUnread}</span>
+              )}
             </button>
           </div>
         </div>
@@ -132,8 +148,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
       </div>
-
-      {showDM && userId && <DMPanel userId={userId} onClose={() => setShowDM(false)} />}
     </div>
   );
 }
