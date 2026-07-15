@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import TrainingTabs from "@/components/TrainingTabs";
 import { SERIES, TOTAL_LESSONS } from "./content";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -61,14 +62,8 @@ export default function LearnPage() {
 
   return (
     <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
-      {/* Top bar */}
-      <div className="shrink-0 flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 px-4 py-3 pt-safe">
-        <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
-          </svg>
-        </button>
-        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Learn</span>
+      <div className="pt-safe">
+        <TrainingTabs />
       </div>
 
       <div className="flex-1 overflow-y-auto">

@@ -11,7 +11,9 @@ import { useTheme } from "./ThemeProvider";
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 type IconProps = { className?: string };
-const NAV: { href: string; label: string; Icon: (p: IconProps) => ReactNode }[] = [
+// `match` lists extra path prefixes that should keep this entry highlighted —
+// Training Grounds owns both /arena and /learn, which switch via a tab header.
+const NAV: { href: string; label: string; match?: string[]; Icon: (p: IconProps) => ReactNode }[] = [
   { href: "/home", label: "Home", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path fillRule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clipRule="evenodd" /></svg>
   ) },
@@ -21,16 +23,13 @@ const NAV: { href: string; label: string; Icon: (p: IconProps) => ReactNode }[] 
   { href: "/compete", label: "Battle Grounds", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h4.017l-1.75 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 14.25 8h-4.017l1.75-6.093Z" /></svg>
   ) },
-  { href: "/arena", label: "Training Grounds", Icon: ({ className }) => (
+  { href: "/arena", label: "Training Grounds", match: ["/learn"], Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M15.5 3H14V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v1H4.5A1.5 1.5 0 0 0 3 4.5v1A2.5 2.5 0 0 0 5.5 8h.28A4.01 4.01 0 0 0 9 10.9V13H7a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.1A4.01 4.01 0 0 0 14.22 8h.28A2.5 2.5 0 0 0 17 5.5v-1A1.5 1.5 0 0 0 15.5 3ZM5.5 6.5A.5.5 0 0 1 5 6V5h1v1.5h-.5Zm10 0H15V5h1v1a.5.5 0 0 1-.5.5ZM6 16h8a1 1 0 0 1 1 1H5a1 1 0 0 1 1-1Z" /></svg>
-  ) },
-  { href: "/learn", label: "Learn", Icon: ({ className }) => (
-    <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a.999.999 0 0 1 .356-.257l4-1.714a1 1 0 1 1 .788 1.838L7.667 9.088l1.94.831a1 1 0 0 0 .787 0l7-3a1 1 0 0 0 0-1.838l-7-3ZM3.31 9.397 5 10.12v4.102a8.969 8.969 0 0 0-1.05-.174 1 1 0 0 1-.89-.89 11.115 11.115 0 0 1 .25-3.762ZM9.3 16.573A9.026 9.026 0 0 0 7 14.935v-3.957l1.818.78a3 3 0 0 0 2.364 0l5.508-2.361a11.026 11.026 0 0 1 .25 3.762 1 1 0 0 1-.89.89 8.968 8.968 0 0 0-5.75 2.524 1 1 0 0 1-1.4 0ZM6 18a1 1 0 0 0 1-1v-2.065a8.935 8.935 0 0 0-2-.712V17a1 1 0 0 0 1 1Z" /></svg>
   ) },
 ];
 
 // Persistent unified navigation shell — a left rail on desktop, a bottom tab bar on mobile —
-// wrapping every top-level section (Home, Debates, Compete, Arena, Learn).
+// wrapping every top-level section (Home, Common Grounds, Battle Grounds, Training Grounds).
 export default function AppShell({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -47,7 +46,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .then(d => setAvatarUrl(d.avatarUrl ?? null)).catch(() => {});
   }, [userId]);
 
-  const isActive = (href: string) => href === "/home" ? pathname === "/home" : pathname.startsWith(href);
+  const isActive = (href: string, match?: string[]) => href === "/home"
+    ? pathname === "/home"
+    : [href, ...(match ?? [])].some((p) => pathname.startsWith(p));
 
   const Avatar = ({ size }: { size: string }) => avatarUrl
     ? <img src={avatarUrl} alt={username} className={`${size} rounded-full object-cover ring-1 ring-gray-300 dark:ring-gray-700`} />
@@ -63,8 +64,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <div className="ml-auto">{userId && <NotificationBell userId={userId} username={username} />}</div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
-          {NAV.map(({ href, label, Icon }) => {
-            const active = isActive(href);
+          {NAV.map(({ href, label, match, Icon }) => {
+            const active = isActive(href, match);
             return (
               <button key={href} onClick={() => router.push(href)}
                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${active ? "bg-brand-green/15 text-brand-green" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"}`}>
@@ -119,8 +120,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         {/* Mobile bottom tab bar */}
         <nav className="md:hidden flex shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pb-safe">
-          {NAV.map(({ href, label, Icon }) => {
-            const active = isActive(href);
+          {NAV.map(({ href, label, match, Icon }) => {
+            const active = isActive(href, match);
             return (
               <button key={href} onClick={() => router.push(href)}
                 className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors ${active ? "text-indigo-600 dark:text-indigo-400" : "text-gray-500"}`}>

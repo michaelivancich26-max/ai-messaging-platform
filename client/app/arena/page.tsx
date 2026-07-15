@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ArenaSidebar from "@/components/ArenaSidebar";
+import TrainingTabs from "@/components/TrainingTabs";
 import { BOTS, BOT_COLORS, botWinRate, type Bot } from "@/lib/bots";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -646,6 +647,8 @@ function ArenaContent() {
           </button>
           <span className="ml-3 text-sm font-semibold text-amber-600 dark:text-amber-400">Training Grounds</span>
         </div>
+
+        <TrainingTabs />
 
         {/* Hero */}
         <div className="relative shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gradient-to-b from-white dark:from-gray-900 via-white/90 dark:via-gray-900/90 to-gray-50 dark:to-gray-950 px-6 py-14 text-center">
