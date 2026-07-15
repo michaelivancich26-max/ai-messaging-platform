@@ -17,7 +17,6 @@ import ArenaSidebar from "@/components/ArenaSidebar";
 import ChannelList, { type Channel } from "@/components/ChannelList";
 import type { ChatMessage, ClaimInfo, CredScore, DebatePosition, UserPositionEntry, DebateTurnState } from "@/lib/types";
 import DebateHeader from "@/components/DebateHeader";
-import BetPanel from "@/components/BetPanel";
 import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
@@ -119,9 +118,9 @@ export default function RoomPage() {
     eloAfter?: Record<string, number>;
   } | null>(null);
   const [propositionScore, setPropositionScore] = useState(50); // 0=bot winning, 100=human winning
-  // Competitive betting odds = the live proposition bar (sharpened), shown to all parties
-  const [betPriceA, setBetPriceA] = useState(0.5);
-  const [betLabels, setBetLabels] = useState<{ a: string; b: string } | null>(null);
+  // The live proposition bar (sharpened), shown to all parties in competitive rooms
+  const [propPriceA, setPropPriceA] = useState(0.5);
+  const [propLabels, setPropLabels] = useState<{ a: string; b: string } | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // seconds remaining
   const lastScoredLenRef = useRef(0);
 
@@ -577,7 +576,7 @@ export default function RoomPage() {
 
   // Arena (bot rooms): proposition — score after each message, trigger when threshold crossed.
   // Competitive rooms have no bot, so /api/arena-score returns a constant 50 for them; they
-  // drive their proposition threshold off the sharpened betting bar instead (effect below).
+  // drive their proposition threshold off the sharpened proposition bar instead (effect below).
   useEffect(() => {
     if (!isBotRoom || matchState !== "active" || winCondition.type !== "proposition") return;
     if (messages.length <= lastScoredLenRef.current || messages.length < 2) return;
@@ -600,38 +599,38 @@ export default function RoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, isBotRoom, matchState, winCondition.type, (winCondition as any).threshold]);
 
-  // Competitive: track the live betting odds (= sharpened proposition bar) so the
-  // bar is visible to all parties regardless of win condition.
+  // Competitive: track the live proposition bar so it's visible to all parties
+  // regardless of win condition.
   useEffect(() => {
     if (!isCompetitiveRoom) return;
     let active = true;
-    fetch(`${SERVER}/api/markets/${roomId}`)
+    fetch(`${SERVER}/api/proposition/${roomId}`)
       .then((r) => r.json())
       .then((d) => {
-        if (!active || !d?.market) return;
-        setBetLabels({ a: d.market.labelA, b: d.market.labelB });
-        setBetPriceA(d.market.priceA);
+        if (!active || !d?.proposition) return;
+        setPropLabels({ a: d.proposition.labelA, b: d.proposition.labelB });
+        setPropPriceA(d.proposition.priceA);
       })
       .catch(() => {});
     const socket = getSocket();
-    const onOdds = (x: { roomName: string; priceA: number }) => { if (x.roomName === roomId) setBetPriceA(x.priceA); };
-    const onSettled = (x: { roomName: string; priceA: number }) => { if (x.roomName === roomId) setBetPriceA(x.priceA); };
-    socket.on("oddsUpdate", onOdds);
-    socket.on("marketSettled", onSettled);
-    return () => { active = false; socket.off("oddsUpdate", onOdds); socket.off("marketSettled", onSettled); };
+    const onUpdate = (x: { roomName: string; priceA: number }) => { if (x.roomName === roomId) setPropPriceA(x.priceA); };
+    const onSettled = (x: { roomName: string; priceA: number }) => { if (x.roomName === roomId) setPropPriceA(x.priceA); };
+    socket.on("propositionUpdate", onUpdate);
+    socket.on("propositionSettled", onSettled);
+    return () => { active = false; socket.off("propositionUpdate", onUpdate); socket.off("propositionSettled", onSettled); };
   }, [isCompetitiveRoom, roomId]);
 
-  // Competitive proposition win: end the match when the sharpened betting bar crosses the
-  // threshold — the same value that's displayed and that settles bets, so it's fully congruent.
-  // Guarded on messages.length >= 2 so a fresh 50/50 market can't self-resolve on mount.
+  // Competitive proposition win: end the match when the proposition bar crosses the
+  // threshold — the same value that's displayed, so what you see is what ends the match.
+  // Guarded on messages.length >= 2 so a fresh 50/50 bar can't self-resolve on mount.
   useEffect(() => {
     if (!isCompetitiveRoom || isSpectator || matchState !== "active" || winCondition.type !== "proposition") return;
     if (messages.length < 2) return;
     const threshold = (winCondition as { type: "proposition"; threshold: number }).threshold;
-    const pct = betPriceA * 100;
+    const pct = propPriceA * 100;
     if (pct >= threshold || pct <= 100 - threshold) triggerJudge(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [betPriceA, messages.length, isCompetitiveRoom, isSpectator, matchState, winCondition.type, (winCondition as any).threshold]);
+  }, [propPriceA, messages.length, isCompetitiveRoom, isSpectator, matchState, winCondition.type, (winCondition as any).threshold]);
 
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
     if (isSpectator) return; // spectators never drive match completion
@@ -1263,15 +1262,6 @@ export default function RoomPage() {
         />
       )}
 
-      {/* Live betting for competitive matches (spectators bet on the outcome) */}
-      {isCompetitiveRoom && userId && (
-        <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-950/40 px-3 py-2">
-          <div className="mx-auto max-w-md">
-            <BetPanel roomName={roomId} userId={userId} />
-          </div>
-        </div>
-      )}
-
       {/* Opinionated badge when there's no proposition/DebateHeader */}
       {!roomId.startsWith("dm-") && isOpinionated && !activeChannel?.isSubDebate && !(roomMeta as any)?.proposition && (
         <div className="shrink-0 flex items-center gap-1.5 border-b border-amber-900/30 bg-amber-100 dark:bg-amber-950/20 px-4 py-1.5">
@@ -1318,8 +1308,8 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Competitive proposition bar — always visible to all parties (betting-driven) */}
-      {isCompetitiveRoom && matchState === "active" && betLabels && (
+      {/* Competitive proposition bar — always visible to all parties */}
+      {isCompetitiveRoom && matchState === "active" && propLabels && (
         <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 px-4 py-2">
           <div className="mb-1 flex items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Proposition</span>
@@ -1332,12 +1322,12 @@ export default function RoomPage() {
             )}
           </div>
           <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-            <div className="bg-emerald-500 transition-all duration-700" style={{ width: `${Math.round(betPriceA * 100)}%` }} />
-            <div className="bg-rose-500 transition-all duration-700" style={{ width: `${Math.round((1 - betPriceA) * 100)}%` }} />
+            <div className="bg-emerald-500 transition-all duration-700" style={{ width: `${Math.round(propPriceA * 100)}%` }} />
+            <div className="bg-rose-500 transition-all duration-700" style={{ width: `${Math.round((1 - propPriceA) * 100)}%` }} />
           </div>
           <div className="mt-1 flex items-center justify-between text-[10px]">
-            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{betLabels.a} · {Math.round(betPriceA * 100)}%</span>
-            <span className="font-semibold text-rose-700 dark:text-rose-300">{Math.round((1 - betPriceA) * 100)}% · {betLabels.b}</span>
+            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{propLabels.a} · {Math.round(propPriceA * 100)}%</span>
+            <span className="font-semibold text-rose-700 dark:text-rose-300">{Math.round((1 - propPriceA) * 100)}% · {propLabels.b}</span>
           </div>
         </div>
       )}

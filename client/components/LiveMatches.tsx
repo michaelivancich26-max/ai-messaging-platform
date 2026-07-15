@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import QuickBet from "./QuickBet";
-import { GavelIcon } from "./GavelsPill";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
-const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 const pct = (p: number) => `${Math.round(p * 100)}%`;
 
 export interface LiveMatch {
@@ -26,8 +23,6 @@ export interface LiveMatch {
   priceB: number;
   labelA: string | null;
   labelB: string | null;
-  volume: number;
-  bettors: number;
 }
 
 export function useLiveMatches(pollMs = 8000) {
@@ -74,10 +69,8 @@ function Side({ players, stance }: { players: { username: string; elo: number }[
 }
 
 function MatchCard({ m, onWatch, compact, myId }: { m: LiveMatch; onWatch: () => void; compact?: boolean; myId: string }) {
-  const [betSide, setBetSide] = useState<"A" | "B" | null>(null);
-  const hasMarket = m.labelA != null && m.labelB != null;
+  const hasBar = m.labelA != null && m.labelB != null;
   const isParticipant = !!myId && m.participantIds.includes(myId);
-  const canBet = hasMarket && !isParticipant;
 
   return (
     <div className={`flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/70 p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-700 ${compact ? "w-72 shrink-0" : ""}`}>
@@ -100,7 +93,7 @@ function MatchCard({ m, onWatch, compact, myId }: { m: LiveMatch; onWatch: () =>
         <Side players={m.sideB} stance={m.sideBStance} />
       </div>
 
-      {hasMarket && (
+      {hasBar && (
         <div>
           <div className="flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
             <div className="bg-emerald-500 transition-all duration-500" style={{ width: pct(m.priceA) }} />
@@ -110,39 +103,14 @@ function MatchCard({ m, onWatch, compact, myId }: { m: LiveMatch; onWatch: () =>
             <span className="font-semibold text-emerald-700 dark:text-emerald-300">{m.labelA} · {pct(m.priceA)}</span>
             <span className="font-semibold text-rose-700 dark:text-rose-300">{pct(m.priceB)} · {m.labelB}</span>
           </div>
-          <div className="mt-1.5 flex items-center gap-3 text-[10px] text-gray-500">
-            <span className="flex items-center gap-1 text-amber-600/90 dark:text-amber-400/90"><GavelIcon className="h-3 w-3" /> {money(m.volume)} staked</span>
-            <span>{m.bettors} {m.bettors === 1 ? "bettor" : "bettors"}</span>
-          </div>
         </div>
       )}
 
-      {canBet ? (
-        <div className="flex gap-1.5">
-          <button onClick={() => setBetSide("A")}
-            className="flex-1 rounded-xl bg-emerald-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-500">
-            Bet {m.labelA}
-          </button>
-          <button onClick={() => setBetSide("B")}
-            className="flex-1 rounded-xl bg-rose-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500">
-            Bet {m.labelB}
-          </button>
-          <button onClick={onWatch} title="Watch live"
-            className="shrink-0 rounded-xl bg-gray-100 dark:bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">
-            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
-          </button>
-        </div>
-      ) : (
-        <button onClick={onWatch}
-          className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-500">
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
-          {isParticipant ? "Back to your match" : "Watch live"}
-        </button>
-      )}
-
-      {betSide && hasMarket && (
-        <QuickBet roomName={m.roomName} side={betSide} labelA={m.labelA!} labelB={m.labelB!} priceA={m.priceA} onClose={() => setBetSide(null)} />
-      )}
+      <button onClick={onWatch}
+        className="flex items-center justify-center gap-1.5 rounded-xl bg-red-600/90 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-500">
+        <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M4.5 3.5v9l7-4.5-7-4.5Z" /></svg>
+        {isParticipant ? "Back to your match" : "Watch live"}
+      </button>
     </div>
   );
 }

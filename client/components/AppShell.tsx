@@ -4,7 +4,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import NotificationBell from "./NotificationBell";
-import GavelsPill from "./GavelsPill";
 import DMPanel from "./DMPanel";
 import { Wordmark } from "./Wordmark";
 import { useTheme } from "./ThemeProvider";
@@ -28,13 +27,10 @@ const NAV: { href: string; label: string; Icon: (p: IconProps) => ReactNode }[] 
   { href: "/learn", label: "Learn", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a.999.999 0 0 1 .356-.257l4-1.714a1 1 0 1 1 .788 1.838L7.667 9.088l1.94.831a1 1 0 0 0 .787 0l7-3a1 1 0 0 0 0-1.838l-7-3ZM3.31 9.397 5 10.12v4.102a8.969 8.969 0 0 0-1.05-.174 1 1 0 0 1-.89-.89 11.115 11.115 0 0 1 .25-3.762ZM9.3 16.573A9.026 9.026 0 0 0 7 14.935v-3.957l1.818.78a3 3 0 0 0 2.364 0l5.508-2.361a11.026 11.026 0 0 1 .25 3.762 1 1 0 0 1-.89.89 8.968 8.968 0 0 0-5.75 2.524 1 1 0 0 1-1.4 0ZM6 18a1 1 0 0 0 1-1v-2.065a8.935 8.935 0 0 0-2-.712V17a1 1 0 0 0 1 1Z" /></svg>
   ) },
-  { href: "/bets", label: "Betting Grounds", Icon: ({ className }) => (
-    <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-11.75a.75.75 0 0 0-1.5 0v.316a3 3 0 0 0-.727.198c-.782.33-1.523 1.008-1.523 2.036 0 .953.626 1.573 1.28 1.933.585.323 1.322.501 1.906.644l.048.012c.657.164 1.08.281 1.351.431.213.118.24.209.24.284 0 .073-.026.16-.24.28-.212.12-.573.222-1.135.222-.669 0-1.09-.219-1.32-.462a.75.75 0 0 0-1.088 1.031A3.11 3.11 0 0 0 9.25 13.4v.348a.75.75 0 0 0 1.5 0v-.316a3 3 0 0 0 .727-.198c.782-.33 1.523-1.008 1.523-2.036 0-.953-.626-1.573-1.28-1.933-.585-.323-1.322-.501-1.906-.644l-.048-.012c-.657-.164-1.08-.281-1.351-.431-.213-.118-.24-.209-.24-.284 0-.073.026-.16.24-.28.212-.12.573-.222 1.135-.222.669 0 1.09.219 1.32.462a.75.75 0 0 0 1.088-1.031A3.11 3.11 0 0 0 10.75 6.6v-.35Z" clipRule="evenodd" /></svg>
-  ) },
 ];
 
 // Persistent unified navigation shell — a left rail on desktop, a bottom tab bar on mobile —
-// wrapping every top-level section (Home, Debates, Compete, Arena, Learn, Bets).
+// wrapping every top-level section (Home, Debates, Compete, Arena, Learn).
 export default function AppShell({ children }: { children: ReactNode }) {
   const { data: session } = useSession();
   const router = useRouter();
@@ -79,7 +75,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="border-t border-gray-200 dark:border-gray-800 p-2 pb-safe space-y-1">
-          <div className="px-1 pb-1"><GavelsPill /></div>
           <button onClick={() => setShowDM(true)}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 shrink-0"><path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" /><path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" /></svg>
@@ -113,7 +108,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div className="md:hidden flex items-center gap-3 h-12 shrink-0 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 pt-safe">
           <Wordmark className="text-sm" />
           <div className="ml-auto flex items-center gap-2">
-            <GavelsPill compact />
             {userId && <NotificationBell userId={userId} username={username} />}
             <button onClick={() => setShowDM(true)} className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200" aria-label="Messages">
               <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M3.505 2.365A41.369 41.369 0 0 1 9 2c1.863 0 3.697.124 5.495.365 1.247.167 2.18 1.108 2.435 2.268a4.45 4.45 0 0 0-.577-.069 43.141 43.141 0 0 0-4.706 0C9.229 4.696 7.5 6.727 7.5 8.998v2.24c0 1.413.67 2.735 1.76 3.562l-2.98 2.98A.75.75 0 0 1 5 17.25v-3.443c-.501-.048-1-.106-1.495-.172C2.033 13.438 1 12.162 1 10.72V5.28c0-1.441 1.033-2.717 2.505-2.914Z" /><path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" /></svg>
