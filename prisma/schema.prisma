@@ -86,6 +86,10 @@ model Room {
   isDM           Boolean   @default(false)
   participant1Id String?
   participant2Id String?
+  // DM read state — when each participant last read this conversation.
+  // Unread = messages from the other person newer than your timestamp.
+  participant1ReadAt DateTime?
+  participant2ReadAt DateTime?
   aiPersona      String?
   proposition    String?
   isOpinionated  Boolean   @default(false)

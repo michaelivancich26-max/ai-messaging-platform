@@ -30,6 +30,13 @@ export default function RoomPage() {
   const router = useRouter();
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
 
+  // DMs moved to /messages. Old dm-<id>-<id> links (bookmarks, stale
+  // notifications) land here — send them to the Messages surface instead of
+  // rendering a debate room stripped of its debate parts.
+  useEffect(() => {
+    if (roomId?.startsWith("dm-")) router.replace("/messages");
+  }, [roomId, router]);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab] = useState<"room" | "settings" | "ai">("room");

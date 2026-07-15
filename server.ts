@@ -2868,41 +2868,120 @@ app.get("/api/users", async (req, res) => {
   res.json(users);
 });
 
-app.get("/api/dm", async (req, res) => {
-  const userId = req.query.userId as string;
+// ── Direct messages ───────────────────────────────────────────────────────────
+// A DM room's name is `dm-<sortedIdA>-<sortedIdB>` — a canonical database key so
+// the pair dedupes, not something to put in front of a user. Clients address
+// conversations by partner username; these endpoints do the translation.
+
+function dmRoomName(userIdA: string, userIdB: string): string {
+  const [a, b] = [userIdA, userIdB].sort();
+  return `dm-${a}-${b}`;
+}
+
+// Which read-state column is "mine" depends on the participant slot I landed in.
+function dmReadField(room: { participant1Id: string | null }, userId: string): "participant1ReadAt" | "participant2ReadAt" {
+  return room.participant1Id === userId ? "participant1ReadAt" : "participant2ReadAt";
+}
+
+// Messages from the other person that arrived after I last read.
+function dmUnreadWhere(room: { id: string; participant1Id: string | null }, userId: string) {
+  const readAt = (room as any)[dmReadField(room, userId)] as Date | null;
+  return { roomId: room.id, userId: { not: userId }, ...(readAt ? { createdAt: { gt: readAt } } : {}) };
+}
+
+app.get("/api/dm/conversations", async (req, res) => {
+  const userId = String(req.query.userId ?? "");
   if (!userId) return res.status(400).json({ error: "userId required" });
-  const dms = await prisma.room.findMany({
-    where: {
-      isDM: true,
-      OR: [{ participant1Id: userId }, { participant2Id: userId }],
-    },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { messages: true } } },
-  });
-  res.json(dms);
+  try {
+    const rooms = await prisma.room.findMany({
+      where: { isDM: true, OR: [{ participant1Id: userId }, { participant2Id: userId }] },
+    });
+    const partnerIds = rooms
+      .map((r) => (r.participant1Id === userId ? r.participant2Id : r.participant1Id))
+      .filter((id): id is string => !!id);
+    const partners = await prisma.user.findMany({
+      where: { id: { in: partnerIds } },
+      select: { id: true, username: true, avatarUrl: true },
+    });
+    const byId = new Map(partners.map((p) => [p.id, p]));
+
+    const convos = (await Promise.all(rooms.map(async (r) => {
+      const partnerId = r.participant1Id === userId ? r.participant2Id : r.participant1Id;
+      const partner = partnerId ? byId.get(partnerId) : null;
+      if (!partner) return null;                       // partner deleted — hide the thread
+      const last = await prisma.message.findFirst({
+        where: { roomId: r.id },
+        orderBy: { createdAt: "desc" },
+        select: { content: true, createdAt: true, userId: true },
+      });
+      const unread = await prisma.message.count({ where: dmUnreadWhere(r, userId) });
+      return {
+        roomName: r.name,
+        partner,
+        lastMessage: last ? { content: last.content, createdAt: last.createdAt, mine: last.userId === userId } : null,
+        lastActivity: last?.createdAt ?? r.createdAt,
+        unread,
+      };
+    }))).filter((c): c is NonNullable<typeof c> => !!c);
+
+    convos.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
+    res.json(convos);
+  } catch (e) { console.error("[dm conversations]", e); res.status(500).json({ error: "Server error" }); }
 });
 
-app.post("/api/dm", async (req, res) => {
-  const { userId1, userId2 } = req.body as { userId1: string; userId2: string };
-  if (!userId1 || !userId2) return res.status(400).json({ error: "Both user IDs required" });
-  const [a, b] = [userId1, userId2].sort();
-  const name = `dm-${a}-${b}`;
+app.get("/api/dm/unread-count", async (req, res) => {
+  const userId = String(req.query.userId ?? "");
+  if (!userId) return res.status(400).json({ error: "userId required" });
   try {
-    const existing = await prisma.room.findUnique({ where: { name } });
-    const room = existing ?? await prisma.room.create({ data: { name, isDM: true, participant1Id: a, participant2Id: b } });
-    // Notify the other participant only for brand-new DMs
-    if (!existing) {
-      const initiator = await prisma.user.findUnique({ where: { id: userId1 }, select: { username: true } });
-      const recipientId = userId1 === a ? b : a;
+    const rooms = await prisma.room.findMany({
+      where: { isDM: true, OR: [{ participant1Id: userId }, { participant2Id: userId }] },
+    });
+    const counts = await Promise.all(rooms.map((r) => prisma.message.count({ where: dmUnreadWhere(r, userId) })));
+    res.json({ unread: counts.reduce((a, b) => a + b, 0), conversations: counts.filter((c) => c > 0).length });
+  } catch (e) { console.error("[dm unread-count]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// Resolve a partner username to its DM room, creating the room on first contact.
+app.get("/api/dm/with/:username", async (req, res) => {
+  const userId = String(req.query.userId ?? "");
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    const partner = await prisma.user.findFirst({
+      where: { username: { equals: req.params.username, mode: "insensitive" } },
+      select: { id: true, username: true, avatarUrl: true },
+    });
+    if (!partner) return res.status(404).json({ error: "User not found" });
+    if (partner.id === userId) return res.status(400).json({ error: "You can't message yourself" });
+
+    const name = dmRoomName(userId, partner.id);
+    const [a, b] = [userId, partner.id].sort();
+    let room = await prisma.room.findUnique({ where: { name } });
+    if (!room) {
+      room = await prisma.room.create({ data: { name, isDM: true, participant1Id: a, participant2Id: b } });
+      const me = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
       const notif = await (prisma as any).notification.create({
-        data: { userId: recipientId, type: "invite", roomId: room.id, roomName: `dm:${initiator?.username ?? userId1}`, fromUserId: userId1, fromUsername: initiator?.username ?? "Someone" },
+        data: { userId: partner.id, type: "invite", roomId: room.id, roomName: `dm:${me?.username ?? userId}`, fromUserId: userId, fromUsername: me?.username ?? "Someone" },
       });
-      deliverNotification(recipientId, notif);
+      deliverNotification(partner.id, notif);
     }
-    res.json(room);
-  } catch {
-    res.status(500).json({ error: "Failed to create DM" });
-  }
+    // roomId is the DB id, which is what emitted messages carry. The client needs
+    // it to tell this conversation's messages apart: joinRoom never leaves the
+    // previous room, so a socket stays subscribed to every DM it has opened.
+    res.json({ roomName: room.name, roomId: room.id, partner });
+  } catch (e) { console.error("[dm with]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// Mark a conversation read as of now.
+app.post("/api/dm/read", async (req, res) => {
+  const { userId, roomName } = req.body as { userId: string; roomName: string };
+  if (!userId || !roomName) return res.status(400).json({ error: "userId and roomName required" });
+  try {
+    const room = await prisma.room.findUnique({ where: { name: roomName } });
+    if (!room?.isDM) return res.status(404).json({ error: "Not a DM" });
+    if (room.participant1Id !== userId && room.participant2Id !== userId) return res.status(403).json({ error: "Not a participant" });
+    await prisma.room.update({ where: { id: room.id }, data: { [dmReadField(room, userId)]: new Date() } as any });
+    res.json({ ok: true });
+  } catch (e) { console.error("[dm read]", e); res.status(500).json({ error: "Server error" }); }
 });
 
 // POST /api/bot-rooms — create a private 1v1 debate room against a bot
