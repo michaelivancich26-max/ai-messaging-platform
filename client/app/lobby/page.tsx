@@ -39,7 +39,7 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
           ))
         ) : (
           topics.map((t, i) => (
-            <div key={i} className="shrink-0 w-56 flex flex-col justify-between gap-3 rounded-xl border border-amber-900/30 bg-white dark:bg-gray-900 p-3">
+            <div key={i} className="shrink-0 w-56 flex flex-col justify-between gap-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   {t.sourceUrl ? (
@@ -53,7 +53,7 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
                   ) : (
                     <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-600">{t.source}</span>
                   )}
-                  <span className="rounded-full bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-500">Official</span>
+                  <span className="rounded-full bg-amber-200 dark:bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">Official</span>
                 </div>
                 <p className="text-xs leading-relaxed text-gray-800 dark:text-gray-200">{t.proposition}</p>
               </div>
@@ -498,8 +498,8 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                 typeFilter === key
                   ? key === "official" ? "bg-amber-600 text-white"
                   : key === "fishbowl" ? "bg-cyan-700 text-white"
-                  : key === "private" ? "bg-gray-300 dark:bg-gray-600 text-white"
-                  : "bg-gray-200 dark:bg-gray-700 text-white"
+                  : key === "private" ? "bg-slate-500 text-white"
+                  : "bg-gray-600 text-white"
                   : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
               }`}>
               {label}
@@ -521,13 +521,10 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
             {filtered.map(room => {
               const isTrending = room.name.startsWith("tr-");
               return (
-              <div key={room.id} className={`flex flex-col gap-3 rounded-2xl border p-4 transition-colors ${
-                isTrending
-                  ? "border-amber-900/50 bg-amber-100 dark:bg-amber-950/10 hover:border-amber-700/60"
-                  : "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700"
-              }`}>
+              // Official/trending rooms look like any other room — only the badge carries color.
+              <div key={room.id} className="flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 transition-colors hover:border-gray-300 dark:hover:border-gray-700">
                 <div className="flex items-start gap-2">
-                  <span className={`mt-0.5 shrink-0 ${isTrending ? "text-amber-600 dark:text-amber-400" : room.isFishbowl ? "text-cyan-600 dark:text-cyan-400" : room.isPrivate ? "text-amber-500" : "text-indigo-500"}`}>
+                  <span className={`mt-0.5 shrink-0 ${isTrending ? "text-amber-600 dark:text-amber-400" : room.isFishbowl ? "text-cyan-600 dark:text-cyan-400" : room.isPrivate ? "text-slate-500 dark:text-slate-400" : "text-indigo-500"}`}>
                     {isTrending ? (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                         <path d="M15.98 1.804a1 1 0 0 0-1.96 0l-.24 1.192a1 1 0 0 1-.784.785l-1.192.238a1 1 0 0 0 0 1.962l1.192.238a1 1 0 0 1 .785.785l.238 1.192a1 1 0 0 0 1.962 0l.238-1.192a1 1 0 0 1 .785-.785l1.192-.238a1 1 0 0 0 0-1.962l-1.192-.238a1 1 0 0 1-.785-.785l-.238-1.192ZM6.949 5.684a1 1 0 0 0-1.898 0l-.683 2.051a1 1 0 0 1-.633.633l-2.051.683a1 1 0 0 0 0 1.898l2.051.684a1 1 0 0 1 .633.632l.683 2.051a1 1 0 0 0 1.898 0l.683-2.051a1 1 0 0 1 .633-.633l2.051-.683a1 1 0 0 0 0-1.898l-2.051-.683a1 1 0 0 1-.633-.633L6.95 5.684ZM13.949 13.684a1 1 0 0 0-1.898 0l-.184.551a1 1 0 0 1-.632.633l-.551.183a1 1 0 0 0 0 1.898l.551.184a1 1 0 0 1 .633.632l.183.551a1 1 0 0 0 1.898 0l.184-.551a1 1 0 0 1 .632-.632l.551-.184a1 1 0 0 0 0-1.898l-.551-.183a1 1 0 0 1-.633-.633l-.183-.551Z" />
@@ -552,7 +549,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                         <div className="flex items-center gap-1.5 min-w-0">
                           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 line-clamp-2 leading-snug">{room.proposition}</p>
                         </div>
-                        <span className="mt-1 inline-block rounded-full bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Official · Trending</span>
+                        <span className="mt-1 inline-block rounded-full bg-amber-200 dark:bg-amber-950/60 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">Official · Trending</span>
                       </>
                     ) : (
                       <>
