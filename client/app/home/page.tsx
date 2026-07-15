@@ -1,8 +1,22 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import LiveMatches from "@/components/LiveMatches";
+import type { Medal } from "@/components/MedalsPanel";
+import type { CredScore } from "@/lib/types";
+import { SERIES, TOTAL_LESSONS } from "@/app/learn/content";
+import { PUZZLES } from "@/app/learn/puzzles/content";
+
+const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+
+interface LessonDone { seriesSlug: string; lessonSlug: string; completedAt: string }
+
+// Every lesson in reading order, flattened across series.
+const LESSON_ORDER = SERIES.flatMap(s => s.lessons.map(l => ({
+  seriesSlug: s.slug, seriesTitle: s.title, lessonSlug: l.slug, title: l.title, readingTime: l.readingTime,
+})));
 
 const MODES: { href: string; label: string; blurb: string; accent: string; icon: React.ReactNode }[] = [
   { href: "/lobby", label: "Common Grounds", blurb: "Join live rooms", accent: "text-indigo-600 dark:text-indigo-400",
@@ -13,10 +27,68 @@ const MODES: { href: string; label: string; blurb: string; accent: string; icon:
     icon: <svg viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6"><path d="M15.5 3H14V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v1H4.5A1.5 1.5 0 0 0 3 4.5v1A2.5 2.5 0 0 0 5.5 8h.28A4.01 4.01 0 0 0 9 10.9V13H7a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.1A4.01 4.01 0 0 0 14.22 8h.28A2.5 2.5 0 0 0 17 5.5v-1A1.5 1.5 0 0 0 15.5 3ZM5.5 6.5A.5.5 0 0 1 5 6V5h1v1.5h-.5Zm10 0H15V5h1v1a.5.5 0 0 1-.5.5Z" /></svg> },
 ];
 
+function StatChip({ children, onClick, title }: { children: React.ReactNode; onClick?: () => void; title?: string }) {
+  return (
+    <button onClick={onClick} title={title}
+      className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/70 px-3 py-2 text-left transition-colors hover:border-gray-300 dark:hover:border-gray-700">
+      {children}
+    </button>
+  );
+}
+
 export default function HomePage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
+  const userId: string = (session?.user as any)?.id ?? "";
+
+  const [streak, setStreak] = useState<{ current: number; longest: number } | null>(null);
+  const [cred, setCred] = useState<CredScore | null>(null);
+  const [medals, setMedals] = useState<Medal[]>([]);
+  const [lessonsDone, setLessonsDone] = useState<LessonDone[] | null>(null);
+  const [puzzlesDone, setPuzzlesDone] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`${SERVER}/api/users/${userId}/profile`).then(r => r.json())
+      .then(d => {
+        setStreak({ current: d?.stats?.dailyStreak ?? 0, longest: d?.stats?.longestStreak ?? 0 });
+        setCred(d?.cred ?? null);
+        setMedals(Array.isArray(d?.medals) ? d.medals : []);
+      }).catch(() => {});
+    fetch(`${SERVER}/api/lessons/progress?userId=${userId}`).then(r => r.json())
+      .then(d => setLessonsDone(Array.isArray(d?.completed) ? d.completed : [])).catch(() => setLessonsDone([]));
+    fetch(`${SERVER}/api/puzzles/progress?userId=${userId}`).then(r => r.json())
+      .then(d => setPuzzlesDone(Array.isArray(d?.completed) ? d.completed : [])).catch(() => {});
+  }, [userId]);
+
+  // The unearned medal you're closest to. Medals already carry progress 0-1.
+  const nextMedal = useMemo(() => {
+    const unearned = medals.filter(m => !m.earned && m.progress > 0);
+    if (!unearned.length) return null;
+    return unearned.reduce((best, m) => (m.progress > best.progress ? m : best));
+  }, [medals]);
+
+  // Where to pick the academy back up: the first unfinished lesson at or after
+  // your most recent completion, wrapping to the start if you skipped around.
+  const nextLesson = useMemo(() => {
+    if (!lessonsDone) return undefined;                     // still loading
+    const doneKeys = new Set(lessonsDone.map(d => `${d.seriesSlug}/${d.lessonSlug}`));
+    if (doneKeys.size >= LESSON_ORDER.length) return null;  // finished everything
+    const last = lessonsDone[0];                            // server orders completedAt DESC
+    const from = last
+      ? LESSON_ORDER.findIndex(l => l.seriesSlug === last.seriesSlug && l.lessonSlug === last.lessonSlug) + 1
+      : 0;
+    for (let i = from; i < LESSON_ORDER.length; i++) {
+      const l = LESSON_ORDER[i];
+      if (!doneKeys.has(`${l.seriesSlug}/${l.lessonSlug}`)) return l;
+    }
+    return LESSON_ORDER.find(l => !doneKeys.has(`${l.seriesSlug}/${l.lessonSlug}`)) ?? null;
+  }, [lessonsDone]);
+
+  const lessonCount = lessonsDone?.length ?? 0;
+  const lessonPct = TOTAL_LESSONS > 0 ? Math.round((lessonCount / TOTAL_LESSONS) * 100) : 0;
+  const puzzlePct = PUZZLES.length > 0 ? Math.round((puzzlesDone.length / PUZZLES.length) * 100) : 0;
 
   if (status === "loading") {
     return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
@@ -29,6 +101,35 @@ export default function HomePage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Welcome back{username ? `, ${username}` : ""}</h1>
           <p className="mt-0.5 text-sm text-gray-500">Pick a room, sharpen an argument, or watch a debate unfold.</p>
+        </div>
+
+        {/* Status strip */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <StatChip onClick={() => router.push("/dashboard")} title="Days in a row you've been active">
+            <span className="text-lg leading-none">🔥</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-gray-900 dark:text-gray-100">{streak ? `${streak.current} day${streak.current === 1 ? "" : "s"}` : "—"}</span>
+              <span className="block truncate text-[10px] text-gray-500">{streak && streak.longest > 0 ? `best ${streak.longest}` : "streak"}</span>
+            </span>
+          </StatChip>
+
+          <StatChip onClick={() => router.push("/dashboard")} title="Your Grounds Score, from how your claims hold up">
+            <span className="text-lg leading-none">⚖️</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-gray-900 dark:text-gray-100">{cred ? cred.score : "—"}</span>
+              <span className="block truncate text-[10px] text-gray-500">Grounds Score</span>
+            </span>
+          </StatChip>
+
+          {nextMedal && (
+            <StatChip onClick={() => router.push("/dashboard")} title={nextMedal.description}>
+              <span className="text-lg leading-none">{nextMedal.icon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-gray-900 dark:text-gray-100">{nextMedal.name}</span>
+                <span className="block truncate text-[10px] text-gray-500">{Math.floor(nextMedal.value)} / {nextMedal.target} {nextMedal.unit}</span>
+              </span>
+            </StatChip>
+          )}
         </div>
 
         {/* Play — the primary action, so it leads */}
@@ -47,6 +148,59 @@ export default function HomePage() {
             ))}
           </div>
         </section>
+
+        {/* Continue learning */}
+        {nextLesson !== undefined && (
+          <section>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Continue learning</h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <button
+                onClick={() => router.push(nextLesson ? `/learn/${nextLesson.seriesSlug}/${nextLesson.lessonSlug}` : "/learn")}
+                className="group flex flex-col justify-between gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/70 p-4 text-left transition-colors hover:border-gray-300 dark:hover:border-gray-700 sm:col-span-2">
+                <div className="min-w-0">
+                  {nextLesson ? (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400">{nextLesson.seriesTitle}</p>
+                      <p className="mt-0.5 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{nextLesson.title}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{lessonCount === 0 ? "Start the academy" : "Pick up where you left off"} · {nextLesson.readingTime}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">All lessons complete</p>
+                      <p className="mt-0.5 text-xs text-gray-500">Revisit any series in the academy.</p>
+                    </>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-[10px] text-gray-500">
+                    <span>{lessonCount} of {TOTAL_LESSONS} lessons</span>
+                    <span className="font-semibold text-teal-600 dark:text-teal-400">{lessonPct}%</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                    <div className="h-full rounded-full bg-teal-500 transition-all duration-500" style={{ width: `${lessonPct}%` }} />
+                  </div>
+                </div>
+              </button>
+
+              <button onClick={() => router.push("/learn/puzzles")}
+                className="flex flex-col justify-between gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/70 dark:bg-gray-900/70 p-4 text-left transition-colors hover:border-gray-300 dark:hover:border-gray-700">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Puzzles</p>
+                  <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-gray-100">Spot the flaw</p>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-[10px] text-gray-500">
+                    <span>{puzzlesDone.length} of {PUZZLES.length}</span>
+                    <span className="font-semibold text-violet-600 dark:text-violet-400">{puzzlePct}%</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                    <div className="h-full rounded-full bg-violet-500 transition-all duration-500" style={{ width: `${puzzlePct}%` }} />
+                  </div>
+                </div>
+              </button>
+            </div>
+          </section>
+        )}
 
         {/* Live now */}
         <section>

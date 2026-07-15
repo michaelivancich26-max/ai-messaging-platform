@@ -1728,6 +1728,11 @@ app.post("/api/competitive/complete", async (req, res) => {
     // Freeze the proposition bar at its final value
     settleProposition(roomName).catch(() => {});
 
+    // Debating counts toward the daily streak, not just chatting.
+    for (const uid of [match.challengerId, match.challengedId]) {
+      if (uid) bumpDailyStreak(uid).catch(() => {});
+    }
+
     res.json(payload);
   } catch (e) {
     console.error("[competitive complete]", e);
@@ -2216,6 +2221,9 @@ app.post("/api/team/complete", async (req, res) => {
     // Freeze the proposition bar at its final value
     settleProposition(roomName).catch(() => {});
 
+    // Debating counts toward the daily streak, not just chatting.
+    for (const uid of [...teamA, ...teamB]) bumpDailyStreak(uid).catch(() => {});
+
     res.json(payload);
   } catch (e) {
     console.error("[team complete]", e);
@@ -2247,8 +2255,11 @@ app.get("/api/lessons/progress", async (req, res) => {
   const userId = req.query.userId as string;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
-    const rows = await prisma.$queryRawUnsafe<{ seriesSlug: string; lessonSlug: string }[]>(
-      `SELECT "seriesSlug", "lessonSlug" FROM "UserLessonProgress" WHERE "userId" = $1`, userId
+    // completedAt is the FIRST completion (the insert is ON CONFLICT DO NOTHING),
+    // which is what "where you left off" wants: the furthest you've actually got.
+    const rows = await prisma.$queryRawUnsafe<{ seriesSlug: string; lessonSlug: string; completedAt: Date }[]>(
+      `SELECT "seriesSlug", "lessonSlug", "completedAt" FROM "UserLessonProgress"
+       WHERE "userId" = $1 ORDER BY "completedAt" DESC`, userId
     );
     res.json({ completed: rows });
   } catch (e) {
@@ -2268,6 +2279,7 @@ app.post("/api/lessons/complete", async (req, res) => {
        ON CONFLICT ("userId", "seriesSlug", "lessonSlug") DO NOTHING`,
       userId, seriesSlug, lessonSlug
     );
+    bumpDailyStreak(userId).catch(() => {});
     res.json({ ok: true });
   } catch (e) {
     console.error("[lessons/complete]", e);
@@ -2280,10 +2292,12 @@ app.get("/api/puzzles/progress", async (req, res) => {
   const userId = req.query.userId as string;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
-    const rows = await prisma.$queryRawUnsafe<{ puzzleId: string }[]>(
-      `SELECT "puzzleId" FROM "UserPuzzleProgress" WHERE "userId" = $1`, userId
+    const rows = await prisma.$queryRawUnsafe<{ puzzleId: string; completedAt: Date }[]>(
+      `SELECT "puzzleId", "completedAt" FROM "UserPuzzleProgress"
+       WHERE "userId" = $1 ORDER BY "completedAt" DESC`, userId
     );
-    res.json({ completed: rows.map(r => r.puzzleId) });
+    // `completed` stays a bare id list — existing callers depend on that shape.
+    res.json({ completed: rows.map(r => r.puzzleId), solved: rows });
   } catch (e) {
     console.error("[puzzles/progress]", e);
     res.status(500).json({ error: "Server error" });
@@ -2301,6 +2315,7 @@ app.post("/api/puzzles/complete", async (req, res) => {
        ON CONFLICT ("userId", "puzzleId") DO NOTHING`,
       userId, puzzleId
     );
+    bumpDailyStreak(userId).catch(() => {});
     res.json({ ok: true });
   } catch (e) {
     console.error("[puzzles/complete]", e);
@@ -2615,6 +2630,9 @@ app.post("/api/arena-judge", async (req, res) => {
        ON CONFLICT ("roomName") DO NOTHING`,
       roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact,
     );
+
+    // Training counts toward the daily streak, not just chatting.
+    bumpDailyStreak(userId).catch(() => {});
 
     // Update the user's arena ELO against a tier-scaled bot rating (tier 1→1200 … tier 5→2000)
     try {
