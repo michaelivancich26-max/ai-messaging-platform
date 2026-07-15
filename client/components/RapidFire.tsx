@@ -7,7 +7,7 @@ import { getSocket } from "@/lib/socket";
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 interface Category { id: string; label: string; count: number }
-interface MatchFound { roomName: string; topic: string; stance: string; opponent: string; exchanges: number }
+interface MatchFound { roomName: string; topic: string; stance: string; opponent: string; minMessages: number }
 
 const ANY = "__any__";
 
@@ -130,7 +130,11 @@ export default function RapidFire({ userId, username }: { userId: string; userna
       <div className="text-center">
         <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Rapid Fire</h3>
         <p className="mt-1 text-sm text-gray-500">
-          Get matched with whoever&rsquo;s waiting. The topic and your side are dealt to you — {3} exchanges each, then the judge calls it.
+          Get matched with whoever&rsquo;s waiting. The topic and your side are dealt to you.
+          Argue until one of you moves on — whoever leads the proposition bar takes it.
+        </p>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">
+          Move on before 3 messages each and the round is void — no winner, no rating change.
         </p>
         {waiting > 0 && (
           <p className="mt-2 text-xs font-semibold text-orange-600 dark:text-orange-400">{waiting} {waiting === 1 ? "person" : "people"} in the queue</p>

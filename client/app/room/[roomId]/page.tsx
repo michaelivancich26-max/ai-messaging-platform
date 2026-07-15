@@ -100,6 +100,8 @@ export default function RoomPage() {
     }
   }, []);
   const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
+  // A Rapid Fire round that ended with nobody far enough ahead to call it.
+  const [voidedReason, setVoidedReason] = useState<string | null>(null);
   // Lets a viewer dismiss the end-of-match result overlay to read the transcript underneath.
   const [resultDismissed, setResultDismissed] = useState(false);
   const [matchResult, setMatchResult] = useState<{
@@ -313,6 +315,12 @@ export default function RoomPage() {
       setMatchState("ended");
     });
 
+    // Rapid Fire round discarded — too little said, or the bar was dead level.
+    socket.on("rapidRoundVoided", (data: { reason?: string }) => {
+      setVoidedReason(data?.reason ?? "The round ended with no result.");
+      setMatchState("ended");
+    });
+
     socket.on("message", (msg: ChatMessage) => {
       // Route spectator chat messages
       if (msg.channelId && msg.channelId === spectatorChatChannelRef.current) {
@@ -395,6 +403,7 @@ export default function RoomPage() {
       socket.off("userStopTyping");
       socket.off("channelsUpdated");
       socket.off("matchComplete");
+      socket.off("rapidRoundVoided");
     };
   }, [status, roomId, userId, username]);
 
@@ -430,7 +439,10 @@ export default function RoomPage() {
   type WinCondition =
     | { type: "exchanges"; limit: number }
     | { type: "time"; minutes: number }
-    | { type: "proposition"; threshold: number };
+    | { type: "proposition"; threshold: number }
+    // Rapid Fire: nothing auto-ends the round. It runs until someone moves on,
+    // and whoever leads the proposition bar takes it.
+    | { type: "manual" };
   const winCondition: WinCondition = (() => {
     if (!(isBotRoom || isCompetitiveRoom) || !(roomMeta as any)?.matchConfig) return { type: "exchanges", limit: 10 };
     try { return JSON.parse((roomMeta as any).matchConfig) as WinCondition; }
@@ -444,10 +456,12 @@ export default function RoomPage() {
       challengerStance?: string; challengedStance?: string;
       isTeam?: boolean; teamSize?: number; teamA?: string[]; teamB?: string[];
       sideAStance?: "affirmative" | "negative"; sideBStance?: "affirmative" | "negative";
+      isRapid?: boolean;
     }; }
     catch { return null; }
   })();
   const isTeamMatch = !!parsedMatchConfig?.isTeam;
+  const isRapidMatch = !!parsedMatchConfig?.isRapid;
   const myTeamSide: "A" | "B" | null = (() => {
     if (!isTeamMatch || !parsedMatchConfig || !userId) return null;
     if (parsedMatchConfig.teamA?.includes(userId)) return "A";
@@ -638,6 +652,15 @@ export default function RoomPage() {
     if (pct >= threshold || pct <= 100 - threshold) triggerJudge(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propPriceA, messages.length, isCompetitiveRoom, isSpectator, matchState, winCondition.type, (winCondition as any).threshold]);
+
+  // Rapid Fire: end the round here and now. The server decides — whoever leads
+  // the bar takes it, or it's voided if too little was said. Unlike every other
+  // ending, this one is settled server-side, so we just wait to be told.
+  function moveOn() {
+    if (isSpectator) return;
+    setMatchState("judging");
+    getSocket({ id: userId, username }).emit("rapidMoveOn", { roomName: roomId });
+  }
 
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
     if (isSpectator) return; // spectators never drive match completion
@@ -1315,6 +1338,17 @@ export default function RoomPage() {
         </div>
       )}
 
+      {/* Rapid Fire round discarded — no winner, no rating change */}
+      {voidedReason && (
+        <div className="shrink-0 flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 px-4 py-2.5">
+          <span className="text-xs text-gray-700 dark:text-gray-300">{voidedReason}</span>
+          <button onClick={() => router.push("/rapid")}
+            className="ml-auto shrink-0 rounded-full bg-orange-600 px-3 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-orange-500">
+            Find another →
+          </button>
+        </div>
+      )}
+
       {/* Competitive proposition bar — always visible to all parties */}
       {isCompetitiveRoom && matchState === "active" && propLabels && (
         <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 px-4 py-2">
@@ -1323,9 +1357,15 @@ export default function RoomPage() {
             {winCondition.type === "proposition" && (
               <span className="text-[10px] text-gray-500 dark:text-gray-600">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
             )}
+            {isRapidMatch && (
+              <span className="text-[10px] text-gray-500 dark:text-gray-600">· whoever leads when someone moves on</span>
+            )}
             {/* Forfeit lives here only for proposition rooms; exchanges/time rooms carry it in their own banners */}
             {winCondition.type === "proposition" && !isSpectator && (
               <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
+            )}
+            {isRapidMatch && !isSpectator && (
+              <button onClick={moveOn} className="ml-auto shrink-0 rounded-full border border-orange-700/50 px-2.5 py-0.5 text-[10px] font-semibold text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors">Move on →</button>
             )}
           </div>
           <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
