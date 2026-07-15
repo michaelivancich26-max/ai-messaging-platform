@@ -29,7 +29,7 @@ function VeritasScorePanel({ cred, arenaBonus = 0 }: { cred: CredScore; arenaBon
   const tier =
     cred.total < 3 && arenaBonus === 0 ? { label: "Unrated",  color: "text-gray-500",    bg: "bg-gray-100/60 dark:bg-gray-800/60",    ring: "ring-gray-300/40 dark:ring-gray-700/40"   } :
     (accuracy ?? 0) >= 80              ? { label: "Credible", color: "text-emerald-700 dark:text-emerald-300", bg: "bg-emerald-100 dark:bg-emerald-950/40", ring: "ring-emerald-700/40" } :
-    (accuracy ?? 0) >= 50              ? { label: "Mixed",    color: "text-yellow-300",  bg: "bg-yellow-950/30",  ring: "ring-yellow-700/40"  } :
+    (accuracy ?? 0) >= 50              ? { label: "Mixed",    color: "text-yellow-700 dark:text-yellow-300",  bg: "bg-yellow-100 dark:bg-yellow-950/30",  ring: "ring-yellow-700/40"  } :
                                          { label: "Disputed", color: "text-red-600 dark:text-red-400",     bg: "bg-red-100 dark:bg-red-950/30",     ring: "ring-red-700/40"     };
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 p-5 space-y-3">
@@ -48,7 +48,7 @@ function VeritasScorePanel({ cred, arenaBonus = 0 }: { cred: CredScore; arenaBon
           </span>
         )}
       </div>
-      {cred.total < 3 && arenaBonus === 0 && <p className="text-xs text-gray-500 dark:text-gray-600">Make at least 3 verified claims to earn a score.</p>}
+      {cred.total < 3 && arenaBonus === 0 && <p className="text-xs text-gray-500 dark:text-gray-400">Make at least 3 verified claims to earn a score.</p>}
       {cred.total >= 1 && accuracy !== null && (
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800 flex">
           <div className="bg-emerald-500 transition-all" style={{ width: `${accuracy}%` }} />
@@ -83,7 +83,7 @@ function StatCard({ value, label, sub }: { value: string | number; label: string
     <div className="flex flex-col gap-1 rounded-xl bg-white dark:bg-gray-900 p-4 ring-1 ring-gray-200 dark:ring-gray-800">
       <span className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{value}</span>
       <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{label}</span>
-      {sub && <span className="text-[10px] text-gray-500 dark:text-gray-600">{sub}</span>}
+      {sub && <span className="text-[10px] text-gray-500 dark:text-gray-400">{sub}</span>}
     </div>
   );
 }
@@ -248,7 +248,7 @@ export default function DashboardPage() {
                       {memberSince && <p className="text-xs text-gray-500 mt-0.5">Member since {memberSince}</p>}
                     </div>
                     {avatarUrl && (
-                      <button onClick={() => setAvatarUrl(null)} className="shrink-0 text-xs text-gray-500 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400 transition-colors">Remove photo</button>
+                      <button onClick={() => setAvatarUrl(null)} className="shrink-0 text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">Remove photo</button>
                     )}
                   </div>
                   <textarea
@@ -257,10 +257,10 @@ export default function DashboardPage() {
                     maxLength={500}
                     rows={2}
                     placeholder="Add a bio…"
-                    className="mt-3 w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500 transition-colors"
+                    className="mt-3 w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500 transition-colors"
                   />
                   <div className="mt-2 flex items-center justify-between">
-                    <span className="text-[10px] text-gray-500 dark:text-gray-600">{bio.length}/500</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">{bio.length}/500</span>
                     <button
                       onClick={saveProfile}
                       disabled={saving}
@@ -318,7 +318,7 @@ export default function DashboardPage() {
                       className="flex flex-col items-center gap-1.5 rounded-xl bg-gray-100/60 dark:bg-gray-800/60 p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                     >
                       <span className="text-lg font-bold text-gray-700 dark:text-gray-300">{bot.name[0]}</span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-600">{bot.name}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">{bot.name}</span>
                     </button>
                   ))}
                 </div>
@@ -348,7 +348,7 @@ export default function DashboardPage() {
                 {editingEmail ? (
                   <div className="space-y-2">
                     <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder={email}
-                      className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                      className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
                     {emailMsg && <p className={`text-xs ${emailMsg.type === "ok" ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{emailMsg.text}</p>}
                     <div className="flex gap-2">
                       <button onClick={saveEmail} disabled={emailSaving || !newEmail} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">{emailSaving ? "Saving…" : "Save"}</button>

@@ -49,7 +49,7 @@ function ScoreBar({ cred }: { cred: CredScore }) {
 
       {accuracy !== null && cred.total >= 1 && (
         <div className="space-y-1">
-          <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-600">
+          <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400">
             <span className="text-emerald-600 dark:text-emerald-400">{accuracy}% accuracy</span>
             <span>{cred.total} claim{cred.total !== 1 ? "s" : ""}</span>
           </div>
@@ -131,7 +131,7 @@ export default function UserProfileModal({ userId, onClose }: Props) {
               </div>
               <div className="min-w-0">
                 <p className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">{profile.username}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-600">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Member since {new Date(profile.createdAt).toLocaleDateString(undefined, { month: "short", year: "numeric" })}
                 </p>
               </div>
@@ -145,7 +145,7 @@ export default function UserProfileModal({ userId, onClose }: Props) {
             {/* Veritas Score */}
             {profile.cred && <ScoreBar cred={profile.cred} />}
             {!profile.cred && (
-              <div className="rounded-xl bg-gray-100/40 dark:bg-gray-800/40 ring-1 ring-gray-300/30 dark:ring-gray-700/30 px-4 py-3 text-xs text-gray-500 dark:text-gray-600 text-center">
+              <div className="rounded-xl bg-gray-100/40 dark:bg-gray-800/40 ring-1 ring-gray-300/30 dark:ring-gray-700/30 px-4 py-3 text-xs text-gray-500 dark:text-gray-400 text-center">
                 No credibility data yet
               </div>
             )}

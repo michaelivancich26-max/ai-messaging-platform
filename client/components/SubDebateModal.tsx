@@ -55,7 +55,7 @@ export default function SubDebateModal({ messageContent, onConfirm, onClose, loa
         <div className="p-5 space-y-4">
           {/* Parent message context */}
           <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-600">Branching from</p>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Branching from</p>
             <div className="rounded-lg border-l-2 border-amber-700/60 bg-gray-100/60 dark:bg-gray-800/60 px-3 py-2">
               <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-3 leading-relaxed italic">"{messageContent.slice(0, 200)}{messageContent.length > 200 ? "…" : ""}"</p>
             </div>
@@ -73,9 +73,9 @@ export default function SubDebateModal({ messageContent, onConfirm, onClose, loa
               maxLength={300}
               rows={3}
               placeholder="e.g. The claim that X implies Y is disputed…"
-              className="w-full resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-amber-500/60 transition-colors"
+              className="w-full resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-amber-500/60 transition-colors"
             />
-            <p className="mt-1 text-right text-[10px] text-gray-400 dark:text-gray-700">{proposition.length}/300</p>
+            <p className="mt-1 text-right text-[10px] text-gray-500 dark:text-gray-400">{proposition.length}/300</p>
           </div>
 
           {/* Actions */}
@@ -94,7 +94,7 @@ export default function SubDebateModal({ messageContent, onConfirm, onClose, loa
               {loading ? "Creating…" : "Branch debate"}
             </button>
           </div>
-          <p className="text-center text-[10px] text-gray-400 dark:text-gray-700">Ctrl+Enter to confirm</p>
+          <p className="text-center text-[10px] text-gray-500 dark:text-gray-400">Ctrl+Enter to confirm</p>
         </div>
       </div>
     </div>

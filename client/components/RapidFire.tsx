@@ -133,7 +133,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
           Get matched with whoever&rsquo;s waiting. The topic and your side are dealt to you.
           Argue until one of you moves on — whoever leads the proposition bar takes it.
         </p>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           Move on before 3 messages each and the round is void — no winner, no rating change.
         </p>
         {waiting > 0 && (
@@ -159,7 +159,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-600">
+        <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
           &ldquo;Any topic&rdquo; matches fastest — a category only pairs you with someone who chose it or chose any.
         </p>
       </div>

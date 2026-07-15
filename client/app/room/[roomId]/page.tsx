@@ -1218,7 +1218,7 @@ export default function RoomPage() {
                 onChange={e => setInviteQuery(e.target.value)}
                 placeholder="Search by username…"
                 autoFocus
-                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
               {inviteResults.length > 0 && (
                 <div className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl">
@@ -1249,7 +1249,7 @@ export default function RoomPage() {
             </div>
             <button
               onClick={() => setInviteOpen(false)}
-              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
+              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                 <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
@@ -1355,10 +1355,10 @@ export default function RoomPage() {
           <div className="mb-1 flex items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Proposition</span>
             {winCondition.type === "proposition" && (
-              <span className="text-[10px] text-gray-500 dark:text-gray-600">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
             )}
             {isRapidMatch && (
-              <span className="text-[10px] text-gray-500 dark:text-gray-600">· whoever leads when someone moves on</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400">· whoever leads when someone moves on</span>
             )}
             {/* Forfeit lives here only for proposition rooms; exchanges/time rooms carry it in their own banners */}
             {winCondition.type === "proposition" && !isSpectator && (
@@ -1645,7 +1645,7 @@ export default function RoomPage() {
           })()}
 
           {!roomId.startsWith("dm-") && !isBotRoom && !isCompetitiveRoom && !activeChannel ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-gray-500 dark:text-gray-600">Select a channel to start chatting</div>
+            <div className="flex flex-1 items-center justify-center text-sm text-gray-500 dark:text-gray-400">Select a channel to start chatting</div>
           ) : (
             <>
               {/* Competitive: topic + stances banner */}
@@ -1691,7 +1691,7 @@ export default function RoomPage() {
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Sub-debate</span>
                     <p className="text-xs text-amber-800/80 dark:text-amber-200/80 leading-relaxed">{activeChannel.proposition}</p>
                     {activeChannel.parentMessagePreview && (
-                      <p className="mt-0.5 text-[10px] italic text-gray-500 dark:text-gray-600 line-clamp-1">"{activeChannel.parentMessagePreview}"</p>
+                      <p className="mt-0.5 text-[10px] italic text-gray-500 dark:text-gray-400 line-clamp-1">"{activeChannel.parentMessagePreview}"</p>
                     )}
                   </div>
                 </div>

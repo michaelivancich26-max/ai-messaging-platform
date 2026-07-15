@@ -55,7 +55,7 @@ export default function LearnPage() {
       .catch(() => {});
   }, [userId]);
 
-  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
+  if (status === "loading") return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
 
   const totalCompleted = completed.size;
   const overallPct = TOTAL_LESSONS > 0 ? Math.round((totalCompleted / TOTAL_LESSONS) * 100) : 0;
@@ -76,7 +76,7 @@ export default function LearnPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Debate Academy</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Debate Academy</h1>
             <p className="mt-1 text-sm text-gray-500">{SERIES.length} series · {TOTAL_LESSONS} lessons on fallacies, argument structures, tactics, and rebuttals</p>
           </div>
 
@@ -108,7 +108,7 @@ export default function LearnPage() {
             <p className="text-sm font-bold text-white">Debate Puzzles</p>
             <p className="text-xs text-gray-500 mt-0.5">Spot the fallacy or weak point — 20 puzzles, daily challenge</p>
           </div>
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-gray-500 dark:text-gray-600 group-hover:text-gray-600 dark:hover:text-gray-400 transition-colors shrink-0">
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-gray-500 dark:text-gray-400 group-hover:text-gray-600 dark:hover:text-gray-400 transition-colors shrink-0">
             <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
           </svg>
         </button>
@@ -144,7 +144,7 @@ export default function LearnPage() {
                 </div>
                 <p className="text-xs leading-relaxed text-gray-500">{series.description}</p>
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-600">
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
                     <span>{seriesCompleted}/{series.lessons.length} completed</span>
                     <span className={c.text}>{pct}%</span>
                   </div>

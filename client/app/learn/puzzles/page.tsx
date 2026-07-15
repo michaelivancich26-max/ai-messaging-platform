@@ -105,7 +105,7 @@ function PuzzleView({
 
         {/* Argument card */}
         <div className="rounded-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-6">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-600">Argument</p>
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">Argument</p>
           <blockquote className="text-base leading-relaxed text-gray-900 dark:text-gray-100 italic">
             "{puzzle.argument}"
           </blockquote>
@@ -231,7 +231,7 @@ export default function PuzzlesPage() {
     : null;
 
   if (status === "loading") {
-    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-600 text-sm">Loading…</div>;
+    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
   }
 
   if (activePuzzle) {
@@ -272,7 +272,7 @@ export default function PuzzlesPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Debate Puzzles</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Debate Puzzles</h1>
             <p className="mt-1 text-sm text-gray-500">{PUZZLES.length} puzzles · spot the fallacy or weak point before reading the answer</p>
           </div>
           {doneCount > 0 && (
@@ -290,7 +290,7 @@ export default function PuzzlesPage() {
 
         {/* Daily puzzle */}
         <div>
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-600">Daily Puzzle</p>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">Daily Puzzle</p>
           <button
             onClick={() => setActivePuzzle(dailyPuzzle)}
             className="group w-full flex items-center gap-4 rounded-2xl border border-yellow-900/40 bg-yellow-950/20 p-5 text-left transition-all hover:border-yellow-700/60 hover:bg-yellow-950/30"
@@ -313,7 +313,7 @@ export default function PuzzlesPage() {
                 </svg>
               </div>
             ) : (
-              <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-gray-500 dark:text-gray-600 group-hover:text-gray-600 dark:hover:text-gray-400 transition-colors shrink-0">
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-gray-500 dark:text-gray-400 group-hover:text-gray-600 dark:hover:text-gray-400 transition-colors shrink-0">
                 <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
               </svg>
             )}
@@ -325,11 +325,11 @@ export default function PuzzlesPage() {
           <div className="flex items-center gap-2 mb-4">
             {(["all", ...DIFFICULTY_ORDER] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize ${filter === f ? "bg-gray-200 dark:bg-gray-700 text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100/60 dark:hover:bg-gray-800/60"}`}>
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize ${filter === f ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100/60 dark:hover:bg-gray-800/60"}`}>
                 {f === "all" ? "All" : DIFF_STYLE[f].label}
               </button>
             ))}
-            <span className="ml-auto text-xs text-gray-500 dark:text-gray-600">{filtered.length} puzzles</span>
+            <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">{filtered.length} puzzles</span>
           </div>
 
           {/* Puzzle grid */}

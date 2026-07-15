@@ -149,10 +149,10 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
     return (
       <div className="pb-safe border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 px-4 py-4">
         <div className="flex items-center gap-3 rounded-xl bg-gray-100/60 dark:bg-gray-800/60 px-4 py-3 ring-1 ring-gray-300/40 dark:ring-gray-700/40">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-600">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400">
             <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
           </svg>
-          <span className="text-sm text-gray-500 dark:text-gray-600">{disabledReason ?? "Waiting for your turn…"}</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">{disabledReason ?? "Waiting for your turn…"}</span>
         </div>
       </div>
     );
@@ -218,12 +218,12 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
           onKeyDown={handleKeyDown}
           placeholder="Message… (Enter to send, @ to mention)"
           rows={1}
-          className="flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-2.5 text-base md:text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+          className="flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-2.5 text-base md:text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
           style={{ maxHeight: "8rem", overflowY: "auto" }}
         />
         <button
           type="submit"
-          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40"
+          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40"
           disabled={!value.trim()}
         >
           Send

@@ -8,7 +8,7 @@ export default function MessagesIndexPage() {
         <path d="M14 6c-.762 0-1.52.02-2.271.062C10.157 6.148 9 7.472 9 8.998v2.24c0 1.519 1.141 2.841 2.705 2.939.238.015.477.023.716.029v3.027a.75.75 0 0 0 1.28.53l3.012-3.012c.494-.046.986-.102 1.474-.167C19.033 14.438 20 13.162 20 11.72V8.998c0-1.526-1.157-2.85-2.729-2.936A41.645 41.645 0 0 0 14 6Z" />
       </svg>
       <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Your messages</p>
-      <p className="text-xs text-gray-500 dark:text-gray-600">Pick a conversation, or search for someone to start one.</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">Pick a conversation, or search for someone to start one.</p>
     </div>
   );
 }

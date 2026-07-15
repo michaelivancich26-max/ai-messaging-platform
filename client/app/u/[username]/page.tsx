@@ -44,7 +44,7 @@ function StatCard({ value, label, sub }: { value: string | number; label: string
     <div className="flex flex-col gap-1 rounded-xl bg-white dark:bg-gray-900 p-4 ring-1 ring-gray-200 dark:ring-gray-800">
       <span className="text-2xl font-bold tabular-nums text-gray-900 dark:text-gray-100">{value}</span>
       <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{label}</span>
-      {sub && <span className="text-[10px] text-gray-500 dark:text-gray-600">{sub}</span>}
+      {sub && <span className="text-[10px] text-gray-500 dark:text-gray-400">{sub}</span>}
     </div>
   );
 }
@@ -126,7 +126,7 @@ export default function PublicProfilePage() {
             ) : notFound || !data ? (
               <div className="py-20 text-center">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">User not found</p>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">No player named "{username}".</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">No player named "{username}".</p>
               </div>
             ) : (
               <>

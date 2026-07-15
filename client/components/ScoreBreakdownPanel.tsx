@@ -157,9 +157,9 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
             </div>
 
             {loading ? (
-              <p className="text-xs text-gray-500 dark:text-gray-600 py-4 text-center">Loading…</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 py-4 text-center">Loading…</p>
             ) : filtered.length === 0 ? (
-              <p className="text-xs text-gray-500 dark:text-gray-600 py-4 text-center">No evaluated claims yet.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 py-4 text-center">No evaluated claims yet.</p>
             ) : (
               <div className="space-y-2">
                 {filtered.map(claim => {
@@ -172,13 +172,13 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-gray-800 dark:text-gray-200 leading-relaxed line-clamp-2">{claim.text}</p>
                           {claim.claimantName && (
-                            <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-600">@{claim.claimantName}</p>
+                            <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">@{claim.claimantName}</p>
                           )}
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${s.pill}`}>{s.label}</span>
                           {hasScore && (
-                            <span className="text-sm font-bold text-gray-900 dark:text-gray-100 tabular-nums">{Math.round(claim.score!)}<span className="text-[10px] font-normal text-gray-500 dark:text-gray-600">/100</span></span>
+                            <span className="text-sm font-bold text-gray-900 dark:text-gray-100 tabular-nums">{Math.round(claim.score!)}<span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">/100</span></span>
                           )}
                         </div>
                       </div>
@@ -191,10 +191,10 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
                       {/* Dimension bars */}
                       {(claim.relevance != null || claim.evidence != null || claim.logic != null || claim.impact != null) && (
                         <div className="space-y-1 pt-1 border-t border-gray-200 dark:border-gray-800">
-                          {claim.relevance != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-600"><span className="w-14">Relevance</span><ScoreBar value={Math.round(claim.relevance * 10)} color="bg-indigo-500/60" /></div>}
-                          {claim.evidence  != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-600"><span className="w-14">Evidence</span><ScoreBar value={claim.evidence}  color="bg-violet-500/60" /></div>}
-                          {claim.logic     != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-600"><span className="w-14">Logic</span><ScoreBar value={claim.logic}     color="bg-sky-500/60" /></div>}
-                          {claim.impact    != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-600"><span className="w-14">Impact</span><ScoreBar value={claim.impact}    color="bg-amber-500/60" /></div>}
+                          {claim.relevance != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400"><span className="w-14">Relevance</span><ScoreBar value={Math.round(claim.relevance * 10)} color="bg-indigo-500/60" /></div>}
+                          {claim.evidence  != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400"><span className="w-14">Evidence</span><ScoreBar value={claim.evidence}  color="bg-violet-500/60" /></div>}
+                          {claim.logic     != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400"><span className="w-14">Logic</span><ScoreBar value={claim.logic}     color="bg-sky-500/60" /></div>}
+                          {claim.impact    != null && <div className="flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400"><span className="w-14">Impact</span><ScoreBar value={claim.impact}    color="bg-amber-500/60" /></div>}
                         </div>
                       )}
                     </div>

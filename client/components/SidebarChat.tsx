@@ -22,7 +22,7 @@ function SidebarBubble({ msg, isSelf }: { msg: ChatMessage; isSelf: boolean }) {
     <div className={`flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}>
       {!isSelf && <Avatar username={username} avatarUrl={avatarUrl} size={6} />}
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
-        <span className="mb-0.5 text-[10px] text-gray-500 dark:text-gray-600">
+        <span className="mb-0.5 text-[10px] text-gray-500 dark:text-gray-400">
           {isSelf ? "You" : username} · {time}
         </span>
         <div className={`max-w-[200px] rounded-xl px-3 py-1.5 text-xs leading-relaxed ${
@@ -76,13 +76,13 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
           <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 truncate">
             {isSpectator ? "Spectator chat" : "Side chat"}
           </span>
-          <span className="ml-1 text-[10px] text-gray-500 dark:text-gray-600 truncate">
+          <span className="ml-1 text-[10px] text-gray-500 dark:text-gray-400 truncate">
             {isSpectator ? "· audience only" : "· free from floor rules"}
           </span>
         </div>
         <button
           onClick={onClose}
-          className="shrink-0 rounded p-1 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
+          className="shrink-0 rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
           title={isSpectator ? "Close spectator chat" : "Close side chat"}
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -94,7 +94,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && (
-          <p className="text-center text-[10px] text-gray-400 dark:text-gray-700 pt-4">
+          <p className="text-center text-[10px] text-gray-500 dark:text-gray-400 pt-4">
             {isSpectator
               ? "Spectator chat — audience reactions and commentary"
               : "Side chat — say anything while the debate is in progress"}
@@ -113,7 +113,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
       {/* Input */}
       <div className="pb-safe shrink-0 border-t border-gray-200 dark:border-gray-800 px-2 py-2">
         {readOnly ? (
-          <p className="px-2 py-1.5 text-[10px] text-gray-500 dark:text-gray-600 text-center">
+          <p className="px-2 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 text-center">
             Only spectators can write here
           </p>
         ) : (
@@ -123,7 +123,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
               type="text"
               placeholder={isSpectator ? "Spectator chat…" : "Side chat…"}
               onKeyDown={handleKey}
-              className="flex-1 bg-transparent text-base md:text-xs text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none"
+              className="flex-1 bg-transparent text-base md:text-xs text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none"
             />
             <button
               onClick={handleSendClick}

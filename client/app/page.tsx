@@ -133,7 +133,7 @@ export default function AuthPage() {
                   onChange={e => setForgotEmail(e.target.value)}
                   required
                   placeholder="alice@example.com"
-                  className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                  className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
                 />
               </label>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
@@ -164,7 +164,7 @@ export default function AuthPage() {
               key={t}
               onClick={() => switchView(t)}
               className={`flex-1 rounded-md py-1.5 text-sm font-medium capitalize transition-colors ${
-                view === t ? "bg-gray-200 dark:bg-gray-700 text-white" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                view === t ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
               }`}
             >
               {t}
@@ -185,14 +185,14 @@ export default function AuthPage() {
           <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
             Username
             <input value={form.username} onChange={set("username")} placeholder="alice" autoComplete="username"
-              className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+              className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
           </label>
 
           {view === "signup" && (
             <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
               Email
               <input value={form.email} onChange={set("email")} type="email" placeholder="alice@example.com"
-                className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+                className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
             </label>
           )}
 
@@ -205,7 +205,7 @@ export default function AuthPage() {
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 autoComplete={view === "login" ? "current-password" : "new-password"}
-                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
               <button
                 type="button"
@@ -244,7 +244,7 @@ export default function AuthPage() {
           {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
           <button type="submit" disabled={loading}
-            className="mt-2 rounded-lg bg-indigo-600 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50 transition-colors">
+            className="mt-2 rounded-lg bg-indigo-600 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
             {loading ? "Please wait…" : view === "login" ? "Sign in →" : "Create account →"}
           </button>
         </form>

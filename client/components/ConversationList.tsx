@@ -77,18 +77,18 @@ export default function ConversationList({ userId }: { userId: string }) {
 
       <div className="shrink-0 px-3 pb-3">
         <div className="relative">
-          <svg viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-600">
+          <svg viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 dark:text-gray-400">
             <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
           </svg>
           <input ref={inputRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people…"
-            className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 py-1.5 pl-8 pr-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+            className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 py-1.5 pl-8 pr-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto pb-2">
         {searching ? (
           results.length === 0
-            ? <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-600">No users found</p>
+            ? <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">No users found</p>
             : results.map((u) => (
               <button key={u.id} onClick={() => open(u.username)}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
@@ -97,9 +97,9 @@ export default function ConversationList({ userId }: { userId: string }) {
               </button>
             ))
         ) : loading ? (
-          <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-600">Loading…</p>
+          <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">Loading…</p>
         ) : convos.length === 0 ? (
-          <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-600">No conversations yet. Search for someone to start one.</p>
+          <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">No conversations yet. Search for someone to start one.</p>
         ) : convos.map((c) => {
           const active = c.partner.username.toLowerCase() === activeUser;
           return (
@@ -109,9 +109,9 @@ export default function ConversationList({ userId }: { userId: string }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className={`truncate text-sm ${c.unread > 0 ? "font-bold text-gray-900 dark:text-gray-100" : "font-medium text-gray-800 dark:text-gray-200"}`}>{c.partner.username}</span>
-                  <span className="ml-auto shrink-0 text-[10px] text-gray-500 dark:text-gray-600">{timeAgo(c.lastActivity)}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-gray-500 dark:text-gray-400">{timeAgo(c.lastActivity)}</span>
                 </div>
-                <p className={`truncate text-xs ${c.unread > 0 ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-600"}`}>
+                <p className={`truncate text-xs ${c.unread > 0 ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-400"}`}>
                   {c.lastMessage ? `${c.lastMessage.mine ? "You: " : ""}${c.lastMessage.content}` : "No messages yet"}
                 </p>
               </div>

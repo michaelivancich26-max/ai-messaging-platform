@@ -81,7 +81,7 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
         {(isOwner || isAdmin) && (
           <button
             onClick={onEndStructured}
-            className="rounded-full border border-gray-300/60 dark:border-gray-700/60 px-2.5 py-1 text-[10px] text-gray-500 dark:text-gray-600 hover:border-red-700/40 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            className="rounded-full border border-gray-300/60 dark:border-gray-700/60 px-2.5 py-1 text-[10px] text-gray-500 dark:text-gray-400 hover:border-red-700/40 hover:text-red-600 dark:hover:text-red-400 transition-colors"
             title="End structured debate mode"
           >
             Free chat

@@ -122,7 +122,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
             )}
           </div>
           {meta?.description && <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{meta.description}</p>}
-          {meta?.maxMembers && <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">Max {meta.maxMembers} members</p>}
+          {meta?.maxMembers && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Max {meta.maxMembers} members</p>}
         </div>
 
         {/* Online now */}
@@ -131,7 +131,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
             Online — {onlineMembers.length}
           </p>
           {onlineMembers.length === 0 ? (
-            <p className="text-xs text-gray-500 dark:text-gray-600">Nobody online</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Nobody online</p>
           ) : (
             <ul className="space-y-1">
               {onlineMembers.map((m) => (
@@ -142,12 +142,12 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                       {m.username[0].toUpperCase()}
                     </span>
                     <span className="text-sm text-gray-800 dark:text-gray-200">{m.username}</span>
-                    {m.userId === currentUserId && <span className="text-xs text-gray-500 dark:text-gray-600">(you)</span>}
+                    {m.userId === currentUserId && <span className="text-xs text-gray-500 dark:text-gray-400">(you)</span>}
                   </div>
                   {canEdit && m.userId !== currentUserId && (
                     <button
                       onClick={() => setConfirmKick(m)}
-                      className="rounded px-2 py-0.5 text-xs text-gray-500 dark:text-gray-600 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                      className="rounded px-2 py-0.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                     >
                       kick
                     </button>
@@ -172,7 +172,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 maxLength={200}
                 rows={2}
                 placeholder="What's this room for?"
-                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
             </div>
 
@@ -186,7 +186,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 placeholder="Unlimited"
                 min={2}
                 max={500}
-                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
             </div>
 
@@ -209,7 +209,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
             {editPrivate && (
               <div>
                 <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
-                  {meta?.isPrivate ? "Change password" : "Set password"} <span className={meta?.isPrivate ? "text-gray-500 dark:text-gray-600" : "text-red-600 dark:text-red-400"}>
+                  {meta?.isPrivate ? "Change password" : "Set password"} <span className={meta?.isPrivate ? "text-gray-500 dark:text-gray-400" : "text-red-600 dark:text-red-400"}>
                     {meta?.isPrivate ? "(leave blank to keep current)" : "*"}
                   </span>
                 </label>
@@ -219,7 +219,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
                     placeholder="New password"
-                    className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                    className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
                   />
                   <button type="button" onClick={() => setShowPw((v) => !v)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
@@ -242,7 +242,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
             {/* AI Moderator Persona */}
             <div>
               <label className="mb-1 block text-xs text-gray-600 dark:text-gray-400">
-                AI moderator persona <span className="text-gray-500 dark:text-gray-600">(optional)</span>
+                AI moderator persona <span className="text-gray-500 dark:text-gray-400">(optional)</span>
               </label>
               <textarea
                 value={editPersona}
@@ -250,9 +250,9 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 maxLength={500}
                 rows={3}
                 placeholder={"e.g. A strict Victorian professor who corrects errors with dry wit and quotes Shakespeare when disappointed."}
-                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-600 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
               />
-              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-600">Describe a character. The AI will adopt this voice when flagging issues.</p>
+              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">Describe a character. The AI will adopt this voice when flagging issues.</p>
             </div>
 
             {saveMsg && (

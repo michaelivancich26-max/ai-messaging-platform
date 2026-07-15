@@ -61,7 +61,7 @@ function Side({ players, stance }: { players: { username: string; elo: number }[
       <span className={`text-[9px] font-bold uppercase tracking-wider ${color}`}>{stance === "affirmative" ? "For" : "Against"}</span>
       <div className="mt-0.5 space-y-0.5">
         {players.map((p, i) => (
-          <p key={i} className="truncate text-xs text-gray-800 dark:text-gray-200">{p.username} <span className="text-[10px] text-gray-500 dark:text-gray-600">⚡{p.elo}</span></p>
+          <p key={i} className="truncate text-xs text-gray-800 dark:text-gray-200">{p.username} <span className="text-[10px] text-gray-500 dark:text-gray-400">⚡{p.elo}</span></p>
         ))}
       </div>
     </div>
@@ -89,7 +89,7 @@ function MatchCard({ m, onWatch, compact, myId }: { m: LiveMatch; onWatch: () =>
 
       <div className="flex items-center gap-2">
         <Side players={m.sideA} stance={m.sideAStance} />
-        <span className="shrink-0 text-[10px] font-bold text-gray-500 dark:text-gray-600">VS</span>
+        <span className="shrink-0 text-[10px] font-bold text-gray-500 dark:text-gray-400">VS</span>
         <Side players={m.sideB} stance={m.sideBStance} />
       </div>
 
@@ -129,7 +129,7 @@ export default function LiveMatches({ variant = "grid" }: { variant?: "grid" | "
         <div className="mb-3 flex items-center gap-2">
           <LiveDot />
           <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Live Now</span>
-          <span className="text-[10px] text-gray-500 dark:text-gray-600">{matches.length} match{matches.length === 1 ? "" : "es"}</span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400">{matches.length} match{matches.length === 1 ? "" : "es"}</span>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2 -mr-6 pr-6 scrollbar-none">
           {matches.map(m => <MatchCard key={m.roomName} m={m} onWatch={() => watch(m)} compact myId={myId} />)}
@@ -141,11 +141,11 @@ export default function LiveMatches({ variant = "grid" }: { variant?: "grid" | "
   return (
     <div>
       {loading ? (
-        <p className="py-16 text-center text-sm text-gray-500 dark:text-gray-600">Loading…</p>
+        <p className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">Loading…</p>
       ) : matches.length === 0 ? (
         <div className="py-16 text-center">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">No live matches right now</p>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-600">When players start ranked 1v1 or team matches, they'll appear here to watch.</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">When players start ranked 1v1 or team matches, they'll appear here to watch.</p>
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

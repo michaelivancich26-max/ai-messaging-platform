@@ -222,7 +222,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
             <button
               onClick={() => setShowReactPicker(v => !v)}
               title="React"
-              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-yellow-400 transition-colors"
+              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-yellow-400 transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7-1a1 1 0 1 0-2 0 1 1 0 0 0 2 0ZM5.5 10a.5.5 0 0 0-.5.5C5 11.4 6.343 12.5 8 12.5s3-1.1 3-2a.5.5 0 0 0-.5-.5h-5Z" />
@@ -247,7 +247,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => onStakeClaim!(message.id)}
             title="Stake claim"
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
@@ -258,7 +258,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => onChallengeClaim!(claim!.id)}
             title={`Challenge${claim!.challengeCount > 0 ? ` · ${claim!.challengeCount}` : ""}`}
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
@@ -269,7 +269,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => onSubDebate!(message.id, message.content)}
             title="Branch into sub-debate"
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
@@ -280,7 +280,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => { setEditValue(message.content); setEditMode(true); }}
             title="Edit"
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474ZM4.75 14a.75.75 0 0 0 0-1.5h-1a.75.75 0 0 0-.75.75v.75h-.75A.75.75 0 0 0 2 14.75V15h-.75A.75.75 0 0 0 .5 15.75v1c0 .414.336.75.75.75H4.5a.25.25 0 0 0 .25-.25V14Z" />
@@ -291,7 +291,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => setShowDeleteConfirm(true)}
             title="Delete"
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-red-600 dark:hover:text-red-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.712Z" clipRule="evenodd" />
@@ -389,7 +389,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
     return (
       <div className={`flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}>
         {!isSelf && <span className="h-7 w-7 shrink-0" />}
-        <span className="rounded-2xl px-4 py-2 text-sm italic text-gray-500 dark:text-gray-600 ring-1 ring-gray-200 dark:ring-gray-800">
+        <span className="rounded-2xl px-4 py-2 text-sm italic text-gray-500 dark:text-gray-400 ring-1 ring-gray-200 dark:ring-gray-800">
           Message deleted
         </span>
       </div>
@@ -414,7 +414,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
           {isSelf ? "You" : username} · {time}
-          {message.editedAt && <span className="text-[10px] text-gray-500 dark:text-gray-600 italic">edited</span>}
+          {message.editedAt && <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">edited</span>}
           {posConfig && senderPosition !== "NEUTRAL" && (
             <span className={`rounded-full px-1.5 py-0 text-[9px] font-bold ${posConfig.tag}`}>{senderPosition}</span>
           )}
@@ -438,7 +438,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
             <div className="flex gap-2 text-xs">
               <button onClick={submitEdit} className="rounded-lg bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500">Save</button>
               <button onClick={() => setEditMode(false)} className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
-              <span className="text-gray-500 dark:text-gray-600 self-center">Esc to cancel · Enter to save</span>
+              <span className="text-gray-500 dark:text-gray-400 self-center">Esc to cancel · Enter to save</span>
             </div>
           </div>
         ) : imagePayload ? (

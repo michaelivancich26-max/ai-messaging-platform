@@ -137,7 +137,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                 Common Grounds
               </button>
               <button onClick={() => onBrowseClick ? onBrowseClick() : router.push("/lobby")}
-                className="ml-auto rounded p-0.5 text-gray-500 dark:text-gray-600 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" title="Browse rooms">
+                className="ml-auto rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" title="Browse rooms">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                   <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
                 </svg>
@@ -148,7 +148,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
           {!collapsed && roomsOpen && (
             <ul className="mt-0.5">
               {rooms.filter(r => !r.name.startsWith("arena-")).length === 0 ? (
-                <li className="px-3 py-2 text-xs text-gray-500 dark:text-gray-600">No rooms yet</li>
+                <li className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">No rooms yet</li>
               ) : rooms.filter(r => !r.name.startsWith("arena-")).map(room => (
                 <li key={room.id}>
                   <button onClick={() => handleRoomClick(room)}
@@ -171,7 +171,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                       </span>
                     </div>
                     {!room.name.startsWith("tr-") && room.proposition && (
-                      <p className="mt-0.5 truncate pl-5 text-[10px] text-gray-500 dark:text-gray-600 italic">{room.proposition}</p>
+                      <p className="mt-0.5 truncate pl-5 text-[10px] text-gray-500 dark:text-gray-400 italic">{room.proposition}</p>
                     )}
                   </button>
                 </li>
