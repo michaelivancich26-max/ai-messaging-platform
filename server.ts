@@ -170,11 +170,26 @@ io.on("connection", (socket) => {
       if (sids.size === 0) userSockets.delete(socketUser.id);
     }
     // Don't pair people who closed the tab, and don't leave their opponent
-    // arguing with nobody. Both no-op if the user still has another socket.
+    // arguing with nobody. Skipped if they still have another socket open.
     if (!userSockets.has(socketUser.id)) {
       leaveRapidQueue(socketUser.id).catch(() => {});
-      forfeitRapidMatchesFor(socketUser.id).catch(() => {});
+      resolveRapidMatchesFor(socketUser.id).catch(() => {});
     }
+  });
+
+  // "Move on" — same rules as walking out, just deliberate.
+  socket.on("rapidMoveOn", async (payload: { roomName?: string }) => {
+    const roomName = payload?.roomName;
+    if (!roomName) return;
+    try {
+      const rows = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+        `SELECT COUNT(*) AS n FROM "CompetitiveMatch"
+         WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE AND ($2 IN ("challengerId","challengedId"))`,
+        roomName, socketUser.id,
+      );
+      if (Number(rows[0]?.n ?? 0) === 0) return;   // not their round to end
+      await resolveRapidRound(roomName, socketUser.id);
+    } catch (e) { console.error("[rapidMoveOn]", e); }
   });
 
   socket.on("rapidQueueJoin", async (payload: { categoryId?: string | null }) => {
@@ -1669,7 +1684,7 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
 // both clients race to call this, and a Rapid Fire forfeit calls it server-side,
 // so the second caller gets the stored result rather than a second judgement.
 // Returns null only when the room or match doesn't exist.
-async function completeCompetitiveMatch(roomName: string, forcedWinner?: string): Promise<any | null> {
+async function completeCompetitiveMatch(roomName: string, forcedWinner?: string, forcedVerdict?: string): Promise<any | null> {
   {
     // Idempotent: return existing result
     const existing = await prisma.$queryRawUnsafe<any[]>(
@@ -1725,11 +1740,11 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string)
     let verdict = "The debate was inconclusive.";
 
     if (forcedWinner) {
-      // A forced winner means a forfeit — the result is already settled, so
-      // don't ask the judge. It burns a call and returns a verdict that praises
-      // whichever side argued better, which reads as a contradiction next to a
-      // winner decided by someone walking out.
-      verdict = "Won by forfeit — the other debater left the debate.";
+      // The winner is already decided — by forfeit, or by leading the bar when
+      // a Rapid Fire round ended. Don't ask the judge: it burns a call and
+      // returns a verdict about who argued better, which reads as a
+      // contradiction next to a winner decided some other way.
+      verdict = forcedVerdict ?? "Won by forfeit — the other debater left the debate.";
     } else {
       const Anthropic = (await import("@anthropic-ai/sdk")).default;
       const anthropic = new Anthropic();
@@ -1837,12 +1852,15 @@ app.get("/api/competitive/match/:roomName", async (req, res) => {
 // category, and deals opposing stances — you can't take a side on a topic you
 // haven't seen yet, so the server assigns them.
 //
-// The round is a normal comp- room: same client rendering, same judge, same
-// proposition bar. It differs in three ways — the topic and stances are dealt
-// rather than chosen, it ends after a fixed few exchanges, and it settles on a
-// separate ELO ladder.
+// The round is a normal comp- room: same client rendering, same proposition
+// bar. It differs in that the topic and stances are dealt rather than chosen,
+// it settles on a separate ELO ladder, and it has NO automatic end — it runs
+// until someone moves on or leaves, and whoever leads the bar takes it. Below
+// RAPID_MIN_MESSAGES a side the round is voided instead: the bar scores claims,
+// and it only moves once both sides have spoken, so an early exit has nothing
+// to read a winner from.
 // ═══════════════════════════════════════════════════════════════════════════
-const RAPID_EXCHANGES = 3;                 // messages per side before the judge is called
+const RAPID_MIN_MESSAGES = 3;              // per side, before a leave can decide a winner
 const RAPID_LOCK_KEY = 8123407;            // advisory lock id — serialises pairing
 
 interface RapidPairing {
@@ -1922,8 +1940,9 @@ async function startRapidMatch(p: RapidPairing): Promise<void> {
     challengedStance: p.b.stance,
     topic: p.topic,
     categoryId: p.categoryId,
-    type: "exchanges",
-    limit: RAPID_EXCHANGES,
+    // "manual" matches none of the client's auto-judge effects, so nothing ends
+    // the round but a player leaving.
+    type: "manual",
   });
 
   const room = await prisma.room.create({ data: { name: p.roomName, isPrivate: false, creatorId: p.a.userId } } as any);
@@ -1953,30 +1972,88 @@ async function startRapidMatch(p: RapidPairing): Promise<void> {
         topic: p.topic,
         stance: side.stance,
         opponent: nameOf(opponent.userId),
-        exchanges: RAPID_EXCHANGES,
+        minMessages: RAPID_MIN_MESSAGES,
       });
     }
   }
 }
 
-// End a rapid round when someone drops. Match completion is otherwise entirely
-// client-driven, so without this an abandoned round stays 'active' forever —
-// and in a queue of strangers, walking out is common rather than exceptional.
-async function forfeitRapidMatchesFor(userId: string): Promise<void> {
+// Discard a round nobody can be judged on. Leaves no result and no ELO, so
+// walking out early gains you nothing and costs the other side nothing.
+async function voidRapidRound(roomName: string, reason: string): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "CompetitiveMatch" SET status='void', "completedAt"=NOW() WHERE "roomName"=$1 AND status='active'`,
+    roomName,
+  );
+  await prisma.$executeRawUnsafe(
+    `UPDATE "MatchProposition" SET status='settled', "settledAt"=NOW() WHERE "roomName"=$1`,
+    roomName,
+  );
+  exchangeTracker.delete(roomName);
+  io.to(roomName).emit("rapidRoundVoided", { roomName, reason });
+}
+
+// Someone moved on or dropped: settle the round on the proposition bar. Past the
+// message floor whoever leads takes it; short of it, or dead level, it's voided.
+async function resolveRapidRound(roomName: string, leaverId: string): Promise<void> {
   try {
-    const rows = await prisma.$queryRawUnsafe<{ roomName: string; challengerId: string; challengedId: string }[]>(
-      `SELECT "roomName","challengerId","challengedId" FROM "CompetitiveMatch"
+    const matches = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "CompetitiveMatch" WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE LIMIT 1`,
+      roomName,
+    );
+    if (!matches.length) return;
+    const match = matches[0];
+
+    const room = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
+    if (!room) return;
+
+    const counts = await prisma.$queryRawUnsafe<{ userId: string; n: bigint }[]>(
+      `SELECT "userId", COUNT(*) AS n FROM "Message"
+       WHERE "roomId"=$1 AND "userId" IS NOT NULL GROUP BY "userId"`,
+      room.id,
+    );
+    const said = (id: string) => Number(counts.find((c) => c.userId === id)?.n ?? 0);
+
+    if (said(match.challengerId) < RAPID_MIN_MESSAGES || said(match.challengedId) < RAPID_MIN_MESSAGES) {
+      await voidRapidRound(roomName, `The round ended before ${RAPID_MIN_MESSAGES} messages each — no result.`);
+      return;
+    }
+
+    // Bring the bar up to date before reading a leader off it.
+    await recomputePropositionBar(roomName);
+    const propRows = await prisma.$queryRawUnsafe<{ priceA: number }[]>(
+      `SELECT "priceA" FROM "MatchProposition" WHERE "roomName"=$1 LIMIT 1`, roomName,
+    );
+    const priceA = Number(propRows[0]?.priceA ?? 0.5);
+
+    if (Math.abs(priceA - 0.5) < TIE_EPSILON) {
+      await voidRapidRound(roomName, "The bar was dead level when the round ended — no result.");
+      return;
+    }
+
+    // sideA of the proposition is the challenger (see startRapidMatch).
+    const winnerId = priceA > 0.5 ? match.challengerId : match.challengedId;
+    const lead = Math.round((winnerId === match.challengerId ? priceA : 1 - priceA) * 100);
+    const leaverLeft = leaverId !== winnerId;
+    await completeCompetitiveMatch(
+      roomName, winnerId,
+      `Ahead on the proposition bar at ${lead}% when ${leaverLeft ? "the other debater moved on" : "they moved on"}.`,
+    ).catch(() => null);
+  } catch (e) { console.error("[resolveRapidRound]", e); }
+}
+
+// Every active rapid round this user is in. Match completion is otherwise
+// entirely client-driven, so without this an abandoned round stays 'active'
+// forever — and in a queue of strangers, walking out is routine.
+async function resolveRapidMatchesFor(userId: string): Promise<void> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ roomName: string }[]>(
+      `SELECT "roomName" FROM "CompetitiveMatch"
        WHERE status = 'active' AND "isRapid" = TRUE AND ($1 IN ("challengerId","challengedId"))`,
       userId,
     );
-    // Still online elsewhere (another tab)? Not a walkout.
-    if ((userSockets.get(userId)?.size ?? 0) > 0) return;
-    for (const m of rows) {
-      const opponentId = m.challengerId === userId ? m.challengedId : m.challengerId;
-      io.to(m.roomName).emit("rapidOpponentLeft", { roomName: m.roomName });
-      await completeCompetitiveMatch(m.roomName, opponentId).catch(() => null);
-    }
-  } catch (e) { console.error("[forfeitRapidMatchesFor]", e); }
+    for (const m of rows) await resolveRapidRound(m.roomName, userId);
+  } catch (e) { console.error("[resolveRapidMatchesFor]", e); }
 }
 
 app.get("/api/topics", (_req, res) => {
