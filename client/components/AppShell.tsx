@@ -22,6 +22,9 @@ const NAV: { href: string; label: string; match?: string[]; Icon: (p: IconProps)
   { href: "/compete", label: "Battle Grounds", Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h4.017l-1.75 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 14.25 8h-4.017l1.75-6.093Z" /></svg>
   ) },
+  { href: "/rapid", label: "Rapid Fire", Icon: ({ className }) => (
+    <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path fillRule="evenodd" d="M10 1a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V1.75A.75.75 0 0 1 10 1ZM5.05 3.05a.75.75 0 0 1 1.06 0l1.062 1.06A.75.75 0 1 1 6.11 5.173L5.05 4.11a.75.75 0 0 1 0-1.06Zm9.9 0a.75.75 0 0 1 0 1.06l-1.06 1.062a.75.75 0 0 1-1.062-1.061l1.061-1.06a.75.75 0 0 1 1.06 0ZM10 6a4 4 0 0 0-3.446 6.032l.311.51a.75.75 0 0 1-1.28.782l-.312-.51A5.5 5.5 0 1 1 15.5 11.5a5.47 5.47 0 0 1-.773 2.814l-.311.51a.75.75 0 1 1-1.28-.782l.31-.51A4 4 0 0 0 10 6Zm-2 11.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" /></svg>
+  ) },
   { href: "/arena", label: "Training Grounds", match: ["/learn"], Icon: ({ className }) => (
     <svg viewBox="0 0 20 20" fill="currentColor" className={className}><path d="M15.5 3H14V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v1H4.5A1.5 1.5 0 0 0 3 4.5v1A2.5 2.5 0 0 0 5.5 8h.28A4.01 4.01 0 0 0 9 10.9V13H7a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.1A4.01 4.01 0 0 0 14.22 8h.28A2.5 2.5 0 0 0 17 5.5v-1A1.5 1.5 0 0 0 15.5 3ZM5.5 6.5A.5.5 0 0 1 5 6V5h1v1.5h-.5Zm10 0H15V5h1v1a.5.5 0 0 1-.5.5ZM6 16h8a1 1 0 0 1 1 1H5a1 1 0 0 1 1-1Z" /></svg>
   ) },
