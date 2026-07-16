@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const pct = (p: number) => `${Math.round(p * 100)}%`;
@@ -29,7 +30,7 @@ export function useLiveMatches(pollMs = 8000) {
   const [matches, setMatches] = useState<LiveMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const load = useCallback(() => {
-    fetch(`${SERVER}/api/live-matches`)
+    api(`${SERVER}/api/live-matches`)
       .then(r => r.json())
       .then(d => { setMatches(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));

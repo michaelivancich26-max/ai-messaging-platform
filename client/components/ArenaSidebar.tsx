@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { BOTS, BOT_COLORS, type Bot } from "@/lib/bots";
+import { api } from "@/lib/api";
+import { signOutEverywhere } from "@/lib/session";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -41,11 +43,11 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/users/${userId}/profile`)
+    api(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json())
       .then(d => setAvatarUrl(d.avatarUrl ?? null))
       .catch(() => {});
-    fetch(`${SERVER}/api/lobby?userId=${userId}`)
+    api(`${SERVER}/api/lobby?userId=${userId}`)
       .then(r => r.json())
       .then(data => {
         const arenaRooms: RecentMatch[] = (data.rooms ?? [])
@@ -162,7 +164,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
             <span className="truncate text-sm font-medium">{username}</span>
           </button>
           <button
-            onClick={() => signOut({ callbackUrl: "/" })}
+            onClick={() => signOutEverywhere()}
             className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">

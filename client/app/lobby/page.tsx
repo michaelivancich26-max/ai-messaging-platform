@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -16,7 +17,7 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${SERVER}/api/trending`)
+    api(`${SERVER}/api/trending`)
       .then(r => r.json())
       .then(d => { setTopics(d.topics ?? []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -130,7 +131,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
     if (proposition.trim().length < 5) { setMatchedRoom(null); return; }
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`${SERVER}/api/rooms/match?proposition=${encodeURIComponent(proposition.trim())}`);
+        const r = await api(`${SERVER}/api/rooms/match?proposition=${encodeURIComponent(proposition.trim())}`);
         const d = await r.json();
         setMatchedRoom(d.room ?? null);
       } catch { setMatchedRoom(null); }
@@ -157,7 +158,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
     setCreating(true); setError("");
     try {
       const cleanStances = stances.map(s => s.trim()).filter(Boolean);
-      const res = await fetch(`${SERVER}/api/rooms`, {
+      const res = await api(`${SERVER}/api/rooms`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(), proposition: proposition.trim() || undefined,
@@ -393,7 +394,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch(`${SERVER}/api/rooms/browse?userId=${userId}`)
+    api(`${SERVER}/api/rooms/browse?userId=${userId}`)
       .then(r => r.json())
       .then(data => { setRooms(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -404,7 +405,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
   async function joinRoom(room: BrowseRoom) {
     if (room.isPrivate) { setAuthRoom(room); setAuthError(""); return; }
     setJoining(room.id);
-    await fetch(`${SERVER}/api/rooms/${room.name}/join`, {
+    await api(`${SERVER}/api/rooms/${room.name}/join`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
@@ -416,7 +417,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
 
   async function joinPrivate(password: string) {
     if (!authRoom) return;
-    const res = await fetch(`${SERVER}/api/rooms/${authRoom.name}/auth`, {
+    const res = await api(`${SERVER}/api/rooms/${authRoom.name}/auth`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, userId }),
     });

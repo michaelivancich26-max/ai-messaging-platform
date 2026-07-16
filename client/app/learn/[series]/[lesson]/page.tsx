@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { findSeries, findLesson } from "../../content";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -34,7 +35,7 @@ export default function LessonPage() {
 
   useEffect(() => {
     if (!userId || !lesson) return;
-    fetch(`${SERVER}/api/lessons/progress?userId=${userId}`)
+    api(`${SERVER}/api/lessons/progress?userId=${userId}`)
       .then(r => r.json())
       .then(d => {
         const done = (d.completed ?? []).some(
@@ -49,7 +50,7 @@ export default function LessonPage() {
     if (!userId || completing || isCompleted) return;
     setCompleting(true);
     try {
-      const res = await fetch(`${SERVER}/api/lessons/complete`, {
+      const res = await api(`${SERVER}/api/lessons/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, seriesSlug: params.series, lessonSlug: params.lesson }),

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -30,12 +31,12 @@ export default function RapidFire({ userId, username }: { userId: string; userna
   const queuedRef = useRef(false);
 
   useEffect(() => {
-    fetch(`${SERVER}/api/topics`).then(r => r.json())
+    api(`${SERVER}/api/topics`).then(r => r.json())
       .then(d => setCategories(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
 
   const loadWaiting = useCallback(() => {
-    fetch(`${SERVER}/api/rapid/queue-size`).then(r => r.json())
+    api(`${SERVER}/api/rapid/queue-size`).then(r => r.json())
       .then(d => setWaiting(d?.waiting ?? 0)).catch(() => {});
   }, []);
 
@@ -54,7 +55,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
 
   useEffect(() => {
     if (!userId || !username) return;
-    const socket = getSocket({ id: userId, username });
+    const socket = getSocket();
 
     const onWaiting = () => { setQueued(true); queuedRef.current = true; setSince(Date.now()); };
     const onLeft = () => { setQueued(false); queuedRef.current = false; setSince(null); };
@@ -77,16 +78,16 @@ export default function RapidFire({ userId, username }: { userId: string; userna
 
   // Leave the pool if the user navigates away while still queued.
   useEffect(() => () => {
-    if (queuedRef.current) getSocket({ id: userId, username }).emit("rapidQueueLeave");
+    if (queuedRef.current) getSocket().emit("rapidQueueLeave");
   }, [userId, username]);
 
   function join() {
-    getSocket({ id: userId, username }).emit("rapidQueueJoin", { categoryId: selected === ANY ? null : selected });
+    getSocket().emit("rapidQueueJoin", { categoryId: selected === ANY ? null : selected });
     setQueued(true); queuedRef.current = true; setSince(Date.now());
   }
 
   function leave() {
-    getSocket({ id: userId, username }).emit("rapidQueueLeave");
+    getSocket().emit("rapidQueueLeave");
     setQueued(false); queuedRef.current = false; setSince(null);
   }
 

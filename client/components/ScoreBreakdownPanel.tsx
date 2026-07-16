@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ScoredClaim, ClaimStatus, CredScore, UserPositionEntry } from "@/lib/types";
 import { STANCE_PALETTE, NEUTRAL_PALETTE } from "@/lib/stances";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -42,7 +43,7 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch(`${SERVER}/api/rooms/${roomName}/claims`)
+    api(`${SERVER}/api/rooms/${roomName}/claims`)
       .then(r => r.json())
       .then(data => { setClaims(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));

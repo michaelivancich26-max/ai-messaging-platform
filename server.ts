@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request, type Response } from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { PrismaClient, SenderType } from "@prisma/client";
@@ -12,6 +12,7 @@ import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId, pickTopic } from "./services/topics";
+import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
 import bcrypt from "bcryptjs";
 
 const CLIENT_ORIGIN = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -38,17 +39,77 @@ app.use(rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHea
 const writeLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
 app.use((req, _res, next) => { if (req.method !== "GET") return writeLimiter(req, _res, next); next(); });
 
+// Open the caller's session token, if they sent one, and hang the result off
+// the request. This only ESTABLISHES identity — it doesn't require it, because
+// a handful of routes (login, register, public profiles) are legitimately
+// anonymous. Routes that need a caller use requireActor.
+//
+// The token rides in an Authorization header rather than a cookie because the
+// client and server are different origins in production (Vercel and Railway),
+// where a session cookie set by one is simply never sent to the other.
+app.use(async (req, _res, next) => {
+  req.actor = await verifySessionToken(bearerToken(req.headers as { authorization?: string }));
+  next();
+});
+
+// Everything under /api requires a caller.
+//
+// This is a whitelist rather than a per-route guard because the signed-out
+// surface is entirely Next.js — registration, sign-in, password reset and email
+// verification are all routes in the client app, and nothing reaches this
+// server until you already hold a session. So "authenticated" is the default
+// and exceptions are the rare thing, which is the right way round: a route
+// added later is protected by forgetting, not by remembering.
+//
+// This closes anonymous forgery. It does NOT by itself stop a signed-in user
+// from naming someone else's id in a body — that's what reading identity via
+// actorId() rather than from the request is for. Both halves are required.
+const PUBLIC_API = [
+  /^\/api\/topics$/,   // the category list; no user data
+];
+app.use("/api", (req, res, next) => {
+  if (PUBLIC_API.some((r) => r.test(req.baseUrl + req.path))) return next();
+  if (!req.actor) return res.status(401).json({ error: "Authentication required" });
+  next();
+});
+
+// Who the caller is, per their verified session token.
+//
+// Deliberately ignores req.query.userId and req.body.userId. Those are a claim,
+// not evidence, and reading them is how this server ended up with no
+// authentication at all. If a route needs to know who is calling, it is this or
+// nothing.
+function actorId(req: Request): string | null {
+  return req.actor?.id ?? null;
+}
+
+// Guard for routes that require a signed-in caller. Returns the actor, or
+// answers 401 and returns null — call sites bail on null.
+function requireActor(req: Request, res: Response): Actor | null {
+  if (!req.actor) {
+    res.status(401).json({ error: "Authentication required" });
+    return null;
+  }
+  return req.actor;
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: ALLOWED_ORIGINS, credentials: true },
 });
 
-// Socket middleware — attach session user to socket
-io.use((socket, next) => {
-  const user = socket.handshake.auth?.user as { id: string; username: string } | undefined;
-  if (!user?.id || !user?.username) return next(new Error("Authentication required"));
-  (socket as any).user = user;
-  console.log("[Auth] Socket connected:", user.username);
+// Socket middleware — establish who is on the other end of this connection.
+//
+// This used to take `handshake.auth.user` at face value, which only ever
+// checked that an identity object had been SENT. Anyone could connect as
+// anyone, and every socket event downstream inherited that. Now the client
+// sends its session token and the server opens it.
+io.use(async (socket, next) => {
+  const token = socket.handshake.auth?.token as string | undefined;
+  const actor = await verifySessionToken(token);
+  if (!actor) return next(new Error("Authentication required"));
+  (socket as any).user = { id: actor.id, username: actor.username, isAdmin: actor.isAdmin };
+  console.log("[Auth] Socket connected:", actor.username);
   next();
 });
 
@@ -541,8 +602,11 @@ io.on("connection", (socket) => {
 
   socket.on(
     "sendMessage",
-    async (payload: { roomId: string; userId: string; username: string; content: string; channelId?: string }) => {
-      const { roomId, userId, username, channelId } = payload;
+    async (payload: { roomId: string; content: string; channelId?: string }) => {
+      const { roomId, channelId } = payload;
+      // Identity is the socket's verified session, never the payload. The
+      // client still sends userId/username out of habit; they are ignored.
+      const username = socketUser.username;
       const rawContent = payload.content?.trim().replace(/\0/g, "") ?? "";
       if (!rawContent) return;
 
@@ -560,12 +624,15 @@ io.on("connection", (socket) => {
       }
 
       try {
-        let user = await prisma.user.findUnique({ where: { username } });
-        if (!user) {
-          user = await prisma.user.create({
-            data: { username, email: `${username}@chat.local`, password: "" },
-          }).catch(() => prisma.user.findUniqueOrThrow({ where: { username } }));
-        }
+        // By verified id. This used to look the sender up by a username taken
+        // straight from the payload and CREATE the account when it didn't
+        // exist — empty password, fabricated @chat.local email. So sending a
+        // message as any unused name silently minted that account, with no
+        // registration and no email verification, and sending one as an
+        // existing name posted as that person. Both are gone: the socket only
+        // connects with a session token, and the sender is whoever it names.
+        const user = await prisma.user.findUnique({ where: { id: socketUser.id } });
+        if (!user) return;   // valid token for a user since deleted
         bumpDailyStreak(user.id).catch(() => {});
 
         const room = await prisma.room.findUnique({ where: { name: roomId } });
@@ -844,9 +911,10 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("createPoll", async ({ roomId, channelId, question, options, userId }: {
-    roomId: string; channelId?: string | null; question: string; options: string[]; userId: string;
+  socket.on("createPoll", async ({ roomId, channelId, question, options }: {
+    roomId: string; channelId?: string | null; question: string; options: string[];
   }) => {
+    const userId = socketUser.id;
     try {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
@@ -861,7 +929,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("votePoll", async ({ pollId, userId, option }: { pollId: string; userId: string; option: string }) => {
+  socket.on("votePoll", async ({ pollId, option }: { pollId: string; option: string }) => {
+    const userId = socketUser.id;   // never the payload — that would be voting as anyone
     try {
       await (prisma as any).pollVote.upsert({
         where: { pollId_userId: { pollId, userId } },
@@ -878,7 +947,11 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("closePoll", async ({ pollId, userId }: { pollId: string; userId: string }) => {
+  socket.on("closePoll", async ({ pollId }: { pollId: string }) => {
+    // From the verified socket. The permission check below compares this
+    // against the poll's creator and the room's — reading it from the payload
+    // meant claiming to be the creator WAS being the creator.
+    const userId = socketUser.id;
     try {
       const poll = await (prisma as any).poll.findUnique({ where: { id: pollId } });
       if (!poll) return;
@@ -1149,7 +1222,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Combined lobby fetch — joined rooms + DMs + users in one round trip
 app.get("/api/lobby", async (req, res) => {
-  const userId = req.query.userId as string;
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const [memberships, dms, users] = await Promise.all([
@@ -1178,7 +1251,7 @@ app.get("/api/lobby", async (req, res) => {
 
 // Browse all public rooms (for the discover page)
 app.get("/api/rooms/browse", async (req, res) => {
-  const userId = req.query.userId as string;
+  const userId = actorId(req)!;
   try {
     const rooms = await prisma.room.findMany({
       where: {
@@ -1221,7 +1294,7 @@ app.get("/api/rooms/browse", async (req, res) => {
 
 // POST /api/rooms/:name/join
 app.post("/api/rooms/:name/join", async (req, res) => {
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -1259,7 +1332,7 @@ app.post("/api/rooms/:name/join", async (req, res) => {
 
 // POST /api/rooms/:name/leave
 app.post("/api/rooms/:name/leave", async (req, res) => {
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -1515,7 +1588,7 @@ async function bumpDailyStreak(userId: string): Promise<void> {
 // GET /api/challenges — list open challenges (optionally excluding the requesting user's own)
 app.get("/api/challenges", async (req, res) => {
   try {
-    const excludeUserId = (req.query.excludeUserId as string) ?? null;
+    const excludeUserId = actorId(req);
     const rows = excludeUserId
       ? await prisma.$queryRawUnsafe<any[]>(
           `SELECT c.*, u.username, u.elo FROM "Challenge" c
@@ -1542,7 +1615,7 @@ app.get("/api/challenges", async (req, res) => {
 // GET /api/challenges/mine — challenges posted by a specific user
 app.get("/api/challenges/mine", async (req, res) => {
   try {
-    const { userId } = req.query as { userId: string };
+    const userId = actorId(req)!;
     if (!userId) return res.status(400).json({ error: "userId required" });
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT c.*, u.username, u.elo FROM "Challenge" c
@@ -1561,8 +1634,9 @@ app.get("/api/challenges/mine", async (req, res) => {
 // POST /api/challenges — post a new challenge
 app.post("/api/challenges", async (req, res) => {
   try {
-    const { userId, claim, stance, winCondition } = req.body as {
-      userId: string; claim: string; stance: "affirmative" | "negative"; winCondition: object;
+    const userId = actorId(req)!;
+    const { claim, stance, winCondition } = req.body as {
+    claim: string; stance: "affirmative" | "negative"; winCondition: object;
     };
     if (!userId || !claim?.trim() || !stance || !winCondition) {
       return res.status(400).json({ error: "userId, claim, stance, and winCondition required" });
@@ -1582,7 +1656,7 @@ app.post("/api/challenges", async (req, res) => {
 // DELETE /api/challenges/:id — cancel a challenge (poster only)
 app.delete("/api/challenges/:id", async (req, res) => {
   try {
-    const { userId } = req.body as { userId: string };
+    const userId = actorId(req)!;
     const { id } = req.params;
     await prisma.$executeRawUnsafe(
       `UPDATE "Challenge" SET status = 'cancelled' WHERE id = $1 AND "userId" = $2 AND status = 'open'`,
@@ -1597,7 +1671,7 @@ app.delete("/api/challenges/:id", async (req, res) => {
 // POST /api/challenges/:id/accept — accept a challenge, create competitive room
 app.post("/api/challenges/:id/accept", async (req, res) => {
   try {
-    const { userId } = req.body as { userId: string };
+    const userId = actorId(req)!;
     const { id: challengeId } = req.params;
     if (!userId) return res.status(400).json({ error: "userId required" });
 
@@ -2186,8 +2260,9 @@ async function startTeamMatchIfReady(challengeId: string): Promise<string | null
 // POST /api/team/challenges — create a pre-formed team challenge (captain of side A)
 app.post("/api/team/challenges", async (req, res) => {
   try {
-    const { userId, topic, stance, teamSize, winCondition } = req.body as {
-      userId: string; topic: string; stance: "affirmative" | "negative"; teamSize: number; winCondition: object;
+    const userId = actorId(req)!;
+    const { topic, stance, teamSize, winCondition } = req.body as {
+    topic: string; stance: "affirmative" | "negative"; teamSize: number; winCondition: object;
     };
     if (!userId || !topic?.trim() || !stance || !winCondition) {
       return res.status(400).json({ error: "userId, topic, stance, and winCondition required" });
@@ -2216,7 +2291,8 @@ app.post("/api/team/challenges", async (req, res) => {
 // POST /api/team/challenges/:id/invite — captain invites a user to their side
 app.post("/api/team/challenges/:id/invite", async (req, res) => {
   try {
-    const { userId, targetUsername } = req.body as { userId: string; targetUsername: string };
+    const userId = actorId(req)!;
+    const { targetUsername } = req.body as {targetUsername: string };
     const { id: challengeId } = req.params;
     if (!userId || !targetUsername?.trim()) return res.status(400).json({ error: "userId and targetUsername required" });
 
@@ -2276,7 +2352,8 @@ app.post("/api/team/challenges/:id/invite", async (req, res) => {
 // POST /api/team/challenges/:id/respond — invitee accepts or declines
 app.post("/api/team/challenges/:id/respond", async (req, res) => {
   try {
-    const { userId, accepted } = req.body as { userId: string; accepted: boolean };
+    const userId = actorId(req)!;
+    const { accepted } = req.body as {accepted: boolean };
     const { id: challengeId } = req.params;
     if (!userId) return res.status(400).json({ error: "userId required" });
 
@@ -2318,7 +2395,7 @@ app.post("/api/team/challenges/:id/respond", async (req, res) => {
 // POST /api/team/challenges/:id/accept — an opposing captain accepts an open team challenge
 app.post("/api/team/challenges/:id/accept", async (req, res) => {
   try {
-    const { userId } = req.body as { userId: string };
+    const userId = actorId(req)!;
     const { id: challengeId } = req.params;
     if (!userId) return res.status(400).json({ error: "userId required" });
 
@@ -2352,7 +2429,7 @@ app.post("/api/team/challenges/:id/accept", async (req, res) => {
 // DELETE /api/team/challenges/:id — captain A cancels a challenge that hasn't matched
 app.delete("/api/team/challenges/:id", async (req, res) => {
   try {
-    const { userId } = req.body as { userId: string };
+    const userId = actorId(req)!;
     const { id: challengeId } = req.params;
     await prisma.$executeRawUnsafe(
       `UPDATE "Challenge" SET status = 'cancelled'
@@ -2368,7 +2445,7 @@ app.delete("/api/team/challenges/:id", async (req, res) => {
 // GET /api/team/challenges — open team challenges looking for an opponent (exclude mine)
 app.get("/api/team/challenges", async (req, res) => {
   try {
-    const excludeUserId = (req.query.excludeUserId as string) ?? null;
+    const excludeUserId = actorId(req);
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT c.id, c.claim, c.stance, c."winCondition", c."teamSize", c."createdAt",
               u.id AS "captainId", u.username AS "captainName", u.elo AS "captainElo"
@@ -2389,7 +2466,7 @@ app.get("/api/team/challenges", async (req, res) => {
 // GET /api/team/invites?userId= — pending team invites for a user
 app.get("/api/team/invites", async (req, res) => {
   try {
-    const { userId } = req.query as { userId: string };
+    const userId = actorId(req)!;
     if (!userId) return res.status(400).json({ error: "userId required" });
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT m.id AS "memberId", m.side, m."challengeId", c.claim, c.stance, c."teamSize",
@@ -2411,7 +2488,7 @@ app.get("/api/team/invites", async (req, res) => {
 // GET /api/team/mine?userId= — challenges the user is part of (any side/role)
 app.get("/api/team/mine", async (req, res) => {
   try {
-    const { userId } = req.query as { userId: string };
+    const userId = actorId(req)!;
     if (!userId) return res.status(400).json({ error: "userId required" });
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT c.id, c.claim, c.stance, c."winCondition", c."teamSize", c.status, c."createdAt",
@@ -2588,7 +2665,7 @@ app.get("/api/team/match/:roomName", async (req, res) => {
 
 // GET /api/lessons/progress?userId=xxx
 app.get("/api/lessons/progress", async (req, res) => {
-  const userId = req.query.userId as string;
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     // completedAt is the FIRST completion (the insert is ON CONFLICT DO NOTHING),
@@ -2606,7 +2683,8 @@ app.get("/api/lessons/progress", async (req, res) => {
 
 // POST /api/lessons/complete — mark a lesson complete (idempotent)
 app.post("/api/lessons/complete", async (req, res) => {
-  const { userId, seriesSlug, lessonSlug } = req.body;
+  const userId = actorId(req)!;
+  const { seriesSlug, lessonSlug } = req.body;
   if (!userId || !seriesSlug || !lessonSlug) return res.status(400).json({ error: "userId, seriesSlug, lessonSlug required" });
   try {
     await prisma.$executeRawUnsafe(
@@ -2625,7 +2703,7 @@ app.post("/api/lessons/complete", async (req, res) => {
 
 // GET /api/puzzles/progress?userId=xxx
 app.get("/api/puzzles/progress", async (req, res) => {
-  const userId = req.query.userId as string;
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const rows = await prisma.$queryRawUnsafe<{ puzzleId: string; completedAt: Date }[]>(
@@ -2642,7 +2720,8 @@ app.get("/api/puzzles/progress", async (req, res) => {
 
 // POST /api/puzzles/complete — idempotent
 app.post("/api/puzzles/complete", async (req, res) => {
-  const { userId, puzzleId } = req.body;
+  const userId = actorId(req)!;
+  const { puzzleId } = req.body;
   if (!userId || !puzzleId) return res.status(400).json({ error: "userId and puzzleId required" });
   try {
     await prisma.$executeRawUnsafe(
@@ -2935,10 +3014,11 @@ app.get("/api/arena-result/:roomName", async (req, res) => {
 // POST /api/arena-judge — idempotent: returns existing result if already judged
 app.post("/api/arena-judge", async (req, res) => {
   try {
-    const { roomName, userId, forfeit = false, forcedWinner } = req.body as {
-      roomName: string; userId: string; forfeit?: boolean; forcedWinner?: "human" | "bot";
+    const userId = actorId(req)!;
+    const { roomName, forfeit = false, forcedWinner } = req.body as {
+      roomName: string; forfeit?: boolean; forcedWinner?: "human" | "bot";
     };
-    if (!roomName || !userId) return res.status(400).json({ error: "roomName and userId required" });
+    if (!roomName) return res.status(400).json({ error: "roomName required" });
 
     const existing = await prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "ArenaMatch" WHERE "roomName" = $1 LIMIT 1`,
@@ -3244,7 +3324,7 @@ function dmUnreadWhere(room: { id: string; participant1Id: string | null }, user
 }
 
 app.get("/api/dm/conversations", async (req, res) => {
-  const userId = String(req.query.userId ?? "");
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const rooms = await prisma.room.findMany({
@@ -3284,7 +3364,7 @@ app.get("/api/dm/conversations", async (req, res) => {
 });
 
 app.get("/api/dm/unread-count", async (req, res) => {
-  const userId = String(req.query.userId ?? "");
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const rooms = await prisma.room.findMany({
@@ -3297,7 +3377,7 @@ app.get("/api/dm/unread-count", async (req, res) => {
 
 // Resolve a partner username to its DM room, creating the room on first contact.
 app.get("/api/dm/with/:username", async (req, res) => {
-  const userId = String(req.query.userId ?? "");
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const partner = await prisma.user.findFirst({
@@ -3327,7 +3407,8 @@ app.get("/api/dm/with/:username", async (req, res) => {
 
 // Mark a conversation read as of now.
 app.post("/api/dm/read", async (req, res) => {
-  const { userId, roomName } = req.body as { userId: string; roomName: string };
+  const userId = actorId(req)!;
+  const { roomName } = req.body as {roomName: string };
   if (!userId || !roomName) return res.status(400).json({ error: "userId and roomName required" });
   try {
     const room = await prisma.room.findUnique({ where: { name: roomName } });
@@ -3340,10 +3421,11 @@ app.post("/api/dm/read", async (req, res) => {
 
 // POST /api/bot-rooms — create a private 1v1 debate room against a bot
 app.post("/api/bot-rooms", async (req, res) => {
-  const { userId, botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {
-    userId: string; botId: string; winCondition?: object;
+  const userId = actorId(req)!;
+  const { botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {
+    botId: string; winCondition?: object;
   };
-  if (!userId || !botId) return res.status(400).json({ error: "userId and botId required" });
+  if (!botId) return res.status(400).json({ error: "botId required" });
   if (!BOT_IDS.includes(botId)) return res.status(400).json({ error: "Unknown bot" });
 
   try {
@@ -3543,7 +3625,8 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
 
 // POST /api/rooms/:name/sections
 app.post("/api/rooms/:name/sections", async (req, res) => {
-  const { userId, name: sectionName } = req.body as { userId: string; name: string };
+  const userId = actorId(req)!;
+  const { name: sectionName } = req.body as {name: string };
   if (!userId || !sectionName?.trim()) return res.status(400).json({ error: "userId and name required" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3561,7 +3644,8 @@ app.post("/api/rooms/:name/sections", async (req, res) => {
 
 // PATCH /api/rooms/:name/sections/:id
 app.patch("/api/rooms/:name/sections/:id", async (req, res) => {
-  const { userId, name: newName } = req.body as { userId: string; name: string };
+  const userId = actorId(req)!;
+  const { name: newName } = req.body as {name: string };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3578,7 +3662,7 @@ app.patch("/api/rooms/:name/sections/:id", async (req, res) => {
 
 // DELETE /api/rooms/:name/sections/:id
 app.delete("/api/rooms/:name/sections/:id", async (req, res) => {
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3597,8 +3681,9 @@ app.delete("/api/rooms/:name/sections/:id", async (req, res) => {
 
 // POST /api/rooms/:name/sub-debates — branch a message into a focused sub-debate channel
 app.post("/api/rooms/:name/sub-debates", async (req, res) => {
-  const { userId, proposition, messageId, messagePreview } = req.body as {
-    userId: string; proposition: string; messageId?: string; messagePreview?: string;
+  const userId = actorId(req)!;
+  const { proposition, messageId, messagePreview } = req.body as {
+    proposition: string; messageId?: string; messagePreview?: string;
   };
   if (!userId || !proposition?.trim()) return res.status(400).json({ error: "userId and proposition required" });
   try {
@@ -3626,7 +3711,7 @@ app.post("/api/rooms/:name/sub-debates", async (req, res) => {
 
 // POST /api/rooms/:name/channels/:id/sidebar — create (or return) sidebar for a channel
 app.post("/api/rooms/:name/channels/:id/sidebar", async (req, res) => {
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3655,7 +3740,8 @@ app.post("/api/rooms/:name/channels/:id/sidebar", async (req, res) => {
 
 // POST /api/rooms/:name/channels
 app.post("/api/rooms/:name/channels", async (req, res) => {
-  const { userId, name: channelName, sectionId } = req.body as { userId: string; name: string; sectionId?: string };
+  const userId = actorId(req)!;
+  const { name: channelName, sectionId } = req.body as {name: string; sectionId?: string };
   if (!userId || !channelName?.trim()) return res.status(400).json({ error: "userId and name required" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3675,7 +3761,8 @@ app.post("/api/rooms/:name/channels", async (req, res) => {
 
 // PATCH /api/rooms/:name/channels/:id
 app.patch("/api/rooms/:name/channels/:id", async (req, res) => {
-  const { userId, name: newName, sectionId, isOpinionated: chOpinionated } = req.body as { userId: string; name?: string; sectionId?: string | null; isOpinionated?: boolean };
+  const userId = actorId(req)!;
+  const { name: newName, sectionId, isOpinionated: chOpinionated } = req.body as {name?: string; sectionId?: string | null; isOpinionated?: boolean };
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3696,7 +3783,7 @@ app.patch("/api/rooms/:name/channels/:id", async (req, res) => {
 
 // DELETE /api/rooms/:name/channels/:id
 app.delete("/api/rooms/:name/channels/:id", async (req, res) => {
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
@@ -3717,7 +3804,8 @@ app.delete("/api/rooms/:name/channels/:id", async (req, res) => {
 
 app.post("/api/rooms/:name/auth", async (req, res) => {
   const { name } = req.params;
-  const { password, userId } = req.body as { password: string; userId?: string };
+  const userId = actorId(req);
+  const { password } = req.body as { password: string };
   if (!password) return res.status(400).json({ error: "Password required" });
   try {
     const room = await prisma.room.findUnique({ where: { name } });
@@ -3776,8 +3864,9 @@ app.get("/api/rooms/:name", async (req, res) => {
 
 app.patch("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId, description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances, isOpinionated, stanceCooldown } = req.body as {
-    userId: string;
+  const userId = actorId(req)!;
+  const { description, proposition, maxMembers, isPrivate, password: newPassword, aiPersona, stances, isOpinionated, stanceCooldown } = req.body as {
+    
     description?: string;
     proposition?: string;
     maxMembers?: number | null;
@@ -3842,7 +3931,7 @@ app.patch("/api/rooms/:name", async (req, res) => {
 
 app.delete("/api/rooms/:name", async (req, res) => {
   const { name } = req.params;
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
   try {
     const room = await prisma.room.findUnique({ where: { name } });
@@ -3911,7 +4000,7 @@ app.get("/api/users/search", async (req, res) => {
 
 // GET /api/notifications?userId=
 app.get("/api/notifications", async (req, res) => {
-  const userId = req.query.userId as string;
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     const notifs = await (prisma as any).notification.findMany({
@@ -3927,7 +4016,7 @@ app.get("/api/notifications", async (req, res) => {
 
 // PATCH /api/notifications/read
 app.patch("/api/notifications/read", async (req, res) => {
-  const { userId } = req.body as { userId: string };
+  const userId = actorId(req)!;
   if (!userId) return res.status(400).json({ error: "userId required" });
   try {
     await (prisma as any).notification.updateMany({ where: { userId, read: false }, data: { read: true } });
@@ -3941,6 +4030,14 @@ app.patch("/api/notifications/read", async (req, res) => {
 const PORT = process.env.PORT ?? 3001;
 
 async function start() {
+  // Before anything else. Without the secret no session token can be opened, so
+  // every request would arrive anonymous — and a server that can't tell who is
+  // calling has no business accepting connections. Refusing to boot makes that
+  // a single obvious line at deploy time instead of a site that looks up but is
+  // signed out for everyone.
+  assertAuthConfigured();
+  console.log("[Auth] Session token verification ready");
+
   try {
     await prisma.$executeRawUnsafe("SELECT 1");
     console.log("[DB] Connected");

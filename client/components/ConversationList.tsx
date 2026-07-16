@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -41,7 +42,7 @@ export default function ConversationList({ userId }: { userId: string }) {
 
   const load = useCallback(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/dm/conversations?userId=${userId}`)
+    api(`${SERVER}/api/dm/conversations?userId=${userId}`)
       .then((r) => r.json())
       .then((d) => { setConvos(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -59,7 +60,7 @@ export default function ConversationList({ userId }: { userId: string }) {
   useEffect(() => {
     if (!search.trim()) { setResults([]); return; }
     const t = setTimeout(() => {
-      fetch(`${SERVER}/api/users/search?q=${encodeURIComponent(search.trim())}&excludeId=${userId}`)
+      api(`${SERVER}/api/users/search?q=${encodeURIComponent(search.trim())}&excludeId=${userId}`)
         .then((r) => r.json()).then((d) => setResults(Array.isArray(d) ? d : [])).catch(() => {});
     }, 350);
     return () => clearTimeout(t);

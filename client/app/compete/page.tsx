@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import TeamMatches from "@/components/TeamMatches";
 import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -84,7 +85,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
     if (!claim.trim()) return;
     setLoading(true);
     try {
-      await fetch(`${SERVER}/api/challenges`, {
+      await api(`${SERVER}/api/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, claim: claim.trim(), stance, winCondition: wc }),
@@ -264,22 +265,22 @@ export default function CompetePage() {
 
   function loadBoard() {
     if (!userId) return;
-    fetch(`${SERVER}/api/challenges?excludeUserId=${userId}`)
+    api(`${SERVER}/api/challenges?excludeUserId=${userId}`)
       .then(r => r.json()).then(setChallenges).catch(() => {});
   }
   function loadMine() {
     if (!userId) return;
-    fetch(`${SERVER}/api/challenges/mine?userId=${userId}`)
+    api(`${SERVER}/api/challenges/mine?userId=${userId}`)
       .then(r => r.json()).then(setMyChallenges).catch(() => {});
   }
   function loadLeaderboard() {
-    fetch(`${SERVER}/api/leaderboard`)
+    api(`${SERVER}/api/leaderboard`)
       .then(r => r.json()).then(data => setLeaderboard(Array.isArray(data) ? data : [])).catch(() => {});
   }
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/users/${userId}/profile`)
+    api(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json()).then(d => setMyElo(d.elo ?? 1200)).catch(() => {});
     loadBoard();
     loadMine();
@@ -292,7 +293,7 @@ export default function CompetePage() {
     // Dynamically import socket to avoid SSR issues
     import("@/lib/socket").then(({ getSocket }) => {
       const username = (session?.user as any)?.username ?? session?.user?.name ?? "";
-      const socket = getSocket({ id: userId, username });
+      const socket = getSocket();
       function onAccepted(data: { roomName: string; acceptedBy: string }) {
         setNotification(data);
         loadBoard();
@@ -306,7 +307,7 @@ export default function CompetePage() {
   async function handleAccept(challengeId: string) {
     setAccepting(challengeId);
     try {
-      const res = await fetch(`${SERVER}/api/challenges/${challengeId}/accept`, {
+      const res = await api(`${SERVER}/api/challenges/${challengeId}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -324,7 +325,7 @@ export default function CompetePage() {
   }
 
   async function handleCancel(challengeId: string) {
-    await fetch(`${SERVER}/api/challenges/${challengeId}`, {
+    await api(`${SERVER}/api/challenges/${challengeId}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),

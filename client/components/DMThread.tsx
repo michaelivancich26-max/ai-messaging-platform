@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import type { ChatMessage } from "@/lib/types";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -34,7 +35,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
     setRoomName(null);
     setRoomDbId(null);
     setError(null);
-    fetch(`${SERVER}/api/dm/with/${encodeURIComponent(partnerUsername)}?userId=${userId}`)
+    api(`${SERVER}/api/dm/with/${encodeURIComponent(partnerUsername)}?userId=${userId}`)
       .then(async (r) => {
         const d = await r.json();
         if (!r.ok) throw new Error(d?.error ?? "Could not open conversation");
@@ -54,7 +55,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
   const markRead = useCallback(() => {
     const rn = roomNameRef.current;
     if (!rn) return;
-    fetch(`${SERVER}/api/dm/read`, {
+    api(`${SERVER}/api/dm/read`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, roomName: rn }),
     }).catch(() => {});
@@ -63,7 +64,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
   // Join the room and stream messages.
   useEffect(() => {
     if (!roomName || !roomDbId || !username) return;
-    const socket = getSocket({ id: userId, username });
+    const socket = getSocket();
 
     const join = () => socket.emit("joinRoom", { roomId: roomName, roomName });
     join();
@@ -112,7 +113,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
       user: { username },
     } as ChatMessage]);
     setDraft("");
-    getSocket({ id: userId, username }).emit("sendMessage", { roomId: roomName, userId, username, content });
+    getSocket().emit("sendMessage", { roomId: roomName, userId, username, content });
   }
 
   if (error) {

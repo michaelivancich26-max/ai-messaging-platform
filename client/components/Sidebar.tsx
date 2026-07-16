@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import NotificationBell from "./NotificationBell";
 import { Wordmark } from "./Wordmark";
+import { api } from "@/lib/api";
+import { signOutEverywhere } from "@/lib/session";
 
 interface Room {
   id: string;
@@ -46,7 +48,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
 
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
-    fetch(`${SERVER}/api/lobby?userId=${userId}`)
+    api(`${SERVER}/api/lobby?userId=${userId}`)
       .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
       .then(data => {
         if (Array.isArray(data.rooms)) setRooms(data.rooms);
@@ -54,7 +56,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       .catch(() => {
         // On error (network, rate-limit, etc.) keep whatever data is already in state
       });
-    fetch(`${SERVER}/api/users/${userId}/profile`)
+    api(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json())
       .then(data => setMyAvatarUrl(data.avatarUrl ?? null))
       .catch(() => {});
@@ -196,7 +198,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
             <span className="truncate text-sm font-medium">{username}</span>
           )}
         </button>
-        <button onClick={() => signOut({ callbackUrl: "/" })}
+        <button onClick={() => signOutEverywhere()}
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors ${collapsed ? "justify-center" : ""}`}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
             <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clipRule="evenodd" />

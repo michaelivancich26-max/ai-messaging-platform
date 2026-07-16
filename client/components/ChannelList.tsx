@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 export interface Channel {
   id: string;
@@ -46,7 +47,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   const [renaming, setRenaming] = useState<{ type: "section" | "channel"; id: string; name: string } | null>(null);
 
   async function load() {
-    const res = await fetch(`${SERVER}/api/rooms/${roomName}/channels`);
+    const res = await api(`${SERVER}/api/rooms/${roomName}/channels`);
     if (res.ok) {
       const data = await res.json();
       setSections(data.sections ?? []);
@@ -60,7 +61,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   async function addChannel(sectionId: string | null) {
     const name = newChannelName.trim();
     if (!name) return;
-    await fetch(`${SERVER}/api/rooms/${roomName}/channels`, {
+    await api(`${SERVER}/api/rooms/${roomName}/channels`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, name, sectionId }),
     });
@@ -71,7 +72,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   async function addSection() {
     const name = newSectionName.trim();
     if (!name) return;
-    await fetch(`${SERVER}/api/rooms/${roomName}/sections`, {
+    await api(`${SERVER}/api/rooms/${roomName}/sections`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, name }),
     });
@@ -92,7 +93,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   }
 
   async function toggleChannelOpinionated(channelId: string, value: boolean) {
-    await fetch(`${SERVER}/api/rooms/${roomName}/channels/${channelId}`, {
+    await api(`${SERVER}/api/rooms/${roomName}/channels/${channelId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, isOpinionated: value }),
     });
@@ -100,7 +101,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   }
 
   async function deleteSection(id: string) {
-    await fetch(`${SERVER}/api/rooms/${roomName}/sections/${id}`, {
+    await api(`${SERVER}/api/rooms/${roomName}/sections/${id}`, {
       method: "DELETE", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
@@ -108,7 +109,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   }
 
   async function deleteChannel(id: string) {
-    await fetch(`${SERVER}/api/rooms/${roomName}/channels/${id}`, {
+    await api(`${SERVER}/api/rooms/${roomName}/channels/${id}`, {
       method: "DELETE", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });

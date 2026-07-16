@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ConfirmModal from "./ConfirmModal";
+import { api } from "@/lib/api";
 
 interface Member {
   userId: string;
@@ -70,7 +71,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
         aiPersona: editPersona.trim() || null,
       };
       if (editPrivate && editPassword) body.password = editPassword;
-      const res = await fetch(`${SERVER}/api/rooms/${meta.name}`, {
+      const res = await api(`${SERVER}/api/rooms/${meta.name}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

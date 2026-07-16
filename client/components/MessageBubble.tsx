@@ -5,6 +5,7 @@ import type { ChatMessage, ClaimInfo, CredScore, Reaction } from "@/lib/types";
 import { getStancePalette, NEUTRAL_PALETTE } from "@/lib/stances";
 import CredibilityBadge from "./CredibilityBadge";
 import ClaimBadge from "./ClaimBadge";
+import { api } from "@/lib/api";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🔥", "👎", "🤔"];
 
@@ -55,7 +56,7 @@ function ImageMessage({ payload, isSelf }: { payload: ImagePayload; isSelf: bool
     if (src || loading || !payload.messageId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${SERVER}/api/messages/${payload.messageId}/image`);
+      const res = await api(`${SERVER}/api/messages/${payload.messageId}/image`);
       const data = await res.json();
       if (data.src) setSrc(data.src);
     } finally {

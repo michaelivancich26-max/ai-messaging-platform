@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import type { AppNotification } from "@/lib/types";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -29,7 +30,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
   // Fetch on mount
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/notifications?userId=${userId}`)
+    api(`${SERVER}/api/notifications?userId=${userId}`)
       .then(r => r.json())
       .then((data: AppNotification[]) => Array.isArray(data) && setNotifs(data))
       .catch(() => {});
@@ -38,7 +39,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
   // Real-time socket updates
   useEffect(() => {
     if (!userId || !username) return;
-    const socket = getSocket({ id: userId, username });
+    const socket = getSocket();
     function onNotification(n: AppNotification) {
       setNotifs(prev => [n, ...prev.filter(x => x.id !== n.id)]);
     }
@@ -69,7 +70,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
   function toggleOpen() {
     if (!open && unread > 0) {
       // Mark as read
-      fetch(`${SERVER}/api/notifications/read`, {
+      api(`${SERVER}/api/notifications/read`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -79,7 +80,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
   }
 
   function respondInvite(notifId: string, accepted: boolean) {
-    const socket = getSocket({ id: userId, username });
+    const socket = getSocket();
     socket.emit("respondInvite", { notifId, accepted });
     setNotifs(prev => prev.map(n => n.id === notifId ? { ...n, resolved: true, accepted, read: true } : n));
   }

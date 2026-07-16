@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import type { CredScore } from "@/lib/types";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -84,7 +85,7 @@ export default function PublicProfilePage() {
   useEffect(() => {
     if (!username) return;
     setLoading(true); setNotFound(false);
-    fetch(`${SERVER}/api/users/by-name/${encodeURIComponent(username)}/profile`)
+    api(`${SERVER}/api/users/by-name/${encodeURIComponent(username)}/profile`)
       .then(r => (r.ok ? r.json() : Promise.reject()))
       .then((d: ProfileData) => { setData(d); setLoading(false); })
       .catch(() => { setNotFound(true); setLoading(false); });
@@ -93,7 +94,7 @@ export default function PublicProfilePage() {
   const profileId = data?.id;
   useEffect(() => {
     if (!profileId) { setMatches([]); return; }
-    fetch(`${SERVER}/api/users/${profileId}/matches`)
+    api(`${SERVER}/api/users/${profileId}/matches`)
       .then(r => (r.ok ? r.json() : []))
       .then((m: MatchItem[]) => setMatches(Array.isArray(m) ? m : []))
       .catch(() => setMatches([]));

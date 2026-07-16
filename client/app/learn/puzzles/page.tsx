@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 import {
   PUZZLES, DAILY_PUZZLE_ID, getPuzzleById, CATEGORY_COLORS, DIFFICULTY_ORDER,
   type Puzzle, type Difficulty,
@@ -206,7 +207,7 @@ export default function PuzzlesPage() {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/puzzles/progress?userId=${userId}`)
+    api(`${SERVER}/api/puzzles/progress?userId=${userId}`)
       .then(r => r.json())
       .then(d => setCompleted(new Set((d.completed ?? []) as string[])))
       .catch(() => {});
@@ -215,7 +216,7 @@ export default function PuzzlesPage() {
   const markComplete = useCallback(async (id: string) => {
     if (completed.has(id) || !userId) return;
     setCompleted(prev => new Set([...prev, id]));
-    await fetch(`${SERVER}/api/puzzles/complete`, {
+    await api(`${SERVER}/api/puzzles/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, puzzleId: id }),

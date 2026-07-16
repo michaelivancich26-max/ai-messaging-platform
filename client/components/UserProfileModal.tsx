@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CredScore } from "@/lib/types";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -81,7 +82,7 @@ export default function UserProfileModal({ userId, onClose }: Props) {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${SERVER}/api/users/${userId}/profile`)
+    api(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json())
       .then(data => { setProfile(data); setLoading(false); })
       .catch(() => setLoading(false));

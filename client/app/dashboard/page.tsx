@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
@@ -130,7 +131,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
-    fetch(`${SERVER}/api/users/${userId}/profile`)
+    api(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json())
       .then(data => {
         setBio(data.bio ?? "");
@@ -160,7 +161,7 @@ export default function DashboardPage() {
     if (!userId) return;
     setSaving(true);
     try {
-      await fetch(`${SERVER}/api/users/${userId}/profile`, {
+      await api(`${SERVER}/api/users/${userId}/profile`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bio, avatarUrl }),
@@ -173,7 +174,7 @@ export default function DashboardPage() {
   async function saveFeatured(ids: string[]) {
     setFeaturedMedals(ids);
     if (!userId) return;
-    await fetch(`${SERVER}/api/users/${userId}/profile`, {
+    await api(`${SERVER}/api/users/${userId}/profile`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ featuredMedals: ids }),

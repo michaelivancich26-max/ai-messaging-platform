@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { findSeries } from "../content";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -25,7 +26,7 @@ export default function SeriesPage() {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/lessons/progress?userId=${userId}`)
+    api(`${SERVER}/api/lessons/progress?userId=${userId}`)
       .then(r => r.json())
       .then(d => {
         const keys = (d.completed ?? []).map((c: { seriesSlug: string; lessonSlug: string }) => `${c.seriesSlug}/${c.lessonSlug}`);

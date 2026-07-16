@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TOPIC_CATALOG } from "@/lib/topics";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -79,7 +80,7 @@ function CreateTeamModal({
     if (!topic.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch(`${SERVER}/api/team/challenges`, {
+      const res = await api(`${SERVER}/api/team/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, topic: topic.trim(), stance, teamSize, winCondition: wc }),
@@ -233,7 +234,7 @@ function LobbyModal({
   const [inviting, setInviting] = useState(false);
 
   const load = useCallback(() => {
-    fetch(`${SERVER}/api/team/challenges/${challengeId}`)
+    api(`${SERVER}/api/team/challenges/${challengeId}`)
       .then(r => r.json()).then((d: Roster) => { if (d && d.id) setRoster(d); }).catch(() => {});
   }, [challengeId]);
 
@@ -258,7 +259,7 @@ function LobbyModal({
     if (!inviteName.trim() || !roster) return;
     setInviting(true); setInviteError("");
     try {
-      const res = await fetch(`${SERVER}/api/team/challenges/${challengeId}/invite`, {
+      const res = await api(`${SERVER}/api/team/challenges/${challengeId}/invite`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, targetUsername: inviteName.trim() }),
       });
@@ -367,15 +368,15 @@ export default function TeamMatches({ userId, username }: { userId: string; user
 
   const loadOpen = useCallback(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/team/challenges?excludeUserId=${userId}`).then(r => r.json()).then(d => setOpen(Array.isArray(d) ? d : [])).catch(() => {});
+    api(`${SERVER}/api/team/challenges?excludeUserId=${userId}`).then(r => r.json()).then(d => setOpen(Array.isArray(d) ? d : [])).catch(() => {});
   }, [userId]);
   const loadMine = useCallback(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/team/mine?userId=${userId}`).then(r => r.json()).then(d => setMine(Array.isArray(d) ? d : [])).catch(() => {});
+    api(`${SERVER}/api/team/mine?userId=${userId}`).then(r => r.json()).then(d => setMine(Array.isArray(d) ? d : [])).catch(() => {});
   }, [userId]);
   const loadInvites = useCallback(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/team/invites?userId=${userId}`).then(r => r.json()).then(d => setInvites(Array.isArray(d) ? d : [])).catch(() => {});
+    api(`${SERVER}/api/team/invites?userId=${userId}`).then(r => r.json()).then(d => setInvites(Array.isArray(d) ? d : [])).catch(() => {});
   }, [userId]);
 
   const refreshAll = useCallback(() => { loadOpen(); loadMine(); loadInvites(); }, [loadOpen, loadMine, loadInvites]);
@@ -387,7 +388,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
     if (!userId) return;
     let cleanup = () => {};
     import("@/lib/socket").then(({ getSocket }) => {
-      const socket = getSocket({ id: userId, username });
+      const socket = getSocket();
       const onStarted = (data: { roomName: string }) => { if (data?.roomName) router.push(`/room/${data.roomName}`); };
       const onNotif = (n: any) => { if (n?.type === "team_invite") loadInvites(); };
       socket.on("teamMatchStarted", onStarted);
@@ -400,7 +401,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
   async function acceptOpen(c: OpenChallenge) {
     setBusy(c.id);
     try {
-      const res = await fetch(`${SERVER}/api/team/challenges/${c.id}/accept`, {
+      const res = await api(`${SERVER}/api/team/challenges/${c.id}/accept`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
@@ -418,7 +419,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
   async function respondInvite(inv: Invite, accepted: boolean) {
     setBusy(inv.memberId);
     try {
-      const res = await fetch(`${SERVER}/api/team/challenges/${inv.challengeId}/respond`, {
+      const res = await api(`${SERVER}/api/team/challenges/${inv.challengeId}/respond`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, accepted }),
       });
@@ -431,7 +432,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
   }
 
   async function cancelMine(id: string) {
-    await fetch(`${SERVER}/api/team/challenges/${id}`, {
+    await api(`${SERVER}/api/team/challenges/${id}`, {
       method: "DELETE", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });

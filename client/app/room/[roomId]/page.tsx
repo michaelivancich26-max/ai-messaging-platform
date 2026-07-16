@@ -24,6 +24,7 @@ import SubDebateModal from "@/components/SubDebateModal";
 import ScoreBreakdownPanel from "@/components/ScoreBreakdownPanel";
 import type { RoomMeta } from "@/components/RoomPanel";
 import { getBotById } from "@/lib/bots";
+import { api } from "@/lib/api";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -144,13 +145,13 @@ export default function RoomPage() {
   useEffect(() => {
     if (status !== "authenticated" || !userId || !roomId) return;
     if (!roomId.startsWith("dm-")) return;
-    fetch(`${SERVER}/api/dm?userId=${userId}`)
+    api(`${SERVER}/api/dm?userId=${userId}`)
       .then((r) => r.json())
       .then((dms: Array<{ name: string; participant1Id: string; participant2Id: string }>) => {
         const dm = dms.find((d) => d.name === roomId);
         if (!dm) return;
         const otherId = dm.participant1Id === userId ? dm.participant2Id : dm.participant1Id;
-        return fetch(`${SERVER}/api/users?excludeId=${userId}`)
+        return api(`${SERVER}/api/users?excludeId=${userId}`)
           .then((r) => r.json())
           .then((users: Array<{ id: string; username: string }>) => {
             const other = users.find((u) => u.id === otherId);
@@ -164,7 +165,7 @@ export default function RoomPage() {
     if (status !== "authenticated") return;
 
     console.log("[Room] status=authenticated userId=", userId, "username=", username);
-    const socket = getSocket({ id: userId, username });
+    const socket = getSocket();
     const roomPassword = sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined;
 
     // Track whether this is a reconnect (vs. the initial connect).
@@ -236,7 +237,7 @@ export default function RoomPage() {
       sidebarChannelRef.current = ch;
       // Use joinSidebar (not joinChannel) so we don't leave the main channel or overwrite messages via history
       socket.emit("joinSidebar", { channelId: ch.id });
-      fetch(`${SERVER}/api/channels/${ch.id}/messages`)
+      api(`${SERVER}/api/channels/${ch.id}/messages`)
         .then(r => r.json())
         .then((msgs: ChatMessage[]) => setSidebarMessages(msgs.filter((m: ChatMessage) => m.type === "human")))
         .catch(() => {});
@@ -253,7 +254,7 @@ export default function RoomPage() {
         setSpectatorChatChannelId(meta.spectatorChatChannelId);
         spectatorChatChannelRef.current = meta.spectatorChatChannelId;
         socket.emit("joinSidebar", { channelId: meta.spectatorChatChannelId });
-        fetch(`${SERVER}/api/channels/${meta.spectatorChatChannelId}/messages`)
+        api(`${SERVER}/api/channels/${meta.spectatorChatChannelId}/messages`)
           .then(r => r.json())
           .then((msgs: ChatMessage[]) => setSpectatorChatMessages(msgs.filter((m: ChatMessage) => m.type === "human")))
           .catch(() => {});
@@ -284,7 +285,7 @@ export default function RoomPage() {
     // Skip for spectators so watching stays read-only and doesn't add them as a member.
     const spectating = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("spectate") === "1";
     if (userId && !roomId.startsWith("dm-") && !spectating) {
-      fetch(`${SERVER}/api/rooms/${roomId}/join`, {
+      api(`${SERVER}/api/rooms/${roomId}/join`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       }).catch(() => {});
@@ -415,7 +416,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (status !== "authenticated" || !userId || roomId.startsWith("dm-")) return;
     const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
-    fetch(`${SERVER}/api/rooms/${roomId}/channels`)
+    api(`${SERVER}/api/rooms/${roomId}/channels`)
       .then(r => r.json())
       .then(data => {
         // Apply room meta (proposition, stances) immediately from HTTP — no socket timing dep
@@ -516,7 +517,7 @@ export default function RoomPage() {
   // Arena: load existing match result on mount (handles page reload after match ends)
   useEffect(() => {
     if (!isBotRoom || !userId) return;
-    fetch(`${SERVER}/api/arena-result/${encodeURIComponent(roomId)}`)
+    api(`${SERVER}/api/arena-result/${encodeURIComponent(roomId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.winner) {
@@ -531,7 +532,7 @@ export default function RoomPage() {
   // Competitive: load existing match result on mount (handles page reload after match ends)
   useEffect(() => {
     if (!isCompetitiveRoom || !userId) return;
-    fetch(`${SERVER}/api/competitive/match/${encodeURIComponent(roomId)}`)
+    api(`${SERVER}/api/competitive/match/${encodeURIComponent(roomId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.status === "complete" && data?.winnerId) {
@@ -559,7 +560,7 @@ export default function RoomPage() {
   // Team: load existing match result on mount (handles page reload after match ends)
   useEffect(() => {
     if (!isTeamMatch || !userId) return;
-    fetch(`${SERVER}/api/team/match/${encodeURIComponent(roomId)}`)
+    api(`${SERVER}/api/team/match/${encodeURIComponent(roomId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.status === "complete" && data?.winningSide) {
@@ -603,7 +604,7 @@ export default function RoomPage() {
     if (messages.length <= lastScoredLenRef.current || messages.length < 2) return;
     lastScoredLenRef.current = messages.length;
     const threshold = (winCondition as { type: "proposition"; threshold: number }).threshold;
-    fetch(`${SERVER}/api/arena-score`, {
+    api(`${SERVER}/api/arena-score`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ roomName: roomId }),
@@ -625,7 +626,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (!isCompetitiveRoom) return;
     let active = true;
-    fetch(`${SERVER}/api/proposition/${roomId}`)
+    api(`${SERVER}/api/proposition/${roomId}`)
       .then((r) => r.json())
       .then((d) => {
         if (!active || !d?.proposition) return;
@@ -659,7 +660,7 @@ export default function RoomPage() {
   function moveOn() {
     if (isSpectator) return;
     setMatchState("judging");
-    getSocket({ id: userId, username }).emit("rapidMoveOn", { roomName: roomId });
+    getSocket().emit("rapidMoveOn", { roomName: roomId });
   }
 
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
@@ -667,7 +668,7 @@ export default function RoomPage() {
     setMatchState("judging");
     try {
       if (isTeamMatch) {
-        const res = await fetch(`${SERVER}/api/team/complete`, {
+        const res = await api(`${SERVER}/api/team/complete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomName: roomId, forfeitUserId: forfeit ? userId : undefined }),
@@ -678,7 +679,7 @@ export default function RoomPage() {
           setMatchState("ended");
         } else { setMatchState("active"); }
       } else if (isCompetitiveRoom) {
-        const res = await fetch(`${SERVER}/api/competitive/complete`, {
+        const res = await api(`${SERVER}/api/competitive/complete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomName: roomId, forcedWinner: forfeit ? parsedMatchConfig?.challengerId === userId ? parsedMatchConfig?.challengedId : parsedMatchConfig?.challengerId : undefined }),
@@ -689,7 +690,7 @@ export default function RoomPage() {
           setMatchState("ended");
         } else { setMatchState("active"); }
       } else {
-        const res = await fetch(`${SERVER}/api/arena-judge`, {
+        const res = await api(`${SERVER}/api/arena-judge`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ roomName: roomId, userId, forfeit, forcedWinner }),
@@ -706,11 +707,11 @@ export default function RoomPage() {
   }
 
   function emitTyping() {
-    getSocket({ id: userId, username }).emit("typing", { roomId });
+    getSocket().emit("typing", { roomId });
   }
 
   function emitStopTyping() {
-    getSocket({ id: userId, username }).emit("stopTyping", { roomId });
+    getSocket().emit("stopTyping", { roomId });
   }
 
   function selectChannel(channel: Channel) {
@@ -725,7 +726,7 @@ export default function RoomPage() {
     sidebarChannelRef.current = null;
     setSidebarMessages([]);
     setSidebarOpen(false);
-    fetch(`${SERVER}/api/channels/${channel.id}/claims`)
+    api(`${SERVER}/api/channels/${channel.id}/claims`)
       .then(r => r.json())
       .then(({ claims: claimsArr, credScores }: { claims: (ClaimInfo & { verdict?: string })[]; credScores: Record<string, CredScore> }) => {
         const claimsMap: Record<string, ClaimInfo> = {};
@@ -734,33 +735,33 @@ export default function RoomPage() {
         setCredibilityScores(prev => ({ ...prev, ...credScores }));
       })
       .catch(() => {});
-    fetch(`${SERVER}/api/channels/${channel.id}/polls`)
+    api(`${SERVER}/api/channels/${channel.id}/polls`)
       .then(r => r.json())
       .then((polls: Poll[]) => setActivePolls(polls))
       .catch(() => {});
     // Join the socket room for real-time messages
-    const s = getSocket({ id: userId, username });
+    const s = getSocket();
     s.emit("joinChannel", { channelId: channel.id });
     // Fetch history via HTTP — reliable regardless of socket timing
-    fetch(`${SERVER}/api/channels/${channel.id}/messages`)
+    api(`${SERVER}/api/channels/${channel.id}/messages`)
       .then(r => r.json())
       .then((msgs: ChatMessage[]) => setMessages(msgs))
       .catch(() => {});
   }
 
   function createPoll(question: string, options: string[]) {
-    getSocket({ id: userId, username }).emit("createPoll", {
+    getSocket().emit("createPoll", {
       roomId, channelId: activeChannel?.id ?? null, question, options, userId,
     });
     setPollSuggestion(null);
   }
 
   function votePoll(pollId: string, option: string) {
-    getSocket({ id: userId, username }).emit("votePoll", { pollId, userId, option });
+    getSocket().emit("votePoll", { pollId, userId, option });
   }
 
   function closePoll(pollId: string) {
-    getSocket({ id: userId, username }).emit("closePoll", { pollId, userId });
+    getSocket().emit("closePoll", { pollId, userId });
   }
 
   function stakeClaim(messageId: string) {
@@ -771,13 +772,13 @@ export default function RoomPage() {
       ...prev,
       [messageId]: { id: `pending-${messageId}`, messageId, claimantId: userId, status: "PENDING", challengeCount: 0 },
     }));
-    getSocket({ id: userId, username }).emit("stakeClaim", {
+    getSocket().emit("stakeClaim", {
       messageId, roomId, channelId: activeChannel?.id ?? null, text: msg.content,
     });
   }
 
   function challengeClaim(claimId: string) {
-    getSocket({ id: userId, username }).emit("challengeClaim", {
+    getSocket().emit("challengeClaim", {
       claimId, roomId, channelId: activeChannel?.id ?? null,
     });
   }
@@ -788,12 +789,12 @@ export default function RoomPage() {
         ...prev,
         [activeChannel.id]: { ...(prev[activeChannel.id] ?? {}), [userId]: { userId, username, position: pos } },
       }));
-      getSocket({ id: userId, username }).emit("setPosition", { roomId, channelId: activeChannel.id, position: pos });
+      getSocket().emit("setPosition", { roomId, channelId: activeChannel.id, position: pos });
     } else {
       setMyPosition(pos);
       setPositions(prev => ({ ...prev, [userId]: { userId, username, position: pos } }));
       setMyLastSwitchedAt(Date.now());
-      getSocket({ id: userId, username }).emit("setPosition", { roomId, position: pos });
+      getSocket().emit("setPosition", { roomId, position: pos });
     }
   }
 
@@ -803,37 +804,37 @@ export default function RoomPage() {
       ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
       : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 }
     );
-    getSocket({ id: userId, username }).emit("setDebateMode", { roomId, mode });
+    getSocket().emit("setDebateMode", { roomId, mode });
   }
 
   function claimFloor() {
-    getSocket({ id: userId, username }).emit("claimFloor", { roomId });
+    getSocket().emit("claimFloor", { roomId });
   }
 
   function passTurn() {
-    getSocket({ id: userId, username }).emit("passTurn", { roomId });
+    getSocket().emit("passTurn", { roomId });
   }
 
   function kickUser(targetUserId: string) {
-    const s = getSocket({ id: userId, username });
+    const s = getSocket();
     s.emit("kick", { roomId, targetUserId });
   }
 
   function grantSeat(targetUserId: string) {
-    getSocket({ id: userId, username }).emit("grantSeat", { roomId, targetUserId });
+    getSocket().emit("grantSeat", { roomId, targetUserId });
     setSeatRequests(prev => prev.filter(r => r.userId !== targetUserId));
   }
 
   function revokeSeat(targetUserId: string) {
-    getSocket({ id: userId, username }).emit("revokeSeat", { roomId, targetUserId });
+    getSocket().emit("revokeSeat", { roomId, targetUserId });
   }
 
   function requestSeat() {
-    getSocket({ id: userId, username }).emit("requestSeat", { roomId });
+    getSocket().emit("requestSeat", { roomId });
   }
 
   async function deleteRoom() {
-    const res = await fetch(`${SERVER}/api/rooms/${roomId}`, {
+    const res = await api(`${SERVER}/api/rooms/${roomId}`, {
       method: "DELETE", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
     });
@@ -850,7 +851,7 @@ export default function RoomPage() {
       user: { username },
     } as any;
     setSidebarMessages(prev => [...prev, optimistic]);
-    getSocket({ id: userId, username }).emit("sendMessage", {
+    getSocket().emit("sendMessage", {
       roomId, userId, username, content,
       channelId: sidebarChannelRef.current!.id,
     });
@@ -866,7 +867,7 @@ export default function RoomPage() {
       user: { username },
     } as any;
     setSpectatorChatMessages(prev => [...prev, optimistic]);
-    getSocket({ id: userId, username }).emit("sendMessage", {
+    getSocket().emit("sendMessage", {
       roomId, userId, username, content,
       channelId: spectatorChatChannelRef.current,
     });
@@ -874,7 +875,7 @@ export default function RoomPage() {
 
   async function createSidebarForChannel(channelId: string) {
     try {
-      const res = await fetch(`${SERVER}/api/rooms/${roomId}/channels/${channelId}/sidebar`, {
+      const res = await api(`${SERVER}/api/rooms/${roomId}/channels/${channelId}/sidebar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -884,8 +885,8 @@ export default function RoomPage() {
         const sidebar = { id: ch.id, name: ch.name };
         setSidebarChannel(sidebar);
         sidebarChannelRef.current = sidebar;
-        getSocket({ id: userId, username }).emit("joinSidebar", { channelId: ch.id });
-        fetch(`${SERVER}/api/channels/${ch.id}/messages`)
+        getSocket().emit("joinSidebar", { channelId: ch.id });
+        api(`${SERVER}/api/channels/${ch.id}/messages`)
           .then(r => r.json())
           .then((msgs: ChatMessage[]) => setSidebarMessages(msgs))
           .catch(() => {});
@@ -899,7 +900,7 @@ export default function RoomPage() {
     if (!subDebateModal) return;
     setSubDebateCreating(true);
     try {
-      const res = await fetch(`${SERVER}/api/rooms/${roomId}/sub-debates`, {
+      const res = await api(`${SERVER}/api/rooms/${roomId}/sub-debates`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -923,7 +924,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (!inviteQuery.trim()) { setInviteResults([]); return; }
     const t = setTimeout(() => {
-      fetch(`${SERVER}/api/users/search?q=${encodeURIComponent(inviteQuery)}&excludeId=${userId}`)
+      api(`${SERVER}/api/users/search?q=${encodeURIComponent(inviteQuery)}&excludeId=${userId}`)
         .then(r => r.json()).then(setInviteResults).catch(() => {});
     }, 250);
     return () => clearTimeout(t);
@@ -932,7 +933,7 @@ export default function RoomPage() {
   function sendInvite(targetUsername: string) {
     if (!roomId.startsWith("dm-")) {
       setInviteStatus(p => ({ ...p, [targetUsername]: "sending" }));
-      const s = getSocket({ id: userId, username });
+      const s = getSocket();
       s.emit("sendInvite", { targetUsername, roomName: roomId });
       s.once("inviteSent", () => setInviteStatus(p => ({ ...p, [targetUsername]: "sent" })));
       s.once("inviteError", ({ message }: { message: string }) => {
@@ -957,24 +958,24 @@ export default function RoomPage() {
     } as any;
     setMessages((prev) => [...prev, optimistic]);
 
-    const s = getSocket({ id: userId, username });
+    const s = getSocket();
     s.emit("sendMessage", { roomId, userId, username, content, channelId: activeChannel?.id });
   }
 
   function handleReact(messageId: string, emoji: string) {
-    getSocket({ id: userId, username }).emit("addReaction", {
+    getSocket().emit("addReaction", {
       messageId, emoji, roomName: roomId, channelId: activeChannel?.id ?? null,
     });
   }
 
   function handleEditMessage(messageId: string, content: string) {
-    getSocket({ id: userId, username }).emit("editMessage", {
+    getSocket().emit("editMessage", {
       messageId, content, roomName: roomId, channelId: activeChannel?.id ?? null,
     });
   }
 
   function handleDeleteMessage(messageId: string) {
-    getSocket({ id: userId, username }).emit("deleteMessage", {
+    getSocket().emit("deleteMessage", {
       messageId, roomName: roomId, channelId: activeChannel?.id ?? null,
     });
   }
@@ -1009,7 +1010,7 @@ export default function RoomPage() {
     if (summarizing) return;
     setSummarizeModalOpen(false);
     setSummarizing(true);
-    const s = getSocket({ id: userId, username });
+    const s = getSocket();
     s.emit("summarize", { roomId, since: since?.toISOString() ?? null, channelId: activeChannel?.id ?? null });
     s.once("summarizeDone", () => setSummarizing(false));
   }

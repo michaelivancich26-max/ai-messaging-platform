@@ -7,7 +7,9 @@
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "db:migrate": "prisma migrate dev",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "auth:verify": "node --env-file=.env -r ts-node/register/transpile-only scripts/verify-auth-interop.ts",
+    "auth:impersonation": "node --env-file=.env -r ts-node/register/transpile-only scripts/verify-impersonation.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",

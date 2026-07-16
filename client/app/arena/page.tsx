@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import ArenaSidebar from "@/components/ArenaSidebar";
 import TrainingTabs from "@/components/TrainingTabs";
 import { BOTS, BOT_COLORS, botWinRate, type Bot } from "@/lib/bots";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -485,7 +486,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
     setChallenging(true);
     setError("");
     try {
-      const res = await fetch(`${SERVER}/api/bot-rooms`, {
+      const res = await api(`${SERVER}/api/bot-rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, botId: bot.id, winCondition }),
@@ -584,7 +585,7 @@ function ArenaLeaderboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${SERVER}/api/arena-leaderboard`)
+    api(`${SERVER}/api/arena-leaderboard`)
       .then(r => r.json())
       .then(d => { setRows(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));

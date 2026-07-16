@@ -8,6 +8,7 @@ import type { Medal } from "@/components/MedalsPanel";
 import type { CredScore } from "@/lib/types";
 import { SERIES, TOTAL_LESSONS } from "@/app/learn/content";
 import { PUZZLES } from "@/app/learn/puzzles/content";
+import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -52,15 +53,15 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!userId) return;
-    fetch(`${SERVER}/api/users/${userId}/profile`).then(r => r.json())
+    api(`${SERVER}/api/users/${userId}/profile`).then(r => r.json())
       .then(d => {
         setStreak({ current: d?.stats?.dailyStreak ?? 0, longest: d?.stats?.longestStreak ?? 0 });
         setCred(d?.cred ?? null);
         setMedals(Array.isArray(d?.medals) ? d.medals : []);
       }).catch(() => {});
-    fetch(`${SERVER}/api/lessons/progress?userId=${userId}`).then(r => r.json())
+    api(`${SERVER}/api/lessons/progress?userId=${userId}`).then(r => r.json())
       .then(d => setLessonsDone(Array.isArray(d?.completed) ? d.completed : [])).catch(() => setLessonsDone([]));
-    fetch(`${SERVER}/api/puzzles/progress?userId=${userId}`).then(r => r.json())
+    api(`${SERVER}/api/puzzles/progress?userId=${userId}`).then(r => r.json())
       .then(d => setPuzzlesDone(Array.isArray(d?.completed) ? d.completed : [])).catch(() => {});
   }, [userId]);
 
