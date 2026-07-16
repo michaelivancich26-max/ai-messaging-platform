@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 
@@ -9,6 +10,7 @@ const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 interface Category { id: string; label: string; count: number }
 interface MatchFound { roomName: string; topic: string; stance: string; opponent: string; minMessages: number }
+interface NeedsDeck { positioned: number; gate: number }
 
 const ANY = "__any__";
 
@@ -28,6 +30,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
   const [, forceTick] = useState(0);
   const [waiting, setWaiting] = useState(0);
   const [found, setFound] = useState<MatchFound | null>(null);
+  const [needsDeck, setNeedsDeck] = useState<NeedsDeck | null>(null);
   const queuedRef = useRef(false);
 
   useEffect(() => {
@@ -66,13 +69,22 @@ export default function RapidFire({ userId, username }: { userId: string; userna
       setTimeout(() => router.push(`/room/${m.roomName}`), 1200);
     };
 
+    // Turned away for want of positions: pairing needs a claim you've both
+    // taken a side on, so there's nothing to match you on yet.
+    const onNeedsDeck = (d: NeedsDeck) => {
+      setQueued(false); queuedRef.current = false; setSince(null);
+      setNeedsDeck(d);
+    };
+
     socket.on("rapidQueueWaiting", onWaiting);
     socket.on("rapidQueueLeft", onLeft);
     socket.on("rapidMatchFound", onFound);
+    socket.on("rapidNeedsDeck", onNeedsDeck);
     return () => {
       socket.off("rapidQueueWaiting", onWaiting);
       socket.off("rapidQueueLeft", onLeft);
       socket.off("rapidMatchFound", onFound);
+      socket.off("rapidNeedsDeck", onNeedsDeck);
     };
   }, [userId, username, router]);
 
@@ -91,15 +103,36 @@ export default function RapidFire({ userId, username }: { userId: string; userna
     setQueued(false); queuedRef.current = false; setSince(null);
   }
 
+  // Not enough of the deck answered to find anyone. Stated as the matching
+  // requirement it is, rather than as an arbitrary hoop.
+  if (needsDeck) {
+    return (
+      <div className="mx-auto max-w-md py-20 text-center">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Tell us where you stand first</h3>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          We match you against someone who holds the opposite view on a specific claim —
+          so we need to know what you think before we can find them.
+        </p>
+        <p className="mt-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
+          {needsDeck.positioned} of {needsDeck.gate} positions
+        </p>
+        <Link href="/deck"
+          className="mt-5 inline-block rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-500">
+          Open the deck →
+        </Link>
+      </div>
+    );
+  }
+
   if (found) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-        <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Match found</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Someone disagrees with you</p>
         <p className="max-w-md text-base font-semibold text-gray-900 dark:text-gray-100">&ldquo;{found.topic}&rdquo;</p>
         <p className="text-sm text-gray-600 dark:text-gray-400">
           You&rsquo;re arguing <span className={`font-bold ${found.stance === "affirmative" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
             {found.stance === "affirmative" ? "FOR" : "AGAINST"}
-          </span>{" "}vs {found.opponent}
+          </span>{" "}— the side you already hold — vs {found.opponent}
         </p>
         <p className="text-xs text-gray-500">Opening the room…</p>
       </div>
@@ -131,11 +164,13 @@ export default function RapidFire({ userId, username }: { userId: string; userna
       <div className="text-center">
         <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Rapid Fire</h3>
         <p className="mt-1 text-sm text-gray-500">
-          Get matched with whoever&rsquo;s waiting. The topic and your side are dealt to you.
-          Argue until one of you moves on — whoever leads the proposition bar takes it.
+          We find someone who holds the opposite view on a claim you&rsquo;ve both taken a
+          side on. You argue the side you actually hold. When you both agree to move on,
+          whoever leads the proposition bar takes it.
         </p>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          Move on before 3 messages each and the round is void — no winner, no rating change.
+          Leaving forfeits — you can&rsquo;t bank a lead by walking. Under 3 messages each and
+          the round is void: no winner, no rating change.
         </p>
         {waiting > 0 && (
           <p className="mt-2 text-xs font-semibold text-orange-600 dark:text-orange-400">{waiting} {waiting === 1 ? "person" : "people"} in the queue</p>

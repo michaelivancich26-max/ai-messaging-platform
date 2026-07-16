@@ -11,7 +11,7 @@ import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
-import { TOPIC_CATALOG, isCategoryId, pickTopic } from "./services/topics";
+import { TOPIC_CATALOG, isCategoryId } from "./services/topics";
 import { getDeck, beliefCount, recordBelief, type Stance } from "./services/propositions";
 import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
 import bcrypt from "bcryptjs";
@@ -239,25 +239,63 @@ io.on("connection", (socket) => {
     }
   });
 
-  // "Move on" — same rules as walking out, just deliberate.
+  // "Move on" — an offer to end on the bar, which only lands if the other side
+  // agrees. One press cannot end a round: that's what made bailing while ahead
+  // the winning move. If you want out unilaterally you leave, and leaving
+  // forfeits.
   socket.on("rapidMoveOn", async (payload: { roomName?: string }) => {
     const roomName = payload?.roomName;
     if (!roomName) return;
     try {
-      const rows = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
-        `SELECT COUNT(*) AS n FROM "CompetitiveMatch"
-         WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE AND ($2 IN ("challengerId","challengedId"))`,
+      const rows = await prisma.$queryRawUnsafe<{ challengerId: string; challengedId: string }[]>(
+        `SELECT "challengerId","challengedId" FROM "CompetitiveMatch"
+         WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE AND ($2 IN ("challengerId","challengedId"))
+         LIMIT 1`,
         roomName, socketUser.id,
       );
-      if (Number(rows[0]?.n ?? 0) === 0) return;   // not their round to end
-      await resolveRapidRound(roomName, socketUser.id);
+      if (!rows.length) return;   // not their round to end
+      const { challengerId, challengedId } = rows[0];
+
+      let votes = rapidMoveOnVotes.get(roomName);
+      if (!votes) { votes = new Set(); rapidMoveOnVotes.set(roomName, votes); }
+      votes.add(socketUser.id);
+
+      if (votes.has(challengerId) && votes.has(challengedId)) {
+        rapidMoveOnVotes.delete(roomName);
+        await settleRapidOnBar(roomName);
+        return;
+      }
+
+      // Tell them both where the offer stands.
+      io.to(roomName).emit("rapidMoveOnOffered", { roomName, by: socketUser.id });
     } catch (e) { console.error("[rapidMoveOn]", e); }
+  });
+
+  // Take the offer back — you're staying in.
+  socket.on("rapidMoveOnCancel", (payload: { roomName?: string }) => {
+    const roomName = payload?.roomName;
+    if (!roomName) return;
+    const votes = rapidMoveOnVotes.get(roomName);
+    if (!votes?.delete(socketUser.id)) return;
+    if (!votes.size) rapidMoveOnVotes.delete(roomName);
+    io.to(roomName).emit("rapidMoveOnWithdrawn", { roomName, by: socketUser.id });
   });
 
   socket.on("rapidQueueJoin", async (payload: { categoryId?: string | null }) => {
     try {
       const raw = payload?.categoryId ?? null;
       const categoryId = raw && isCategoryId(raw) ? raw : null;   // unknown category => any
+
+      // Pairing needs a claim BOTH of you have taken a side on, so someone with
+      // a handful of positions mostly can't be matched at all — they'd sit in
+      // the queue watching it fail for reasons they can't see. The gate is a
+      // matching requirement first and an onboarding step second.
+      const positions = await beliefCount(prisma, socketUser.id);
+      if (positions < DECK_GATE) {
+        socket.emit("rapidNeedsDeck", { positioned: positions, gate: DECK_GATE });
+        return;
+      }
+
       const pairing = await joinRapidQueue(socketUser.id, categoryId);
       if (!pairing) {
         socket.emit("rapidQueueWaiting", { categoryId });
@@ -1480,6 +1518,7 @@ async function settleProposition(roomName: string): Promise<void> {
     const winSide: "A" | "B" | null = tie ? null : (priceA > 0.5 ? "A" : "B");
     await prisma.$executeRawUnsafe(`UPDATE "MatchProposition" SET status='settled', "winningSide"=$1, "priceA"=$2, "settledAt"=NOW() WHERE id=$3`, winSide, priceA, prop.id);
     exchangeTracker.delete(roomName);
+    rapidMoveOnVotes.delete(roomName);
     io.to(roomName).emit("propositionSettled", { roomName, winningSide: winSide, priceA });
   } catch (e) { console.error("[settleProposition]", e); }
 }
@@ -1938,15 +1977,37 @@ app.get("/api/competitive/match/:roomName", async (req, res) => {
 const RAPID_MIN_MESSAGES = 3;              // per side, before a leave can decide a winner
 const RAPID_LOCK_KEY = 8123407;            // advisory lock id — serialises pairing
 
+// Who has offered to end each round. Both sides have to press it: the first
+// press is an offer, the second is agreement, and only then does the bar
+// decide. Deliberately in memory — a round doesn't outlive a restart anyway,
+// and a stale offer is worse than no offer. Cleared on every path a round can
+// end by, or it leaks a set per abandoned room.
+const rapidMoveOnVotes = new Map<string, Set<string>>();
+
 interface RapidPairing {
   roomName: string;
   topic: string;
   categoryId: string;
+  propositionId: string;
   a: { userId: string; stance: string };
   b: { userId: string; stance: string };
 }
 
-// Add the user to the pool and pair them if anyone compatible is waiting.
+// Add the user to the pool and pair them against someone who actually
+// disagrees with them.
+//
+// This used to match on CATEGORY and then deal each side with a coin flip, so
+// two people who might well have agreed were assigned random halves of a random
+// claim. Nobody argued what they believed, which is the opposite of the point.
+// The deck exists so this query has something real to work with: it pairs on a
+// proposition the two of them genuinely hold opposite views on.
+//
+// Preference order:
+//   1. Comparable conviction. A zealot against someone mildly curious is a
+//      miserable round for both, however opposed they are.
+//   2. Comparable rating, bucketed — a preference, not a filter, because a hard
+//      band on a thin queue just means nobody ever matches.
+//   3. Longest wait, so the queue stays fair once quality is equal.
 //
 // The whole thing runs under a transaction-scoped advisory lock. Without it two
 // simultaneous joiners can each insert, each fail to see the other's uncommitted
@@ -1962,30 +2023,51 @@ async function joinRapidQueue(userId: string, categoryId: string | null): Promis
       userId, categoryId,
     );
 
-    // Compatible = same category, or either side said "any".
-    const rows = await tx.$queryRawUnsafe<{ userId: string; categoryId: string | null }[]>(
-      `SELECT "userId", "categoryId" FROM "DebateQueue"
-       WHERE "userId" <> $1
-         AND ($2::text IS NULL OR "categoryId" IS NULL OR "categoryId" = $2::text)
-       ORDER BY "joinedAt" ASC LIMIT 1`,
+    // Each side's category preference, where they named one, must be satisfied
+    // by the claim itself — not merely by the two of them having asked for the
+    // same thing.
+    const rows = await tx.$queryRawUnsafe<{
+      opponentId: string; propositionId: string; text: string;
+      categoryId: string; myStance: string; opStance: string;
+    }[]>(
+      `SELECT q."userId"        AS "opponentId",
+              p."id"            AS "propositionId",
+              p."text"          AS "text",
+              p."categoryId"    AS "categoryId",
+              me."stance"       AS "myStance",
+              op."stance"       AS "opStance"
+       FROM "DebateQueue" q
+       JOIN "UserBelief" op   ON op."userId" = q."userId" AND op."stance" <> 'skip'
+       JOIN "UserBelief" me   ON me."propositionId" = op."propositionId"
+                             AND me."userId" = $1 AND me."stance" <> 'skip'
+       JOIN "Proposition" p   ON p."id" = op."propositionId" AND p."status" = 'live'
+       JOIN "User" mu         ON mu."id" = $1
+       JOIN "User" ou         ON ou."id" = q."userId"
+       WHERE q."userId" <> $1
+         AND me."stance" <> op."stance"
+         AND ($2::text IS NULL OR p."categoryId" = $2::text)
+         AND (q."categoryId" IS NULL OR p."categoryId" = q."categoryId")
+       ORDER BY ABS(COALESCE(me."confidence",1) - COALESCE(op."confidence",1)) ASC,
+                ABS(mu."rapidElo" - ou."rapidElo") / 100 ASC,
+                q."joinedAt" ASC
+       LIMIT 1`,
       userId, categoryId,
     );
     if (!rows.length) return null;
-    const opponentId = rows[0].userId;
+    const m = rows[0];
 
-    await tx.$executeRawUnsafe(`DELETE FROM "DebateQueue" WHERE "userId" = ANY($1::text[])`, [userId, opponentId]);
+    await tx.$executeRawUnsafe(`DELETE FROM "DebateQueue" WHERE "userId" = ANY($1::text[])`, [userId, m.opponentId]);
 
-    // Whoever named a category decides it; if both did they already agree.
-    const { categoryId: resolvedCat, topic } = pickTopic(categoryId ?? rows[0].categoryId ?? null);
-
-    // Deal sides at random so neither joining first nor waiting longer is an edge.
-    const joinerIsAffirmative = Math.random() < 0.5;
+    // No coin flip: each of them argues the side they already hold. Agreeing
+    // with the claim is the affirmative.
+    const sideOf = (stance: string) => (stance === "agree" ? "affirmative" : "negative");
     return {
       roomName: `comp-q${Date.now().toString(36).slice(-5)}-${Math.random().toString(36).slice(2, 7)}`,
-      topic,
-      categoryId: resolvedCat,
-      a: { userId, stance: joinerIsAffirmative ? "affirmative" : "negative" },
-      b: { userId: opponentId, stance: joinerIsAffirmative ? "negative" : "affirmative" },
+      topic: m.text,
+      categoryId: m.categoryId,
+      propositionId: m.propositionId,
+      a: { userId, stance: sideOf(m.myStance) },
+      b: { userId: m.opponentId, stance: sideOf(m.opStance) },
     };
   });
 }
@@ -2015,6 +2097,9 @@ async function startRapidMatch(p: RapidPairing): Promise<void> {
     challengedStance: p.b.stance,
     topic: p.topic,
     categoryId: p.categoryId,
+    // Which claim this round is about. The post-round "did your position move?"
+    // needs it, and it's the link back to the deck.
+    propositionId: p.propositionId,
     // "manual" matches none of the client's auto-judge effects, so nothing ends
     // the round but a player leaving.
     type: "manual",
@@ -2065,31 +2150,20 @@ async function voidRapidRound(roomName: string, reason: string): Promise<void> {
     roomName,
   );
   exchangeTracker.delete(roomName);
+  rapidMoveOnVotes.delete(roomName);
   io.to(roomName).emit("rapidRoundVoided", { roomName, reason });
 }
 
-// Someone moved on or dropped: settle the round on the proposition bar. Past the
-// message floor whoever leads takes it; short of it, or dead level, it's voided.
-async function resolveRapidRound(roomName: string, leaverId: string): Promise<void> {
+// Both players pressing "move on" is the only thing that ends a round on the
+// bar. Whoever leads takes it; dead level, or short of the message floor, and
+// it's voided.
+async function settleRapidOnBar(roomName: string): Promise<void> {
   try {
-    const matches = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM "CompetitiveMatch" WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE LIMIT 1`,
-      roomName,
-    );
-    if (!matches.length) return;
-    const match = matches[0];
+    const state = await loadActiveRapid(roomName);
+    if (!state) return;
+    const { match } = state;
 
-    const room = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
-    if (!room) return;
-
-    const counts = await prisma.$queryRawUnsafe<{ userId: string; n: bigint }[]>(
-      `SELECT "userId", COUNT(*) AS n FROM "Message"
-       WHERE "roomId"=$1 AND "userId" IS NOT NULL GROUP BY "userId"`,
-      room.id,
-    );
-    const said = (id: string) => Number(counts.find((c) => c.userId === id)?.n ?? 0);
-
-    if (said(match.challengerId) < RAPID_MIN_MESSAGES || said(match.challengedId) < RAPID_MIN_MESSAGES) {
+    if (await rapidBelowFloor(state)) {
       await voidRapidRound(roomName, `The round ended before ${RAPID_MIN_MESSAGES} messages each — no result.`);
       return;
     }
@@ -2102,19 +2176,74 @@ async function resolveRapidRound(roomName: string, leaverId: string): Promise<vo
     const priceA = Number(propRows[0]?.priceA ?? 0.5);
 
     if (Math.abs(priceA - 0.5) < TIE_EPSILON) {
-      await voidRapidRound(roomName, "The bar was dead level when the round ended — no result.");
+      await voidRapidRound(roomName, "The bar was dead level when you both moved on — no result.");
       return;
     }
 
     // sideA of the proposition is the challenger (see startRapidMatch).
     const winnerId = priceA > 0.5 ? match.challengerId : match.challengedId;
     const lead = Math.round((winnerId === match.challengerId ? priceA : 1 - priceA) * 100);
-    const leaverLeft = leaverId !== winnerId;
     await completeCompetitiveMatch(
       roomName, winnerId,
-      `Ahead on the proposition bar at ${lead}% when ${leaverLeft ? "the other debater moved on" : "they moved on"}.`,
+      `Ahead on the proposition bar at ${lead}% when you both agreed to move on.`,
     ).catch(() => null);
-  } catch (e) { console.error("[resolveRapidRound]", e); }
+  } catch (e) { console.error("[settleRapidOnBar]", e); }
+}
+
+// Someone walked out. They lose.
+//
+// This used to hand the win to whoever led the bar REGARDLESS of who left —
+// the leaver only changed the wording of the verdict. So the optimal play was
+// to bail the instant you were ahead, which banks a win and teaches exactly the
+// reflex this site exists to break. You cannot take a round by leaving it: to
+// win on the bar you have to hold your lead until your opponent agrees it's
+// over.
+//
+// Below the message floor it's still a void — walking out of a round nobody
+// argued gains nothing and costs the other side nothing, and that's also what
+// protects someone whose connection drops in the first ten seconds.
+async function forfeitRapidRound(roomName: string, leaverId: string): Promise<void> {
+  try {
+    const state = await loadActiveRapid(roomName);
+    if (!state) return;
+    const { match } = state;
+
+    if (await rapidBelowFloor(state)) {
+      await voidRapidRound(roomName, `The round ended before ${RAPID_MIN_MESSAGES} messages each — no result.`);
+      return;
+    }
+
+    const winnerId = leaverId === match.challengerId ? match.challengedId : match.challengerId;
+    await completeCompetitiveMatch(
+      roomName, winnerId,
+      "The other debater left the round. Leaving forfeits, whatever the bar said.",
+    ).catch(() => null);
+  } catch (e) { console.error("[forfeitRapidRound]", e); }
+}
+
+interface ActiveRapid { match: any; roomId: string }
+
+async function loadActiveRapid(roomName: string): Promise<ActiveRapid | null> {
+  const matches = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM "CompetitiveMatch" WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE LIMIT 1`,
+    roomName,
+  );
+  if (!matches.length) return null;
+  const room = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
+  if (!room) return null;
+  return { match: matches[0], roomId: room.id };
+}
+
+// The bar scores claims and only moves once both sides have spoken, so short of
+// this there is nothing to read a result off either way.
+async function rapidBelowFloor({ match, roomId }: ActiveRapid): Promise<boolean> {
+  const counts = await prisma.$queryRawUnsafe<{ userId: string; n: bigint }[]>(
+    `SELECT "userId", COUNT(*) AS n FROM "Message"
+     WHERE "roomId"=$1 AND "userId" IS NOT NULL GROUP BY "userId"`,
+    roomId,
+  );
+  const said = (id: string) => Number(counts.find((c) => c.userId === id)?.n ?? 0);
+  return said(match.challengerId) < RAPID_MIN_MESSAGES || said(match.challengedId) < RAPID_MIN_MESSAGES;
 }
 
 // Every active rapid round this user is in. Match completion is otherwise
@@ -2127,12 +2256,26 @@ async function resolveRapidMatchesFor(userId: string): Promise<void> {
        WHERE status = 'active' AND "isRapid" = TRUE AND ($1 IN ("challengerId","challengedId"))`,
       userId,
     );
-    for (const m of rows) await resolveRapidRound(m.roomName, userId);
+    for (const m of rows) await forfeitRapidRound(m.roomName, userId);
   } catch (e) { console.error("[resolveRapidMatchesFor]", e); }
 }
 
-app.get("/api/topics", (_req, res) => {
-  res.json(TOPIC_CATALOG.map((c) => ({ id: c.id, label: c.label, count: c.topics.length })));
+// The categories, with how many claims are actually live in each.
+//
+// `count` used to be the length of the hardcoded seed list, which stopped being
+// true the moment propositions became a table — it would have kept reporting 5
+// per category however many were approved.
+app.get("/api/topics", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ categoryId: string; n: bigint }[]>(
+      `SELECT "categoryId", COUNT(*) AS n FROM "Proposition" WHERE "status" = 'live' GROUP BY "categoryId"`,
+    );
+    const live = new Map(rows.map((r) => [r.categoryId, Number(r.n)]));
+    res.json(TOPIC_CATALOG.map((c) => ({ id: c.id, label: c.label, count: live.get(c.id) ?? 0 })));
+  } catch (e) {
+    console.error("[GET /api/topics]", e);
+    res.status(500).json({ error: "Failed to load categories" });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2194,6 +2337,47 @@ app.post("/api/deck/position", async (req, res) => {
   } catch (e) {
     console.error("[POST /api/deck/position]", e);
     res.status(500).json({ error: "Failed to record position" });
+  }
+});
+
+// What was argued in a round, and where the caller stood on it going in.
+//
+// This is what closes the loop: deck -> match -> "did that move you?" -> deck.
+// Whether a debate changes anyone's mind is the only honest measure of whether
+// this product does what it says, and it's a question no comment section can
+// even ask.
+app.get("/api/rapid/aftermath/:roomName", async (req, res) => {
+  try {
+    const userId = actorId(req)!;
+    const room = await prisma.room.findUnique({
+      where: { name: req.params.roomName },
+      select: { matchConfig: true },
+    } as any) as { matchConfig: string | null } | null;
+    if (!room?.matchConfig) return res.status(404).json({ error: "No such round" });
+
+    const cfg = JSON.parse(room.matchConfig);
+    if (!cfg?.isRapid || !cfg.propositionId) return res.json({ proposition: null });
+    // Only the two people who argued it get asked.
+    if (userId !== cfg.challengerId && userId !== cfg.challengedId) {
+      return res.status(403).json({ error: "Not your round" });
+    }
+
+    const rows = await prisma.$queryRawUnsafe<{ id: string; text: string; stance: string; confidence: number | null }[]>(
+      `SELECT p."id", p."text", b."stance", b."confidence"
+       FROM "Proposition" p
+       LEFT JOIN "UserBelief" b ON b."propositionId" = p."id" AND b."userId" = $1
+       WHERE p."id" = $2 LIMIT 1`,
+      userId, cfg.propositionId,
+    );
+    if (!rows.length) return res.json({ proposition: null });
+
+    res.json({
+      proposition: { id: rows[0].id, text: rows[0].text },
+      before: rows[0].stance ? { stance: rows[0].stance, confidence: rows[0].confidence } : null,
+    });
+  } catch (e) {
+    console.error("[GET /api/rapid/aftermath]", e);
+    res.status(500).json({ error: "Failed to load round" });
   }
 });
 

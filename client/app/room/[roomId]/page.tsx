@@ -103,6 +103,10 @@ export default function RoomPage() {
   const [matchState, setMatchState] = useState<"active" | "judging" | "ended">("active");
   // A Rapid Fire round that ended with nobody far enough ahead to call it.
   const [voidedReason, setVoidedReason] = useState<string | null>(null);
+  // Ending a Rapid round on the bar takes both sides. These track who has
+  // offered so far — one press settles nothing.
+  const [moveOnMine, setMoveOnMine] = useState(false);
+  const [moveOnTheirs, setMoveOnTheirs] = useState(false);
   // Lets a viewer dismiss the end-of-match result overlay to read the transcript underneath.
   const [resultDismissed, setResultDismissed] = useState(false);
   const [matchResult, setMatchResult] = useState<{
@@ -136,6 +140,10 @@ export default function RoomPage() {
 
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "anon";
   const userId: string = (session?.user as any)?.id ?? "";
+  // Socket handlers need to tell "my offer" from "theirs" without re-subscribing
+  // every time the session object identity changes.
+  const userIdRef = useRef(userId);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
   const isAdmin: boolean = (session?.user as any)?.isAdmin ?? false;
   const isOwner = roomMeta?.creatorId === userId;
   const [dmPartner, setDmPartner] = useState<string | null>(null);
@@ -322,6 +330,16 @@ export default function RoomPage() {
       setMatchState("ended");
     });
 
+    // Ending on the bar takes both of you. One press is only an offer.
+    socket.on("rapidMoveOnOffered", (d: { by?: string }) => {
+      if (d?.by === userIdRef.current) setMoveOnMine(true);
+      else setMoveOnTheirs(true);
+    });
+    socket.on("rapidMoveOnWithdrawn", (d: { by?: string }) => {
+      if (d?.by === userIdRef.current) setMoveOnMine(false);
+      else setMoveOnTheirs(false);
+    });
+
     socket.on("message", (msg: ChatMessage) => {
       // Route spectator chat messages
       if (msg.channelId && msg.channelId === spectatorChatChannelRef.current) {
@@ -405,6 +423,8 @@ export default function RoomPage() {
       socket.off("channelsUpdated");
       socket.off("matchComplete");
       socket.off("rapidRoundVoided");
+      socket.off("rapidMoveOnOffered");
+      socket.off("rapidMoveOnWithdrawn");
     };
   }, [status, roomId, userId, username]);
 
@@ -654,13 +674,22 @@ export default function RoomPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propPriceA, messages.length, isCompetitiveRoom, isSpectator, matchState, winCondition.type, (winCondition as any).threshold]);
 
-  // Rapid Fire: end the round here and now. The server decides — whoever leads
-  // the bar takes it, or it's voided if too little was said. Unlike every other
-  // ending, this one is settled server-side, so we just wait to be told.
+  // Rapid Fire: OFFER to end on the bar. It takes both of you — pressing this
+  // once settles nothing, which is the point: a round you could end alone would
+  // be a round you could win by leaving the moment you were ahead. To get out
+  // unilaterally you leave, and leaving forfeits.
+  //
+  // Deliberately does NOT set "judging": nothing is being judged yet, and the
+  // opponent may never agree. The server tells us when it's actually over.
   function moveOn() {
     if (isSpectator) return;
-    setMatchState("judging");
+    if (moveOnMine) {
+      getSocket().emit("rapidMoveOnCancel", { roomName: roomId });
+      setMoveOnMine(false);                       // optimistic; server echoes
+      return;
+    }
     getSocket().emit("rapidMoveOn", { roomName: roomId });
+    setMoveOnMine(true);
   }
 
   async function triggerJudge(forfeit: boolean, forcedWinner?: "human" | "bot") {
@@ -1359,14 +1388,27 @@ export default function RoomPage() {
               <span className="text-[10px] text-gray-500 dark:text-gray-400">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
             )}
             {isRapidMatch && (
-              <span className="text-[10px] text-gray-500 dark:text-gray-400">· whoever leads when someone moves on</span>
+              <span className="text-[10px] text-gray-500 dark:text-gray-400">· whoever leads when you both move on</span>
+            )}
+            {isRapidMatch && moveOnTheirs && !moveOnMine && (
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                They&rsquo;re ready to move on
+              </span>
             )}
             {/* Forfeit lives here only for proposition rooms; exchanges/time rooms carry it in their own banners */}
             {winCondition.type === "proposition" && !isSpectator && (
               <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
             )}
             {isRapidMatch && !isSpectator && (
-              <button onClick={moveOn} className="ml-auto shrink-0 rounded-full border border-orange-700/50 px-2.5 py-0.5 text-[10px] font-semibold text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors">Move on →</button>
+              <button onClick={moveOn}
+                title={moveOnMine ? "Waiting for them to agree. Click to stay in." : "Ends the round on the bar — only if they agree too."}
+                className={`ml-auto shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  moveOnMine
+                    ? "border-gray-400 text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
+                    : "border-orange-700/50 text-orange-600 hover:bg-orange-100 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                }`}>
+                {moveOnMine ? "Waiting for them…" : moveOnTheirs ? "Agree to move on →" : "Move on →"}
+              </button>
             )}
           </div>
           <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">

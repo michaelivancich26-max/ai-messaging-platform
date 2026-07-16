@@ -1,10 +1,15 @@
-// Server-side debate topic catalog.
+// The category list, and the seed claims that bootstrapped the deck.
 //
-// Rapid Fire matches by CATEGORY, then the server picks the topic — so the
-// server has to own this list. The client has its own copies (client/lib/topics.ts
-// and a private one inside app/arena/page.tsx); those predate this and are only
-// used for pickers where the user chooses a topic themselves. Worth converging
-// on GET /api/topics eventually.
+// `topics` is SEED DATA now, not runtime data: services/propositions.ts loads it
+// into the Proposition table once, and everything downstream reads the table.
+// Rapid used to match on category and have the server pick a topic out of here,
+// which is why it lived on the server at all — that's gone, because a category
+// has no opposite and so can't be argued. Nothing picks from this list any more.
+//
+// The categories themselves are still real: they tag propositions and filter the
+// queue. The client keeps its own copies (client/lib/topics.ts and a private one
+// in app/arena/page.tsx) for pickers where the user chooses a topic themselves;
+// those predate this and are still worth converging on GET /api/topics.
 
 export interface TopicCategory {
   id: string;
@@ -91,10 +96,7 @@ export function categoryLabel(id: string): string {
   return TOPIC_CATALOG.find((c) => c.id === id)?.label ?? id;
 }
 
-// Pick a random topic from a category, or from anywhere when no category is given.
-export function pickTopic(categoryId?: string | null): { categoryId: string; topic: string } {
-  const pool = categoryId ? TOPIC_CATALOG.filter((c) => c.id === categoryId) : TOPIC_CATALOG;
-  const cat = pool[Math.floor(Math.random() * pool.length)] ?? TOPIC_CATALOG[0];
-  const topic = cat.topics[Math.floor(Math.random() * cat.topics.length)];
-  return { categoryId: cat.id, topic };
-}
+// pickTopic() lived here: it dealt Rapid a random claim from a category, which
+// the server then split between two people with a coin flip. It is gone
+// deliberately. Rounds are now paired on a Proposition the two players actually
+// hold opposite views on, so nothing chooses a topic on their behalf.
