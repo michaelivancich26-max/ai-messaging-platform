@@ -2214,6 +2214,26 @@ async function forfeitRapidRound(roomName: string, leaverId: string): Promise<vo
     }
 
     const winnerId = leaverId === match.challengerId ? match.challengedId : match.challengerId;
+
+    // Claim the round before settling it.
+    //
+    // completeCompetitiveMatch's idempotency is a read-then-write with nothing
+    // holding the gap, which was harmless while the winner came off the bar:
+    // two concurrent enders computed the SAME answer, so interleaving them cost
+    // nothing. Deriving the winner from who left breaks that — if both players
+    // drop at once, the two calls compute OPPOSITE winners and race four
+    // absolute ELO writes against each other.
+    //
+    // A single conditional UPDATE is the whole fix: winnerId is null while a
+    // round is active, so of two concurrent claims exactly one matches and the
+    // loser gets rowcount 0 and goes home.
+    const claimed = await prisma.$executeRawUnsafe(
+      `UPDATE "CompetitiveMatch" SET "winnerId" = $2
+       WHERE "roomName" = $1 AND status = 'active' AND "winnerId" IS NULL`,
+      roomName, winnerId,
+    );
+    if (claimed === 0) return;   // the other side's disconnect is already settling it
+
     await completeCompetitiveMatch(
       roomName, winnerId,
       "The other debater left the round. Leaving forfeits, whatever the bar said.",

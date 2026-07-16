@@ -45,6 +45,9 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   const [addingSection, setAddingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [renaming, setRenaming] = useState<{ type: "section" | "channel"; id: string; name: string } | null>(null);
+  // The rename response was never checked, so when it started 401ing the dialog
+  // just closed as though it had worked.
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   async function load() {
     const res = await api(`${SERVER}/api/rooms/${roomName}/channels`);
@@ -85,11 +88,15 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
     const url = renaming.type === "section"
       ? `${SERVER}/api/rooms/${roomName}/sections/${renaming.id}`
       : `${SERVER}/api/rooms/${roomName}/channels/${renaming.id}`;
-    await fetch(url, {
+    // api(), not fetch() — this needs the session token like every other server
+    // call. It builds its URL into a variable, which is exactly why the sweep
+    // onto api() missed it: that matched `fetch(\`${SERVER}...\`)` inline only.
+    const res = await api(url, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, name: renaming.name }),
+      body: JSON.stringify({ name: renaming.name }),
     });
-    setRenaming(null); load();
+    if (!res.ok) { setRenameError("Rename failed."); return; }
+    setRenaming(null); setRenameError(null); load();
   }
 
   async function toggleChannelOpinionated(channelId: string, value: boolean) {
@@ -138,7 +145,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
             onChange={e => setRenaming({ ...renaming, name: e.target.value })}
             onKeyDown={e => { if (e.key === "Enter") renameItem(); if (e.key === "Escape") setRenaming(null); }}
             onBlur={renameItem}
-            className="mx-2 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500" />
+            title={renameError ?? undefined}
+            className={`mx-2 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ${renameError ? "ring-red-500" : "ring-indigo-500"}`} />
         ) : (
           <button onClick={() => onSelectChannel(ch)}
             className={`flex flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors
@@ -230,7 +238,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                   onChange={e => setRenaming({ ...renaming, name: e.target.value })}
                   onKeyDown={e => { if (e.key === "Enter") renameItem(); if (e.key === "Escape") setRenaming(null); }}
                   onBlur={renameItem}
-                  className="flex-1 rounded bg-gray-200 dark:bg-gray-700 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider outline-none ring-1 ring-indigo-500" />
+                  title={renameError ?? undefined}
+                  className={`flex-1 rounded bg-gray-200 dark:bg-gray-700 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider outline-none ring-1 ${renameError ? "ring-red-500" : "ring-indigo-500"}`} />
               ) : (
                 <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-gray-500">{sec.name}</span>
               )}

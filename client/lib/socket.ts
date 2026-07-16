@@ -1,5 +1,5 @@
 import { io, Socket } from "socket.io-client";
-import { sessionToken } from "./api";
+import { sessionToken, clearSessionToken } from "./api";
 
 let socket: Socket | null = null;
 
@@ -23,6 +23,24 @@ export function getSocket(): Socket {
     transports: ["websocket"],
     auth: (cb) => { sessionToken().then((token) => cb({ token })); },
   });
+
+  // A handshake the server REJECTS is terminal: socket.io treats a middleware
+  // error as non-retryable and never reconnects on its own. That's right for a
+  // genuinely invalid session and wrong for the common case — one transient
+  // failure fetching the token sends `undefined`, gets refused, and realtime is
+  // dead for the rest of the tab's life with no way back but a reload.
+  //
+  // So: drop the cached token (it's the likeliest culprit) and retry, backing
+  // off, a few times. Bounded on purpose — if the session really is gone, the
+  // right outcome is to stop knocking, not to hammer the server forever.
+  let attempts = 0;
+  socket.on("connect_error", (err) => {
+    if (err?.message !== "Authentication required") return;   // transport errors retry themselves
+    if (++attempts > 3) return;
+    clearSessionToken();
+    setTimeout(() => socket?.connect(), attempts * 1000);
+  });
+  socket.on("connect", () => { attempts = 0; });
 
   return socket;
 }

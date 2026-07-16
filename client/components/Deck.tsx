@@ -115,9 +115,19 @@ export default function Deck({ userId }: { userId: string }) {
     if (!loading && !done && i >= cards.length - PREFETCH_AT) load(false);
   }, [i, cards.length, loading, done, load]);
 
+  // Only "done" once a refill has actually come back empty. Latching on
+  // i >= cards.length alone declares the deck finished while a prefetch is
+  // still in flight — you'd hit the end of the batch, see "that's the whole
+  // deck", and the cards arriving a moment later could never un-say it.
   useEffect(() => {
-    if (!loading && cards.length && i >= cards.length) setDone(true);
+    if (loading || fetching.current) return;
+    if (cards.length && i >= cards.length) setDone(true);
   }, [i, cards.length, loading]);
+
+  // A refill that brings new cards un-latches it.
+  useEffect(() => {
+    if (i < cards.length) setDone(false);
+  }, [i, cards.length]);
 
   const card = cards[i];
 
