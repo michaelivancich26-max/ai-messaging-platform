@@ -12,6 +12,7 @@ import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId, pickTopic } from "./services/topics";
+import { getDeck, beliefCount, recordBelief, type Stance } from "./services/propositions";
 import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
 import bcrypt from "bcryptjs";
 
@@ -2132,6 +2133,130 @@ async function resolveRapidMatchesFor(userId: string): Promise<void> {
 
 app.get("/api/topics", (_req, res) => {
   res.json(TOPIC_CATALOG.map((c) => ({ id: c.id, label: c.label, count: c.topics.length })));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The deck
+// ═══════════════════════════════════════════════════════════════════════════
+// Users take sides on claims here, ahead of and outside any match. Rapid
+// pairing reads the result, which is what lets it find someone who genuinely
+// disagrees with you rather than dealing you a random side.
+//
+// It also carries the friction the match can't afford: stance and confidence
+// are collected in advance, so queueing stays a single tap.
+
+// Positions needed before Rapid will queue you. Two strangers can only be
+// paired where their beliefs OVERLAP, so a user with a handful of positions
+// mostly can't be matched at all — the gate is a matching requirement first
+// and an onboarding step second.
+const DECK_GATE = 10;
+
+// Cards to take a side on, plus progress toward the gate.
+app.get("/api/deck", async (req, res) => {
+  try {
+    const userId = actorId(req);
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    const limit = Number(req.query.limit ?? 20);
+
+    const [cards, positioned] = await Promise.all([
+      getDeck(prisma, userId, limit),
+      beliefCount(prisma, userId),
+    ]);
+    res.json({ cards, positioned, gate: DECK_GATE });
+  } catch (e) {
+    console.error("[GET /api/deck]", e);
+    res.status(500).json({ error: "Failed to load deck" });
+  }
+});
+
+// Take a side. `confidence` is 1 (held) or 2 (strongly held); skip sends neither.
+app.post("/api/deck/position", async (req, res) => {
+  try {
+    const userId = actorId(req);
+    const { propositionId, stance, confidence, roomName, correction } = req.body as {
+      propositionId?: string; stance?: Stance; confidence?: number; roomName?: string; correction?: boolean;
+    };
+    if (!userId || !propositionId) return res.status(400).json({ error: "userId and propositionId required" });
+    if (stance !== "agree" && stance !== "disagree" && stance !== "skip") {
+      return res.status(400).json({ error: "stance must be agree, disagree or skip" });
+    }
+    if (stance !== "skip" && confidence !== 1 && confidence !== 2) {
+      return res.status(400).json({ error: "confidence must be 1 or 2" });
+    }
+
+    const result = await recordBelief(
+      prisma, userId, propositionId, stance,
+      stance === "skip" ? null : confidence!,
+      roomName ?? null,
+      !correction,
+    );
+    res.json({ ...result, positioned: await beliefCount(prisma, userId) });
+  } catch (e) {
+    console.error("[POST /api/deck/position]", e);
+    res.status(500).json({ error: "Failed to record position" });
+  }
+});
+
+// ── Review ───────────────────────────────────────────────────────────────────
+// Generated claims land as drafts; nothing reaches the deck without a human.
+
+async function isAdmin(userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const rows = await prisma.$queryRawUnsafe<{ isAdmin: boolean }[]>(
+    `SELECT "isAdmin" FROM "User" WHERE id = $1`, userId,
+  );
+  return !!rows[0]?.isAdmin;
+}
+
+app.get("/api/admin/propositions", async (req, res) => {
+  try {
+    const userId = actorId(req);
+    if (!(await isAdmin(userId))) return res.status(403).json({ error: "Admins only" });
+    const status = (req.query.status as string) ?? "draft";
+    // The agree/disagree split is the only real measure of whether a claim
+    // belongs in the deck, and it's one nothing can know in advance — a
+    // generator can't tell that "politicians shouldn't trade stocks" polls at
+    // 90%. A claim nobody argues with is dead weight: it can't produce a
+    // pairing, and every deck slot it occupies is one a live claim didn't get.
+    // Surfacing the split here is what lets the deck curate itself.
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT p."id", p."text", p."categoryId", p."status", p."source", p."createdAt",
+              COALESCE(t.n, 0)::int      AS "positions",
+              COALESCE(t.agrees, 0)::int AS "agrees"
+       FROM "Proposition" p
+       LEFT JOIN (
+         SELECT "propositionId",
+                COUNT(*)                                      AS n,
+                COUNT(*) FILTER (WHERE stance = 'agree')      AS agrees
+         FROM "UserBelief" WHERE stance <> 'skip' GROUP BY "propositionId"
+       ) t ON t."propositionId" = p."id"
+       WHERE p."status" = $1
+       ORDER BY p."categoryId", p."createdAt" DESC LIMIT 500`,
+      status,
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error("[GET /api/admin/propositions]", e);
+    res.status(500).json({ error: "Failed to load propositions" });
+  }
+});
+
+app.post("/api/admin/propositions/:id", async (req, res) => {
+  try {
+    const userId = actorId(req);
+    if (!(await isAdmin(userId))) return res.status(403).json({ error: "Admins only" });
+    const { status } = req.body as { status?: string };
+    if (status !== "live" && status !== "draft" && status !== "retired") {
+      return res.status(400).json({ error: "status must be live, draft or retired" });
+    }
+    await prisma.$executeRawUnsafe(
+      `UPDATE "Proposition" SET "status" = $1 WHERE "id" = $2`, status, req.params.id,
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[POST /api/admin/propositions/:id]", e);
+    res.status(500).json({ error: "Failed to update proposition" });
+  }
 });
 
 app.get("/api/rapid/queue-size", async (_req, res) => {
@@ -4399,6 +4524,65 @@ async function start() {
     console.log("[DB] Challenge table ready");
   } catch (e) {
     console.error("[DB] Challenge table setup failed:", e);
+  }
+
+  // ── The belief layer ─────────────────────────────────────────────────────────
+  // What each user actually thinks, collected by the deck ahead of any match.
+  // Rapid pairing reads this to find a real disagreement instead of dealing a
+  // random side, so these tables are upstream of the queue below.
+  //
+  // NOTE: deliberately not "UserPosition" — that model already exists in
+  // schema.prisma and means something else entirely (your FOR/AGAINST stance
+  // within one room). A belief is about a claim and outlives any debate.
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Proposition" (
+        "id"         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "text"       TEXT NOT NULL UNIQUE,
+        "categoryId" TEXT NOT NULL,
+        "status"     TEXT NOT NULL DEFAULT 'draft',   -- draft | live | retired
+        "source"     TEXT NOT NULL DEFAULT 'ai',      -- seed | ai | user
+        "createdAt"  TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Proposition_status_idx" ON "Proposition"("status","categoryId")`);
+
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "UserBelief" (
+        "id"            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "userId"        TEXT NOT NULL,
+        "propositionId" TEXT NOT NULL,
+        "stance"        TEXT NOT NULL,                -- agree | disagree | skip
+        "confidence"    SMALLINT,                     -- 1 = held, 2 = strongly held; null for skip
+        "createdAt"     TIMESTAMP NOT NULL DEFAULT NOW(),
+        "updatedAt"     TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE ("userId","propositionId")
+      )
+    `);
+    // Pairing's hot path: given a proposition, who holds the opposite side.
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "UserBelief_prop_stance_idx" ON "UserBelief"("propositionId","stance")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "UserBelief_userId_idx" ON "UserBelief"("userId")`);
+
+    // Every time someone's mind actually moves. This is the log the whole
+    // product is arguing for, so it's kept separately from the current state
+    // rather than overwritten — "changed my mind 4 times" is a credential.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "BeliefChange" (
+        "id"             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "userId"         TEXT NOT NULL,
+        "propositionId"  TEXT NOT NULL,
+        "fromStance"     TEXT NOT NULL,
+        "toStance"       TEXT NOT NULL,
+        "fromConfidence" SMALLINT,
+        "toConfidence"   SMALLINT,
+        "roomName"       TEXT,                        -- the debate that moved it, if any
+        "createdAt"      TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BeliefChange_userId_idx" ON "BeliefChange"("userId","createdAt")`);
+    console.log("[DB] Belief layer ready");
+  } catch (e) {
+    console.error("[DB] Belief layer setup failed:", e);
   }
 
   // Rapid Fire waiting pool. One row per waiting user; rows are claimed by the

@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
+    "props:generate": "ts-node-dev --transpile-only --no-notify scripts/generate-propositions.ts",
     "auth:verify": "node --env-file=.env -r ts-node/register/transpile-only scripts/verify-auth-interop.ts",
     "auth:impersonation": "node --env-file=.env -r ts-node/register/transpile-only scripts/verify-impersonation.ts"
   },
