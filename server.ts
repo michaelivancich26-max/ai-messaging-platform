@@ -12,7 +12,7 @@ import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId } from "./services/topics";
-import { getDeck, beliefCount, recordBelief, type Stance } from "./services/propositions";
+import { getDeck, beliefCount, recordBelief, seedFromCatalog, type Stance } from "./services/propositions";
 import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
 import bcrypt from "bcryptjs";
 
@@ -4996,6 +4996,16 @@ async function start() {
     console.log("[DB] DebateQueue table ready");
   } catch (e) {
     console.error("[DB] DebateQueue table setup failed:", e);
+  }
+
+  // Seed the catalog claims as live so any deploy has a deck on day one.
+  // Idempotent: ON CONFLICT (text) DO NOTHING never duplicates, and never
+  // resurrects a claim an admin has since retired.
+  try {
+    const seeded = await seedFromCatalog(prisma);
+    console.log(seeded ? `[DB] Seeded ${seeded} catalog propositions as live` : "[DB] Catalog already seeded");
+  } catch (e) {
+    console.error("[DB] Catalog seed failed:", e);
   }
 
   try {

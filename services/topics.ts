@@ -27,6 +27,7 @@ export const TOPIC_CATALOG: TopicCategory[] = [
       "Term limits should apply to all elected officials",
       "Social media platforms should be regulated as public utilities",
       "Ranked choice voting is better than first-past-the-post",
+      "Choosing some public officials by lottery would improve democracy.",
     ],
   },
   {
@@ -38,6 +39,8 @@ export const TOPIC_CATALOG: TopicCategory[] = [
       "Nuclear energy is the best path to clean energy",
       "Cryptocurrencies will replace traditional currencies",
       "Surveillance technology makes society safer",
+      "You should have a legal right to repair your own devices.",
+      "Encryption should never include a government backdoor.",
     ],
   },
   {
@@ -49,6 +52,8 @@ export const TOPIC_CATALOG: TopicCategory[] = [
       "Utilitarianism is the best ethical framework",
       "Privacy is more important than national security",
       "Cancel culture does more harm than good",
+      "You can wrong someone who never finds out about it.",
+      "Forgiveness shouldn't depend on getting an apology.",
     ],
   },
   {
@@ -60,6 +65,7 @@ export const TOPIC_CATALOG: TopicCategory[] = [
       "Lab-grown meat will replace traditional farming",
       "Geoengineering is too risky to pursue",
       "Electric vehicles will solve transportation emissions",
+      "Aging should be treated as a disease to be cured.",
     ],
   },
   {
@@ -71,6 +77,8 @@ export const TOPIC_CATALOG: TopicCategory[] = [
       "Zoos should be abolished",
       "Social media influencers deserve their income",
       "The gig economy exploits workers",
+      "Organ donation should be opt-out by default.",
+      "Assisted dying should be legal for the terminally ill.",
     ],
   },
   {
@@ -82,6 +90,8 @@ export const TOPIC_CATALOG: TopicCategory[] = [
       "Free trade benefits all participating countries",
       "Automation will cause mass unemployment",
       "Universal healthcare improves economic productivity",
+      "A land value tax would be fairer than taxing income.",
+      "Planned obsolescence should be illegal.",
     ],
   },
 ];
