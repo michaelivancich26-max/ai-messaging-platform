@@ -42,9 +42,9 @@ const WC_LABEL: Record<string, (wc: any) => string> = {
 
 function EloBadge({ elo, className = "" }: { elo: number; className?: string }) {
   const color =
-    elo >= 1600 ? "text-yellow-400 border-yellow-800 bg-yellow-950/40" :
-    elo >= 1400 ? "text-violet-600 dark:text-violet-400 border-violet-800 bg-violet-100 dark:bg-violet-950/40" :
-    elo >= 1200 ? "text-sky-600 dark:text-sky-400 border-sky-800 bg-sky-100 dark:bg-sky-950/40" :
+    elo >= 1600 ? "text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-800 bg-yellow-100 dark:bg-yellow-950/40" :
+    elo >= 1400 ? "text-violet-700 dark:text-violet-400 border-violet-300 dark:border-violet-800 bg-violet-100 dark:bg-violet-950/40" :
+    elo >= 1200 ? "text-sky-700 dark:text-sky-400 border-sky-300 dark:border-sky-800 bg-sky-100 dark:bg-sky-950/40" :
     "text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900";
   return (
     <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold ${color} ${className}`}>
@@ -341,7 +341,7 @@ export default function CompetePage() {
   const myUsername = (session?.user as any)?.username ?? session?.user?.name ?? "";
 
   return (
-    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950 text-white">
+    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white">
 
       {/* Challenge accepted notification banner */}
       {notification && (
@@ -387,18 +387,18 @@ export default function CompetePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex shrink-0 border-b border-gray-200 dark:border-gray-800">
+      <div className="flex shrink-0 overflow-x-auto border-b border-gray-200 dark:border-gray-800">
         {([["live", "Live"], ["board", "1v1 Challenges"], ["teams", "Team Matches"], ["mine", "My Challenges"], ["leaderboard", "Leaderboard"]] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => { setTab(key); if (key === "board") loadBoard(); if (key === "mine") loadMine(); if (key === "leaderboard") loadLeaderboard(); }}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${
+            className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${
               tab === key ? "border-violet-500 text-violet-700 dark:text-violet-300" : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
             }`}
           >
             {label}
             {key === "board" && challenges.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-violet-800 px-1.5 text-[10px] text-violet-800 dark:text-violet-200">{challenges.length}</span>
+              <span className="ml-1.5 rounded-full bg-violet-100 px-1.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-800 dark:text-violet-200">{challenges.length}</span>
             )}
             {key === "live" && liveMatches.length > 0 && (
               <span className="ml-1.5 rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{liveMatches.length}</span>
