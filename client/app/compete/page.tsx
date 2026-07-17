@@ -151,7 +151,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
                   ? s === "affirmative"
                     ? "border-emerald-500 bg-emerald-100 dark:border-emerald-600 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
                     : "border-rose-500 bg-rose-100 dark:border-rose-600 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300"
-                  : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-400 dark:hover:border-gray-600"
+                  : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"
               }`}
             >
               {s === "affirmative" ? "FOR this claim" : "AGAINST this claim"}
@@ -167,7 +167,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
               key={t}
               onClick={() => setWcType(t)}
               className={`flex-1 rounded-lg border py-2 text-xs font-semibold capitalize transition-colors ${
-                wcType === t ? "border-brand-green bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-400 dark:hover:border-gray-600"
+                wcType === t ? "border-brand-green bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"
               }`}
             >
               {t}
@@ -388,13 +388,13 @@ export default function CompetePage() {
           >
             Join Room →
           </button>
-          <button onClick={() => setNotification(null)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">✕</button>
+          <button onClick={() => setNotification(null)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">✕</button>
         </div>
       )}
 
       {/* Header */}
       <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3 pt-safe">
-        <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800/50 dark:hover:text-gray-300 transition-colors">
+        <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800/50 dark:hover:text-gray-300 transition-colors">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
           </svg>
@@ -426,7 +426,7 @@ export default function CompetePage() {
             key={key}
             onClick={() => { setTab(key); if (key === "board") loadBoard(); if (key === "mine") loadMine(); if (key === "leaderboard") loadLeaderboard(); }}
             className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${
-              tab === key ? "border-brand-green text-brand-green-ink dark:text-brand-green" : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              tab === key ? "border-brand-green text-brand-green-ink dark:text-brand-green" : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
             }`}
           >
             {label}

@@ -155,7 +155,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                             <span className="font-semibold">{n.fromUsername}</span>
                             {isDM ? " wants to message you" : ` invited you to ${displayRoom}`}
                           </p>
-                          <p className="mt-0.5 text-[10px] text-gray-500">{new Date(n.createdAt).toLocaleString()}</p>
+                          <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">{new Date(n.createdAt).toLocaleString()}</p>
                           <div className="mt-2 flex gap-2">
                             <button
                               onClick={() => {
@@ -203,7 +203,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                       <span className="font-semibold">{n.fromUsername}</span>
                       {" invited you to their debate team"}
                     </p>
-                    {n.content && <p className="mt-0.5 truncate text-[11px] text-gray-500">"{n.content}"</p>}
+                    {n.content && <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">"{n.content}"</p>}
                     <p className="mt-1 text-[11px] font-semibold text-violet-600 dark:text-violet-400">Open Battle Grounds → Team Matches →</p>
                   </div>
                 </div>
@@ -230,7 +230,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                       <span className="font-semibold text-indigo-600 dark:text-indigo-400">#{n.roomName}</span>
                     </p>
                     {n.content && (
-                      <p className="mt-0.5 truncate text-[11px] text-gray-500">"{n.content}"</p>
+                      <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">"{n.content}"</p>
                     )}
                     <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">{new Date(n.createdAt).toLocaleString()}</p>
                   </div>
@@ -249,7 +249,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
                   <p className="text-xs text-gray-600 dark:text-gray-400">
                     {isDM ? "DM invite" : `Invite to #${n.roomName}`}
                     {" · "}
-                    <span className={n.accepted ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500"}>
+                    <span className={n.accepted ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}>
                       {n.accepted ? "Accepted" : "Declined"}
                     </span>
                   </p>

@@ -82,7 +82,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 pt-safe">
           <button
             onClick={() => router.push("/home")}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
             title="Back to Hub"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
@@ -143,7 +143,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   >
                     <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${c.dot}`} />
-                    <span className="truncate text-xs text-gray-500">vs {bot?.name ?? m.botId}</span>
+                    <span className="truncate text-xs text-gray-500 dark:text-gray-400">vs {bot?.name ?? m.botId}</span>
                   </button>
                 );
               })}
@@ -165,7 +165,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
           </button>
           <button
             onClick={() => signOutEverywhere()}
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0">
               <path fillRule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clipRule="evenodd" />

@@ -396,7 +396,7 @@ export default function DashboardPage() {
             <div className="rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
               <button onClick={() => { setPwOpen(v => !v); setPwMsg(null); }} className="flex w-full items-center justify-between px-5 py-4 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
                 <span className="font-semibold">Change password</span>
-                <svg viewBox="0 0 16 16" fill="currentColor" className={`h-4 w-4 text-gray-500 transition-transform ${pwOpen ? "rotate-180" : ""}`}><path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
+                <svg viewBox="0 0 16 16" fill="currentColor" className={`h-4 w-4 text-gray-500 dark:text-gray-400 transition-transform ${pwOpen ? "rotate-180" : ""}`}><path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
               </button>
               {pwOpen && (
                 <form onSubmit={changePassword} className="border-t border-gray-200 dark:border-gray-800 px-5 py-4 space-y-3">
@@ -407,7 +407,7 @@ export default function DashboardPage() {
                         <input type={showPw ? "text" : "password"} value={pw[key]} onChange={e => setPw(p => ({ ...p, [key]: e.target.value }))} required
                           className="w-full rounded-xl bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-9 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-2 focus:ring-brand-green" placeholder="••••••••" />
                         {key === "current" && (
-                          <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                          <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
                             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">{showPw ? <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" /> : <path fillRule="evenodd" d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM1.174 7.557a1.006 1.006 0 0 0 0 .886A7.003 7.003 0 0 0 8 12.5a7.003 7.003 0 0 0 6.826-4.057 1.006 1.006 0 0 0 0-.886A7.003 7.003 0 0 0 8 3.5a7.003 7.003 0 0 0-6.826 4.057Z" clipRule="evenodd" />}</svg>
                           </button>
                         )}

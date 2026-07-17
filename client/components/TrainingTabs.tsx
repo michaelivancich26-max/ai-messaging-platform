@@ -22,7 +22,7 @@ export default function TrainingTabs() {
             className={`shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-xs font-semibold transition-colors ${
               active
                 ? "border-brand-green text-brand-green-ink dark:text-brand-green"
-                : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
             }`}>
             {label}
           </button>

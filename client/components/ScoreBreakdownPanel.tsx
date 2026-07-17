@@ -30,7 +30,7 @@ function ScoreBar({ value, max = 10, color }: { value: number; max?: number; col
       <div className="h-1 flex-1 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
         <div className={`h-full rounded-full ${color} transition-all duration-300`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="w-5 text-right text-[10px] tabular-nums text-gray-500">{value}</span>
+      <span className="w-5 text-right text-[10px] tabular-nums text-gray-500 dark:text-gray-400">{value}</span>
     </div>
   );
 }
@@ -74,7 +74,7 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
             <path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 16.5 0 8.25 8.25 0 0 1-16.5 0Zm8.25-3.75a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3a.75.75 0 0 1 .75-.75Zm0 7.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
           </svg>
           <span className="font-display font-bold text-sm text-gray-900 dark:text-white flex-1">Score Details</span>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors p-1">
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors p-1">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
               <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
             </svg>
@@ -133,9 +133,9 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
                   <div className="flex items-center gap-1.5 w-28 shrink-0">
                     <div className={`h-2 w-2 rounded-full ${color} shrink-0`} />
                     <span className="text-gray-800 dark:text-gray-200 font-medium">{label}</span>
-                    <span className="ml-auto text-gray-500 tabular-nums">{weight}%</span>
+                    <span className="ml-auto text-gray-500 dark:text-gray-400 tabular-nums">{weight}%</span>
                   </div>
-                  <span className="text-gray-500 leading-tight">{desc}</span>
+                  <span className="text-gray-500 dark:text-gray-400 leading-tight">{desc}</span>
                 </div>
               ))}
             </div>
@@ -194,7 +194,7 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
 
                       {/* Reasoning */}
                       {claim.reasoning && (
-                        <p className="text-[11px] text-gray-500 italic leading-relaxed">{claim.reasoning}</p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 italic leading-relaxed">{claim.reasoning}</p>
                       )}
 
                       {/* Dimension bars */}

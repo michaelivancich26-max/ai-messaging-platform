@@ -108,7 +108,7 @@ export default function LessonPage() {
     <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
       {/* Top bar */}
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-950/95 px-4 py-3 backdrop-blur-sm pt-safe">
-        <button onClick={() => router.push(`/learn/${series.slug}`)} className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+        <button onClick={() => router.push(`/learn/${series.slug}`)} className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
             <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
           </svg>

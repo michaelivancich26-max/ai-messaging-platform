@@ -219,7 +219,7 @@ export default function HomePage() {
             {/* Proposition-bar teaser — a static preview of the room's decisive element. */}
             <div className="hidden shrink-0 md:block md:w-64">
               <div className="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 shadow-card dark:border-gray-800 dark:bg-gray-950/50">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">The proposition</p>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">The proposition</p>
                 <p className="mt-1.5 text-sm font-semibold leading-snug text-gray-800 dark:text-gray-100">
                   &ldquo;Social media does more harm than good.&rdquo;
                 </p>

@@ -137,7 +137,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3 pt-safe">
-        <button onClick={() => router.push("/messages")} className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 md:hidden" aria-label="Back to messages">
+        <button onClick={() => router.push("/messages")} className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 md:hidden" aria-label="Back to messages">
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" /></svg>
         </button>
         {partner && (

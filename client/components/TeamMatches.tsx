@@ -198,7 +198,7 @@ function CreateTeamModal({
                       className={`flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${
                         stance === s
                           ? s === "affirmative" ? "border-emerald-500 bg-emerald-100 dark:border-emerald-600 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" : "border-rose-500 bg-rose-100 dark:border-rose-600 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300"
-                          : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-400 dark:hover:border-gray-600"
+                          : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"
                       }`}>
                       {s === "affirmative" ? "FOR" : "AGAINST"}
                     </button>
@@ -211,7 +211,7 @@ function CreateTeamModal({
                 <div className="flex gap-2">
                   {[1, 2, 3].map(n => (
                     <button key={n} onClick={() => setTeamSize(n)}
-                      className={`flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${teamSize === n ? "border-brand-green bg-brand-green/10 dark:bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-400 dark:hover:border-gray-600"}`}>
+                      className={`flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${teamSize === n ? "border-brand-green bg-brand-green/10 dark:bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"}`}>
                       {SIZE_LABEL[n]}
                     </button>
                   ))}
@@ -226,7 +226,7 @@ function CreateTeamModal({
                 <div className="mb-3 flex gap-2">
                   {(["exchanges", "time"] as const).map(t => (
                     <button key={t} onClick={() => setWcType(t)}
-                      className={`flex-1 rounded-lg border py-2 text-xs font-semibold capitalize transition-colors ${wcType === t ? "border-brand-green bg-brand-green/10 dark:bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-400 dark:hover:border-gray-600"}`}>
+                      className={`flex-1 rounded-lg border py-2 text-xs font-semibold capitalize transition-colors ${wcType === t ? "border-brand-green bg-brand-green/10 dark:bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"}`}>
                       {t === "exchanges" ? "Exchanges" : "Time"}
                     </button>
                   ))}
@@ -344,7 +344,7 @@ function LobbyModal({
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4">
           <h2 className="flex-1 font-display text-base font-bold tracking-tight text-gray-900 dark:text-white">Team Lobby</h2>
           {roster && <SizeTag size={roster.teamSize} />}
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">✕</button>
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">✕</button>
         </div>
 
         {!roster ? (
@@ -495,7 +495,7 @@ export default function TeamMatches({ userId, username }: { userId: string; user
         <div className="flex flex-1 gap-1.5 overflow-x-auto">
           {subTabs.map(([key, label, count]) => (
             <button key={key} onClick={() => { setSub(key); refreshAll(); }}
-              className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${sub === key ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green ring-1 ring-brand-green/30" : "text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800/50 dark:hover:text-gray-300"}`}>
+              className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${sub === key ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green ring-1 ring-brand-green/30" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800/50 dark:hover:text-gray-300"}`}>
               {label}{count > 0 && <span className="ml-1.5 rounded-full bg-gray-200 px-1.5 text-[11px] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{count}</span>}
             </button>
           ))}
