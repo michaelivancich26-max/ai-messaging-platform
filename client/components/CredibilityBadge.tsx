@@ -19,10 +19,11 @@ export default function CredibilityBadge({ score }: Props) {
     : accuracy >= 50 ? "mixed"
     : "disputed";
 
+  // Unified credibility tier scale — same colors as the Grounds Score panel.
   const style = {
     reliable: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
     mixed:    "bg-amber-500/20  text-amber-700 dark:text-amber-300  border-amber-500/30",
-    disputed: "bg-red-500/20    text-red-700 dark:text-red-300    border-red-500/30",
+    disputed: "bg-red-500/20    text-red-700 dark:text-red-400    border-red-500/30",
   }[tier];
 
   const label = {
@@ -36,16 +37,16 @@ export default function CredibilityBadge({ score }: Props) {
       <span
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium cursor-default ${style}`}
+        className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums cursor-default ${style}`}
       >
         {label}
       </span>
       {hovered && (
-        <span className="absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg bg-white dark:bg-gray-900 px-3 py-2 text-xs text-gray-800 dark:text-gray-200 shadow-xl ring-1 ring-gray-300 dark:ring-gray-700">
+        <span className="absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 shadow-elevated dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
           <span className="block font-semibold text-gray-900 dark:text-gray-100 mb-1">Credibility</span>
-          <span className="block text-emerald-600 dark:text-emerald-400">✓ {supported} supported</span>
-          <span className="block text-red-600 dark:text-red-400">✗ {refuted} refuted</span>
-          <span className="block text-amber-600 dark:text-amber-400">~ {contested} contested</span>
+          <span className="block text-emerald-700 dark:text-emerald-400">✓ {supported} supported</span>
+          <span className="block text-red-700 dark:text-red-400">✗ {refuted} refuted</span>
+          <span className="block text-amber-700 dark:text-amber-400">~ {contested} contested</span>
         </span>
       )}
     </span>

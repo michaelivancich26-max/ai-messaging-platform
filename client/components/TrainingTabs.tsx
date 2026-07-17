@@ -14,14 +14,14 @@ export default function TrainingTabs() {
   const pathname = usePathname() ?? "";
 
   return (
-    <div className="flex shrink-0 border-b border-gray-200 dark:border-gray-800">
+    <div className="flex shrink-0 overflow-x-auto border-b border-gray-200 dark:border-gray-800">
       {TABS.map(({ href, label }) => {
         const active = pathname.startsWith(href);
         return (
           <button key={href} onClick={() => router.push(href)}
-            className={`px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${
+            className={`shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-xs font-semibold transition-colors ${
               active
-                ? "border-amber-500 text-amber-700 dark:text-amber-300"
+                ? "border-brand-green text-brand-green-ink dark:text-brand-green"
                 : "border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
             }`}>
             {label}

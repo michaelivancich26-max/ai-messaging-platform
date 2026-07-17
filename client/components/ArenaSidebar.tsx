@@ -91,8 +91,8 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
             <span className="text-xs">Hub</span>
           </button>
           <div className="ml-auto flex items-center gap-1.5">
-            <span className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider">Training Grounds</span>
-            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-amber-500">
+            <span className="font-display text-[11px] font-semibold uppercase tracking-wider text-brand-green-ink dark:text-brand-green">Training Grounds</span>
+            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-brand-green-ink dark:text-brand-green">
               <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
             </svg>
           </div>
@@ -101,13 +101,13 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         {/* Bot list */}
         <nav className="flex-1 overflow-y-auto py-2">
           <div className="px-3 pb-1 pt-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Opponents</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Opponents</p>
           </div>
           {BOTS.map((bot) => {
             const c = BOT_COLORS[bot.color];
             return (
               <div key={bot.id} className="flex items-center gap-2 px-2 py-1 group">
-                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ${c.ring} bg-white/60 dark:bg-gray-900/60`}>
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ${c.ring} bg-gray-50 dark:bg-gray-950`}>
                   <span className={`text-[10px] font-bold ${c.text}`}>{bot.name[0]}</span>
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col">
@@ -118,7 +118,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
                   onClick={() => challenge(bot)}
                   disabled={!!challenging}
                   title={`Challenge ${bot.name}`}
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-40 ${c.btn}`}
+                  className={`shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors disabled:opacity-40 active:scale-[0.97] motion-reduce:active:scale-100 ${c.btn}`}
                 >
                   {challenging === bot.id ? "…" : "Go"}
                 </button>
@@ -131,7 +131,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
             <>
               <div className="mx-3 my-2 border-t border-gray-200 dark:border-gray-800" />
               <div className="px-3 pb-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Recent matches</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Recent matches</p>
               </div>
               {recentMatches.map((m) => {
                 const bot = BOTS.find(b => b.id === m.botId);

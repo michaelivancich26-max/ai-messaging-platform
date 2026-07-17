@@ -11,10 +11,12 @@ import {
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
+// Difficulty is data — its emerald/amber/red mapping stays, but light-mode text
+// moves to -700 so the pills clear AA on their tinted backgrounds.
 const DIFF_STYLE: Record<Difficulty, { label: string; pill: string; dot: string }> = {
-  easy:   { label: "Easy",   pill: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-400" },
-  medium: { label: "Medium", pill: "bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400",     dot: "bg-amber-400"   },
-  hard:   { label: "Hard",   pill: "bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400",         dot: "bg-red-400"     },
+  easy:   { label: "Easy",   pill: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400", dot: "bg-emerald-500" },
+  medium: { label: "Medium", pill: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400",         dot: "bg-amber-500"   },
+  hard:   { label: "Hard",   pill: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400",                 dot: "bg-red-500"     },
 };
 
 function StarIcon({ filled }: { filled: boolean }) {
@@ -71,15 +73,15 @@ function PuzzleView({
           </svg>
         </button>
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs text-gray-500">Puzzles</span>
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-gray-400 dark:text-gray-700 shrink-0">
+          <span className="text-xs text-gray-500 dark:text-gray-400">Puzzles</span>
+          <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-gray-400 dark:text-gray-600 shrink-0">
             <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
           </svg>
           <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{puzzle.title}</span>
         </div>
         {onNext && (
           <button onClick={onNext}
-            className="ml-auto shrink-0 flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+            className="ml-auto shrink-0 flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50">
             Next
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
@@ -93,7 +95,7 @@ function PuzzleView({
         {/* Badges */}
         <div className="flex flex-wrap items-center gap-2">
           {isDaily && (
-            <span className="flex items-center gap-1.5 rounded-full bg-yellow-950/50 px-2.5 py-1 text-[11px] font-semibold text-yellow-400">
+            <span className="flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
               <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3"><path d="M8 1.25l1.78 3.6 3.97.58-2.875 2.8.68 3.96L8 10.26l-3.555 1.87.68-3.96L2.25 5.43l3.97-.58L8 1.25Z" /></svg>
               Daily Puzzle
             </span>
@@ -105,13 +107,13 @@ function PuzzleView({
         </div>
 
         {/* Argument card */}
-        <div className="rounded-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-6">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">Argument</p>
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-card dark:border-gray-800 dark:bg-gray-900">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">Argument</p>
           <blockquote className="text-base leading-relaxed text-gray-900 dark:text-gray-100 italic">
             "{puzzle.argument}"
           </blockquote>
           {puzzle.context && (
-            <p className="mt-3 text-xs text-gray-500">{puzzle.context}</p>
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{puzzle.context}</p>
           )}
         </div>
 
@@ -121,7 +123,7 @@ function PuzzleView({
         {/* Options */}
         <div className="space-y-2.5">
           {puzzle.options.map((opt, idx) => {
-            let style = "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-100/60 dark:hover:bg-gray-800/60";
+            let style = "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-card hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-100/60 dark:hover:bg-gray-800/60";
             let icon = null;
 
             if (revealed) {
@@ -151,7 +153,7 @@ function PuzzleView({
                 disabled={revealed}
                 className={`w-full flex items-start gap-3 rounded-xl border p-4 text-left text-sm transition-all ${style} disabled:cursor-default`}
               >
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-300 dark:border-gray-700 text-[11px] font-bold text-gray-500">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-300 dark:border-gray-700 text-[11px] font-bold text-gray-500 dark:text-gray-400">
                   {String.fromCharCode(65 + idx)}
                 </span>
                 <span className="flex-1 leading-relaxed text-gray-800 dark:text-gray-200">{opt}</span>
@@ -163,7 +165,7 @@ function PuzzleView({
 
         {/* Explanation */}
         {revealed && (
-          <div className={`rounded-2xl border p-5 space-y-2 ${isCorrect || completed ? "border-emerald-800/40 bg-emerald-100 dark:bg-emerald-950/20" : "border-red-800/40 bg-red-100 dark:bg-red-950/20"}`}>
+          <div className={`rounded-2xl border p-5 space-y-2 ${isCorrect || completed ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/20" : "border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/20"}`}>
             <div className="flex items-center gap-2">
               {isCorrect || completed ? (
                 <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-emerald-600 dark:text-emerald-400">
@@ -174,7 +176,7 @@ function PuzzleView({
                   <path fillRule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14Zm2.78-4.22a.75.75 0 0 1-1.06 0L8 9.06l-1.72 1.72a.75.75 0 1 1-1.06-1.06L6.94 8 5.22 6.28a.75.75 0 0 1 1.06-1.06L8 6.94l1.72-1.72a.75.75 0 1 1 1.06 1.06L9.06 8l1.72 1.72a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
                 </svg>
               )}
-              <span className={`text-sm font-semibold ${isCorrect || completed ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+              <span className={`text-sm font-semibold ${isCorrect || completed ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                 {isCorrect || completed ? "Correct!" : "Not quite"}
               </span>
             </div>
@@ -185,7 +187,7 @@ function PuzzleView({
         {/* Next puzzle */}
         {revealed && onNext && (
           <button onClick={onNext}
-            className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500">
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-700 py-3 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.99] motion-reduce:active:scale-100">
             Next Puzzle →
           </button>
         )}
@@ -232,7 +234,24 @@ export default function PuzzlesPage() {
     : null;
 
   if (status === "loading") {
-    return <div className="flex h-full items-center justify-center bg-gray-50 dark:bg-gray-950 text-gray-500 dark:text-gray-400 text-sm">Loading…</div>;
+    return (
+      <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950">
+        <div className="shrink-0 border-b border-gray-200 px-4 py-3 pt-safe dark:border-gray-800">
+          <div className="h-5 w-32 rounded bg-gray-200 shimmer-track dark:bg-gray-800" />
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl space-y-8 px-4 py-8">
+            <div className="h-44 rounded-3xl bg-gray-200 shimmer-track dark:bg-gray-800" />
+            <div className="h-20 rounded-2xl bg-gray-200 shimmer-track dark:bg-gray-800" />
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-16 rounded-xl bg-gray-200 shimmer-track dark:bg-gray-800" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (activePuzzle) {
@@ -266,44 +285,47 @@ export default function PuzzlesPage() {
       <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 space-y-8">
         {/* Hero */}
-        <div className="text-center space-y-3">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 dark:bg-violet-950 ring-1 ring-violet-900/60">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7 text-violet-600 dark:text-violet-400">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
-            </svg>
+        <section className="relative overflow-hidden rounded-3xl border border-gray-200 bg-white bg-hero-glow p-6 shadow-hero dark:border-gray-800 dark:bg-gray-900 md:p-8 animate-fadeInUp">
+          <div className="flex items-start gap-4">
+            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">Learn</p>
+              <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-white md:text-3xl">Debate Puzzles</h1>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Debate Puzzles</h1>
-            <p className="mt-1 text-sm text-gray-500">{PUZZLES.length} puzzles · spot the fallacy or weak point before reading the answer</p>
-          </div>
+          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">{PUZZLES.length} puzzles · spot the fallacy or weak point before reading the answer</p>
           {doneCount > 0 && (
-            <div className="mx-auto max-w-xs space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>{doneCount} of {PUZZLES.length} solved</span>
-                <span className="font-semibold text-violet-600 dark:text-violet-400">{pct}%</span>
+            <div className="mt-5 max-w-sm space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500 dark:text-gray-400">{doneCount} of {PUZZLES.length} solved</span>
+                <span className="font-semibold text-violet-700 dark:text-violet-400">{pct}%</span>
               </div>
-              <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+              <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                 <div className="h-full rounded-full bg-violet-500 transition-all duration-500" style={{ width: `${pct}%` }} />
               </div>
             </div>
           )}
-        </div>
+        </section>
 
         {/* Daily puzzle */}
         <div>
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">Daily Puzzle</p>
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Daily Puzzle</p>
           <button
             onClick={() => setActivePuzzle(dailyPuzzle)}
-            className="group w-full flex items-center gap-4 rounded-2xl border border-yellow-900/40 bg-yellow-950/20 p-5 text-left transition-all hover:border-yellow-700/60 hover:bg-yellow-950/30"
+            className="group flex w-full items-center gap-4 rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated active:scale-[0.99] motion-reduce:active:scale-100 dark:border-gray-800 dark:bg-gray-900"
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-yellow-950 ring-1 ring-yellow-900/60">
-              <svg viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5 text-yellow-400">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-5 w-5">
                 <path d="M8 1.25l1.78 3.6 3.97.58-2.875 2.8.68 3.96L8 10.26l-3.555 1.87.68-3.96L2.25 5.43l3.97-.58L8 1.25Z" />
               </svg>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{dailyPuzzle.title}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                 {completed.has(dailyPuzzle.id) ? `${dailyPuzzle.category} · ` : ""}{DIFF_STYLE[dailyPuzzle.difficulty].label}
               </p>
             </div>
@@ -314,19 +336,19 @@ export default function PuzzlesPage() {
                 </svg>
               </div>
             ) : (
-              <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 text-gray-500 dark:text-gray-400 group-hover:text-gray-600 dark:hover:text-gray-400 transition-colors shrink-0">
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-400 transition-colors group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300">
                 <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
               </svg>
             )}
           </button>
         </div>
 
-        {/* Filter tabs */}
+        {/* Filter pills */}
         <div>
           <div className="flex items-center gap-2 mb-4">
             {(["all", ...DIFFICULTY_ORDER] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize ${filter === f ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100/60 dark:hover:bg-gray-800/60"}`}>
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${filter === f ? "border-transparent bg-orange-700 text-white" : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50"}`}>
                 {f === "all" ? "All" : DIFF_STYLE[f].label}
               </button>
             ))}
@@ -346,10 +368,10 @@ export default function PuzzlesPage() {
                 <button
                   key={puzzle.id}
                   onClick={() => setActivePuzzle(puzzle)}
-                  className="group w-full flex items-center gap-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 text-left transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:bg-gray-100/60 dark:hover:bg-gray-800/60"
+                  className="group w-full flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated active:scale-[0.99] motion-reduce:active:scale-100 dark:border-gray-800 dark:bg-gray-900"
                 >
                   {/* Number / checkmark */}
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${done ? "bg-emerald-500 text-white" : "border-2 border-gray-300 dark:border-gray-700 text-gray-500 group-hover:border-gray-300 dark:hover:border-gray-500"}`}>
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${done ? "bg-emerald-500 text-white" : "border-2 border-gray-300 text-gray-500 dark:border-gray-700"}`}>
                     {done ? (
                       <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
                         <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
@@ -362,20 +384,20 @@ export default function PuzzlesPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-tight">{puzzle.title}</p>
                       {isDaily && (
-                        <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-yellow-400 shrink-0">
+                        <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-amber-500 shrink-0">
                           <path d="M8 1.25l1.78 3.6 3.97.58-2.875 2.8.68 3.96L8 10.26l-3.555 1.87.68-3.96L2.25 5.43l3.97-.58L8 1.25Z" />
                         </svg>
                       )}
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${d.pill}`}>{d.label}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${d.pill}`}>{d.label}</span>
                       {done && (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${catColor}`}>{puzzle.category}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${catColor}`}>{puzzle.category}</span>
                       )}
                     </div>
                   </div>
 
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 text-gray-400 dark:text-gray-700 group-hover:text-gray-500 transition-colors shrink-0">
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-colors group-hover:text-gray-600 dark:text-gray-600 dark:group-hover:text-gray-400">
                     <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                   </svg>
                 </button>
