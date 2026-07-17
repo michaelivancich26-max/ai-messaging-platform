@@ -20,6 +20,7 @@ import DebateHeader from "@/components/DebateHeader";
 import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
+import RapidAftermath from "@/components/RapidAftermath";
 import SubDebateModal from "@/components/SubDebateModal";
 import ScoreBreakdownPanel from "@/components/ScoreBreakdownPanel";
 import type { RoomMeta } from "@/components/RoomPanel";
@@ -339,6 +340,15 @@ export default function RoomPage() {
       if (d?.by === userIdRef.current) setMoveOnMine(false);
       else setMoveOnTheirs(false);
     });
+    // Full current state, replayed by the server on (re)join. Component state is
+    // lost on remount but the offer isn't, so without this a remounted client
+    // shows no pending offer and can be moved-on-with by a vote it never saw.
+    // Authoritative, so it SETS both flags rather than OR-ing them.
+    socket.on("rapidMoveOnState", (d: { voters?: string[] }) => {
+      const voters = d?.voters ?? [];
+      setMoveOnMine(voters.includes(userIdRef.current));
+      setMoveOnTheirs(voters.some((v) => v !== userIdRef.current));
+    });
 
     socket.on("message", (msg: ChatMessage) => {
       // Route spectator chat messages
@@ -425,6 +435,7 @@ export default function RoomPage() {
       socket.off("rapidRoundVoided");
       socket.off("rapidMoveOnOffered");
       socket.off("rapidMoveOnWithdrawn");
+      socket.off("rapidMoveOnState");
     };
   }, [status, roomId, userId, username]);
 
@@ -1370,12 +1381,16 @@ export default function RoomPage() {
 
       {/* Rapid Fire round discarded — no winner, no rating change */}
       {voidedReason && (
-        <div className="shrink-0 flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 px-4 py-2.5">
-          <span className="text-xs text-gray-700 dark:text-gray-300">{voidedReason}</span>
-          <button onClick={() => router.push("/rapid")}
-            className="ml-auto shrink-0 rounded-full bg-orange-600 px-3 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-orange-500">
-            Find another →
-          </button>
+        <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-700 dark:text-gray-300">{voidedReason}</span>
+            <button onClick={() => router.push("/rapid")}
+              className="ml-auto shrink-0 rounded-full bg-orange-600 px-3 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-orange-500">
+              Find another →
+            </button>
+          </div>
+          {/* A voided round was still a debate — it can still have moved someone. */}
+          {!isSpectator && <div className="mx-auto max-w-xl"><RapidAftermath roomName={roomId} /></div>}
         </div>
       )}
 
@@ -1634,8 +1649,10 @@ export default function RoomPage() {
                         {myEloChange >= 0 ? "+" : ""}{myEloChange} → {myEloAfter}
                       </p>
                     </div>
-                    <button onClick={() => router.push("/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
-                      Return to Battle Grounds
+                    {/* Closes the loop: whichever way the match went, ask if it moved them. */}
+                    {isRapidMatch && <RapidAftermath roomName={roomId} />}
+                    <button onClick={() => router.push(isRapidMatch ? "/rapid" : "/compete")} className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 transition-colors">
+                      {isRapidMatch ? "Find another →" : "Return to Battle Grounds"}
                     </button>
                   </div>
                 </div>

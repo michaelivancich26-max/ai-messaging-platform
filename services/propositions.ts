@@ -41,6 +41,13 @@ type Db = {
 // on shared ground, and the random tiebreak keeps the head of the deck from
 // going stale.
 export async function getDeck(db: Db, userId: string, limit = 20): Promise<DeckCard[]> {
+  // Clamp to a sane integer BEFORE it reaches the query. This value is
+  // interpolated straight into the SQL (LIMIT can't be a bind parameter here),
+  // so a NaN or a float from a bad ?limit= would be a syntax error, not a
+  // harmless default. Math.min(50, NaN) is NaN, so the guard has to catch NaN
+  // explicitly rather than lean on min/max.
+  const n = Math.floor(Number(limit));
+  const take = Number.isFinite(n) ? Math.max(1, Math.min(50, n)) : 20;
   return db.$queryRawUnsafe<DeckCard[]>(
     `SELECT p."id", p."text", p."categoryId"
      FROM "Proposition" p
@@ -54,7 +61,7 @@ export async function getDeck(db: Db, userId: string, limit = 20): Promise<DeckC
          WHERE b."userId" = $1 AND b."propositionId" = p."id"
        )
      ORDER BY COALESCE(taken.n, 0) DESC, RANDOM()
-     LIMIT ${Math.max(1, Math.min(50, limit))}`,
+     LIMIT ${take}`,
     userId,
   );
 }

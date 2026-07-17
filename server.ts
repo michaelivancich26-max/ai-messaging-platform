@@ -350,6 +350,16 @@ io.on("connection", (socket) => {
 
       socket.join(roomId);
 
+      // Replay any pending "move on" offer to a (re)joining client. The votes
+      // live only in server memory, so a remount mid-round would otherwise show
+      // neither side's offer — and the opponent could settle the round on a vote
+      // this client was never told about. Only present for a rapid round that's
+      // mid-negotiation, so its absence is the common case.
+      const pendingVotes = rapidMoveOnVotes.get(roomName);
+      if (pendingVotes && pendingVotes.size) {
+        socket.emit("rapidMoveOnState", { roomName, voters: Array.from(pendingVotes) });
+      }
+
       // Presence — include fishbowl role if applicable
       const isFishbowl = !!(room as any).isFishbowl;
       let fishbowlRole = "PARTICIPANT";
@@ -2138,11 +2148,39 @@ async function startRapidMatch(p: RapidPairing): Promise<void> {
   }
 }
 
+// Claim the sole right to end a rapid round.
+//
+// Every way a round can end — a forfeit, a mutual move-on that settles on the
+// bar, and the void sub-paths of both — has to pass through here first. It
+// flips status 'active' -> 'closing' in one conditional UPDATE, so of any number
+// of concurrent enders exactly one gets rowcount 1 and proceeds; the rest get 0
+// and go home.
+//
+// This replaces a claim-by-winnerId that only forfeit did. That was not enough:
+// the win paths could claim a winner, but the VOID paths have no winner to
+// claim with, so a forfeit and a bar-settle could each believe they owned the
+// round and race two contradictory outcomes (opposite winners, or a void racing
+// a completion) into completeCompetitiveMatch, whose idempotency guard is an
+// unlocked read-then-write. A single status transition is the one gate they all
+// share.
+async function claimRapidRound(roomName: string): Promise<boolean> {
+  const n = await prisma.$executeRawUnsafe(
+    `UPDATE "CompetitiveMatch" SET status='closing'
+     WHERE "roomName"=$1 AND status='active' AND "isRapid"=TRUE`,
+    roomName,
+  );
+  return n === 1;
+}
+
 // Discard a round nobody can be judged on. Leaves no result and no ELO, so
 // walking out early gains you nothing and costs the other side nothing.
+//
+// Only ever reached after claimRapidRound has moved the round to 'closing', so
+// it matches that — 'active' is kept too so the function stays correct if it's
+// ever called on an unclaimed round.
 async function voidRapidRound(roomName: string, reason: string): Promise<void> {
   await prisma.$executeRawUnsafe(
-    `UPDATE "CompetitiveMatch" SET status='void', "completedAt"=NOW() WHERE "roomName"=$1 AND status='active'`,
+    `UPDATE "CompetitiveMatch" SET status='void', "completedAt"=NOW() WHERE "roomName"=$1 AND status IN ('active','closing')`,
     roomName,
   );
   await prisma.$executeRawUnsafe(
@@ -2162,6 +2200,11 @@ async function settleRapidOnBar(roomName: string): Promise<void> {
     const state = await loadActiveRapid(roomName);
     if (!state) return;
     const { match } = state;
+
+    // Take the round before touching anything. A forfeit racing this settle
+    // would otherwise reach completeCompetitiveMatch alongside it with a
+    // different winner.
+    if (!(await claimRapidRound(roomName))) return;
 
     if (await rapidBelowFloor(state)) {
       await voidRapidRound(roomName, `The round ended before ${RAPID_MIN_MESSAGES} messages each — no result.`);
@@ -2208,32 +2251,19 @@ async function forfeitRapidRound(roomName: string, leaverId: string): Promise<vo
     if (!state) return;
     const { match } = state;
 
+    // Take the round first. Two simultaneous disconnects, or a disconnect
+    // racing a bar-settle, would otherwise both reach completeCompetitiveMatch
+    // — and because the winner here is derived from WHO LEFT, the two callers
+    // compute OPPOSITE winners and race four absolute ELO writes. The claim lets
+    // exactly one through.
+    if (!(await claimRapidRound(roomName))) return;
+
     if (await rapidBelowFloor(state)) {
       await voidRapidRound(roomName, `The round ended before ${RAPID_MIN_MESSAGES} messages each — no result.`);
       return;
     }
 
     const winnerId = leaverId === match.challengerId ? match.challengedId : match.challengerId;
-
-    // Claim the round before settling it.
-    //
-    // completeCompetitiveMatch's idempotency is a read-then-write with nothing
-    // holding the gap, which was harmless while the winner came off the bar:
-    // two concurrent enders computed the SAME answer, so interleaving them cost
-    // nothing. Deriving the winner from who left breaks that — if both players
-    // drop at once, the two calls compute OPPOSITE winners and race four
-    // absolute ELO writes against each other.
-    //
-    // A single conditional UPDATE is the whole fix: winnerId is null while a
-    // round is active, so of two concurrent claims exactly one matches and the
-    // loser gets rowcount 0 and goes home.
-    const claimed = await prisma.$executeRawUnsafe(
-      `UPDATE "CompetitiveMatch" SET "winnerId" = $2
-       WHERE "roomName" = $1 AND status = 'active' AND "winnerId" IS NULL`,
-      roomName, winnerId,
-    );
-    if (claimed === 0) return;   // the other side's disconnect is already settling it
-
     await completeCompetitiveMatch(
       roomName, winnerId,
       "The other debater left the round. Leaving forfeits, whatever the bar said.",
@@ -2369,13 +2399,18 @@ app.post("/api/deck/position", async (req, res) => {
 app.get("/api/rapid/aftermath/:roomName", async (req, res) => {
   try {
     const userId = actorId(req)!;
-    const room = await prisma.room.findUnique({
-      where: { name: req.params.roomName },
-      select: { matchConfig: true },
-    } as any) as { matchConfig: string | null } | null;
-    if (!room?.matchConfig) return res.status(404).json({ error: "No such round" });
+    // matchConfig is a raw-SQL column, NOT in the Prisma schema — every other
+    // reader gets it through $queryRawUnsafe, and prisma.room.findUnique({
+    // select: { matchConfig } }) throws a validation error. This endpoint broke
+    // that rule and 500'd on every call.
+    const roomRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(
+      `SELECT "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`,
+      req.params.roomName,
+    );
+    const matchConfig = roomRows[0]?.matchConfig ?? null;
+    if (!matchConfig) return res.status(404).json({ error: "No such round" });
 
-    const cfg = JSON.parse(room.matchConfig);
+    const cfg = JSON.parse(matchConfig);
     if (!cfg?.isRapid || !cfg.propositionId) return res.json({ proposition: null });
     // Only the two people who argued it get asked.
     if (userId !== cfg.challengerId && userId !== cfg.challengedId) {

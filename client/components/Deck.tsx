@@ -44,6 +44,10 @@ export default function Deck({ userId }: { userId: string }) {
   const [gate, setGate] = useState(10);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
+  // A failed request is NOT an empty deck. Without this, a 500 or an expired
+  // session parses to { cards: undefined } -> [] and renders "no claims are
+  // live" — telling someone their deck is empty when the request simply broke.
+  const [error, setError] = useState(false);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const fetching = useRef(false);
   // Furthest card reached. Anything behind it has already been answered, so
@@ -61,8 +65,12 @@ export default function Deck({ userId }: { userId: string }) {
     fetching.current = true;
     try {
       const r = await api(`${SERVER}/api/deck?userId=${encodeURIComponent(userId)}&limit=20`);
+      // A non-ok response is a broken request, not an empty deck. Surface it as
+      // an error and leave whatever's on screen; never let it read as "done".
+      if (!r.ok) { setError(true); return; }
       const d = await r.json();
       const fresh: Card[] = d?.cards ?? [];
+      setError(false);
       setPositioned(d?.positioned ?? 0);
       setGate(d?.gate ?? 10);
       if (replace) {
@@ -78,9 +86,15 @@ export default function Deck({ userId }: { userId: string }) {
           return [...prev, ...fresh.filter(c => !have.has(c.id))];
         });
       }
-    } catch { /* leave what's on screen */ }
+    } catch {
+      setError(true);   // network failure — same: not an empty deck
+    }
     finally { fetching.current = false; setLoading(false); }
   }, [userId]);
+
+  const retry = useCallback(() => {
+    setError(false); setLoading(true); load(true);
+  }, [load]);
 
   useEffect(() => { load(true); }, [load]);
 
@@ -148,6 +162,24 @@ export default function Deck({ userId }: { userId: string }) {
 
   if (loading) {
     return <div className="py-24 text-center text-sm text-gray-500 dark:text-gray-400">Dealing the deck…</div>;
+  }
+
+  // Distinct from the empty state, and only when there's nothing already on
+  // screen to keep interacting with — a refill failing mid-session shouldn't
+  // yank the current card away.
+  if (error && !card) {
+    return (
+      <div className="mx-auto max-w-lg py-20 text-center">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Couldn&rsquo;t load the deck</h3>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-gray-600 dark:text-gray-400">
+          Something went wrong reaching the server — this isn&rsquo;t an empty deck.
+        </p>
+        <button onClick={retry}
+          className="mt-6 rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-500">
+          Try again
+        </button>
+      </div>
+    );
   }
 
   if (done || !card) {
