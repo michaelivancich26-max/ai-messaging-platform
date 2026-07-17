@@ -1942,10 +1942,43 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
   }
 }
 
+// Settling a match is a privilege of the two people in it.
+//
+// The /api gate proves the caller is somebody; it does not make them somebody
+// in THIS match. Without the check below any signed-in user could post another
+// pair's roomName with a forcedWinner and hand out the win — which is also the
+// whole of the forfeit / mutual-move-on rules undone, since those only bind the
+// people the round is actually between.
+//
+// The internal Rapid paths (forfeitRapidRound, settleRapidOnBar) call
+// completeCompetitiveMatch directly rather than coming back through HTTP, so the
+// server can still settle a round nobody is left to settle.
 app.post("/api/competitive/complete", async (req, res) => {
   try {
     const { roomName, forcedWinner } = req.body as { roomName: string; forcedWinner?: string };
     if (!roomName) return res.status(400).json({ error: "roomName required" });
+
+    const caller = actorId(req)!;
+    const partyRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "challengerId", "challengedId" FROM "CompetitiveMatch" WHERE "roomName" = $1 LIMIT 1`, roomName,
+    );
+    if (partyRows.length === 0) return res.status(404).json({ error: "Match not found" });
+    const { challengerId, challengedId } = partyRows[0];
+    if (caller !== challengerId && caller !== challengedId) {
+      return res.status(403).json({ error: "Only a debater in this match can complete it" });
+    }
+
+    // forcedWinner exists to say "I'm walking, give it to them". So the only
+    // winner you may name is your OPPONENT. Being in the match is not licence to
+    // award yourself the round and skip the judge — without this, a participant
+    // could still take any match they were losing.
+    if (forcedWinner !== undefined) {
+      const opponent = caller === challengerId ? challengedId : challengerId;
+      if (forcedWinner !== opponent) {
+        return res.status(403).json({ error: "You can only forfeit to your opponent, not declare a winner" });
+      }
+    }
+
     const payload = await completeCompetitiveMatch(roomName, forcedWinner);
     if (!payload) return res.status(404).json({ error: "Match not found" });
     res.json(payload);
@@ -2989,6 +3022,26 @@ app.post("/api/team/complete", async (req, res) => {
     const teamB: string[] = JSON.parse(match.teamB);
     const eloBefore: Record<string, number> = JSON.parse(match.eloBefore ?? "{}");
 
+    // Same rule as the 1v1: only the people in the match may end it. teamA and
+    // teamB are the accepted ChallengeMember roster frozen onto the TeamMatch
+    // row when it started, so they are the participant list — a spectator's
+    // client never posts here, and a stranger's has no business to.
+    const caller = actorId(req)!;
+    const callerSide = teamA.includes(caller) ? "A" : teamB.includes(caller) ? "B" : null;
+    if (!callerSide) {
+      return res.status(403).json({ error: "Only a debater in this match can complete it" });
+    }
+
+    // You may only forfeit your OWN side. Naming anyone on the other team would
+    // be handing yourself the match, so the id has to sit on the caller's side —
+    // which permits the client's own "I forfeit" and nothing else.
+    if (forfeitUserId !== undefined) {
+      const forfeitSide = teamA.includes(forfeitUserId) ? "A" : teamB.includes(forfeitUserId) ? "B" : null;
+      if (forfeitSide !== callerSide) {
+        return res.status(403).json({ error: "You can only forfeit your own side" });
+      }
+    }
+
     // Idempotent
     if (match.status === "complete") {
       const eloAfter: Record<string, number> = JSON.parse(match.eloAfter ?? "{}");
@@ -3632,7 +3685,13 @@ async function buildProfilePayload(
   return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, ...(cred ? { cred } : {}) };
 }
 
-// GET /api/users/:id/profile — full profile (includes account fields)
+// GET /api/users/:id/profile — profile; account fields only for the owner
+//
+// Other people's profiles are legitimately readable — UserProfileModal opens
+// this for whoever you clicked — so the fix is not to lock the route to the
+// owner, it's to stop handing a stranger the account fields. This used to pass
+// includePrivate: true unconditionally, which returned email and emailVerified
+// for any id an authenticated caller cared to enumerate.
 app.get("/api/users/:id/profile", async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -3640,7 +3699,7 @@ app.get("/api/users/:id/profile", async (req, res) => {
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json(await buildProfilePayload(user, true));
+    res.json(await buildProfilePayload(user, actorId(req) === user.id));
   } catch (e) {
     console.error("[profile GET]", e);
     res.status(500).json({ error: "Server error" });
@@ -3702,8 +3761,16 @@ app.get("/api/users/:id/matches", async (req, res) => {
   }
 });
 
-// PATCH /api/users/:id/profile
+// PATCH /api/users/:id/profile — the owner only
+//
+// The write target came from the path param and was never compared to the
+// caller, so any signed-in user could rewrite anyone's bio, avatar and medals
+// by changing the id in the URL. The :id stays in the path because the client
+// builds the URL that way, but it is now checked, not obeyed.
 app.patch("/api/users/:id/profile", async (req, res) => {
+  if (actorId(req) !== req.params.id) {
+    return res.status(403).json({ error: "You can only edit your own profile" });
+  }
   const { bio, avatarUrl, featuredMedals } = req.body as { bio?: string; avatarUrl?: string; featuredMedals?: string[] };
   try {
     const user = await prisma.user.update({
