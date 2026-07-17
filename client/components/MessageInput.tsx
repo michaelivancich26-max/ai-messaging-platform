@@ -148,7 +148,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
   if (disabled) {
     return (
       <div className="pb-safe border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 px-4 py-4">
-        <div className="flex items-center gap-3 rounded-xl bg-gray-100/60 dark:bg-gray-800/60 px-4 py-3 ring-1 ring-gray-300/40 dark:ring-gray-700/40">
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 dark:border-gray-800 dark:bg-gray-800/60">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400">
             <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
           </svg>
@@ -175,24 +175,24 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
 
         {/* @mention autocomplete dropdown */}
         {mentionQuery !== null && mentionSuggestions.length > 0 && (
-          <div className="absolute bottom-full left-16 mb-2 w-56 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 shadow-xl">
+          <div className="absolute bottom-full left-16 mb-2 w-56 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 py-1 shadow-elevated">
             {mentionSuggestions.map((s, i) => (
               <button
                 key={s.id}
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); insertMention(s); }}
-                className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-800 dark:text-gray-200 transition-colors ${i === mentionIndex ? "bg-violet-100 dark:bg-violet-950/60" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-800 dark:text-gray-200 transition-colors ${i === mentionIndex ? "bg-emerald-50 dark:bg-emerald-950/40" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}
               >
                 {s.isAI ? (
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">C</span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-green-ink text-[11px] font-bold text-white">C</span>
                 ) : (
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-700 text-[11px] font-bold text-gray-700 dark:text-gray-300">
                     {s.username[0]?.toUpperCase()}
                   </span>
                 )}
                 <span>
-                  <span className={`font-medium ${s.isAI ? "text-violet-700 dark:text-violet-300" : "text-gray-800 dark:text-gray-200"}`}>@{s.username}</span>
-                  {s.isAI && <span className="ml-1.5 text-xs text-gray-500">· AI assistant</span>}
+                  <span className={`font-medium ${s.isAI ? "text-brand-green-ink dark:text-brand-green" : "text-gray-800 dark:text-gray-200"}`}>@{s.username}</span>
+                  {s.isAI && <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400">· AI assistant</span>}
                 </span>
               </button>
             ))}
@@ -203,7 +203,7 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
         <button
           type="button"
           onClick={() => { setImageError(""); fileRef.current?.click(); }}
-          className="shrink-0 rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          className="shrink-0 rounded-xl p-2.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           title="Send image"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
@@ -218,12 +218,12 @@ export default function MessageInput({ onSend, onTyping, onStopTyping, disabled,
           onKeyDown={handleKeyDown}
           placeholder="Message… (Enter to send, @ to mention)"
           rows={1}
-          className="flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-2.5 text-base md:text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+          className="flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-2.5 text-base md:text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-2 focus:ring-brand-green"
           style={{ maxHeight: "8rem", overflowY: "auto" }}
         />
         <button
           type="submit"
-          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-40"
+          className="rounded-xl bg-orange-700 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40 disabled:shadow-none"
           disabled={!value.trim()}
         >
           Send

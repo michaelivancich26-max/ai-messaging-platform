@@ -17,7 +17,7 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <p className="text-center text-red-600 dark:text-red-400">
+      <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-center text-sm font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
         Invalid reset link. Please request a new one from the login page.
       </p>
     );
@@ -56,17 +56,17 @@ function ResetPasswordForm() {
 
   if (done) {
     return (
-      <div className="text-center space-y-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 mx-auto">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-7 w-7 text-emerald-600 dark:text-emerald-400">
+      <div className="animate-fadeIn space-y-4 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-green/15">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-7 w-7 text-brand-green-ink dark:text-brand-green">
             <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Password updated</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400">You can now sign in with your new password.</p>
+        <h2 className="font-display text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Password updated</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-300">You can now sign in with your new password.</p>
         <button
           onClick={() => router.push("/")}
-          className="mt-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
+          className="mt-2 rounded-xl bg-orange-700 px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.99] motion-reduce:active:scale-100"
         >
           Go to sign in
         </button>
@@ -77,7 +77,7 @@ function ResetPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">New password</label>
+        <label className="mb-1.5 block text-xs font-medium text-gray-700 dark:text-gray-300">New password</label>
         <div className="relative">
           <input
             type={show ? "text" : "password"}
@@ -85,13 +85,13 @@ function ResetPasswordForm() {
             onChange={e => setPassword(e.target.value)}
             required
             minLength={8}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2.5 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 pr-10 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-green focus:ring-2 focus:ring-brand-green/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
             placeholder="Min. 8 characters"
           />
           <button
             type="button"
             onClick={() => setShow(v => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             {show ? (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -109,23 +109,23 @@ function ResetPasswordForm() {
       </div>
 
       <div>
-        <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">Confirm password</label>
+        <label className="mb-1.5 block text-xs font-medium text-gray-700 dark:text-gray-300">Confirm password</label>
         <input
           type={show ? "text" : "password"}
           value={confirm}
           onChange={e => setConfirm(e.target.value)}
           required
-          className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-green focus:ring-2 focus:ring-brand-green/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
           placeholder="Repeat new password"
         />
       </div>
 
-      {error && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+        className="w-full rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.99] disabled:opacity-50 motion-reduce:active:scale-100"
       >
         {loading ? "Updating…" : "Set new password"}
       </button>
@@ -135,11 +135,11 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 bg-gray-50 dark:bg-gray-950">
-      <div className="w-full max-w-sm rounded-2xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-8 shadow-xl">
-        <h1 className="mb-1 text-xl font-bold text-gray-900 dark:text-gray-100">Set a new password</h1>
-        <p className="mb-6 text-sm text-gray-500">Choose something strong and memorable.</p>
-        <Suspense fallback={<p className="text-sm text-gray-500">Loading…</p>}>
+    <main className="flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 dark:bg-gray-950">
+      <div className="w-full max-w-sm animate-fadeInUp rounded-2xl border border-gray-200 bg-white p-8 shadow-hero dark:border-gray-800 dark:bg-gray-900">
+        <h1 className="mb-1.5 font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Set a new password</h1>
+        <p className="mb-6 text-sm text-gray-600 dark:text-gray-300">Choose something strong and memorable.</p>
+        <Suspense fallback={<p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}>
           <ResetPasswordForm />
         </Suspense>
       </div>

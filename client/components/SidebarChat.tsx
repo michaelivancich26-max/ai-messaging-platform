@@ -22,11 +22,11 @@ function SidebarBubble({ msg, isSelf }: { msg: ChatMessage; isSelf: boolean }) {
     <div className={`flex items-end gap-1.5 ${isSelf ? "flex-row-reverse" : "flex-row"}`}>
       {!isSelf && <Avatar username={username} avatarUrl={avatarUrl} size={6} />}
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
-        <span className="mb-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+        <span className="mb-0.5 text-[11px] text-gray-500 dark:text-gray-400">
           {isSelf ? "You" : username} · {time}
         </span>
         <div className={`max-w-[200px] rounded-xl px-3 py-1.5 text-xs leading-relaxed ${
-          isSelf ? "rounded-tr-sm bg-indigo-600 text-white" : "rounded-tl-sm bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+          isSelf ? "rounded-tr-sm bg-orange-700 text-white" : "rounded-tl-sm bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
         }`}>
           {msg.content}
         </div>
@@ -61,11 +61,9 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
     inputRef.current!.value = "";
   }
 
-  const accentClass = isSpectator ? "bg-cyan-500" : "bg-gray-400 dark:bg-gray-500";
-  const ringFocus = isSpectator ? "focus-within:ring-cyan-500" : "focus-within:ring-indigo-500";
-  const sendBtnClass = isSpectator
-    ? "bg-cyan-600 hover:bg-cyan-500"
-    : "bg-indigo-600 hover:bg-indigo-500";
+  const accentClass = isSpectator ? "bg-brand-green" : "bg-gray-400 dark:bg-gray-500";
+  const ringFocus = "focus-within:ring-brand-green";
+  const sendBtnClass = "bg-orange-700 hover:bg-orange-600";
 
   return (
     <div className="flex w-full md:w-72 shrink-0 flex-col border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
@@ -73,10 +71,10 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
       <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 py-2.5">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${accentClass}`} />
-          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 truncate">
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">
             {isSpectator ? "Spectator chat" : "Side chat"}
           </span>
-          <span className="ml-1 text-[10px] text-gray-500 dark:text-gray-400 truncate">
+          <span className="ml-1 text-[11px] text-gray-500 dark:text-gray-400 truncate">
             {isSpectator ? "· audience only" : "· free from floor rules"}
           </span>
         </div>
@@ -94,7 +92,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && (
-          <p className="text-center text-[10px] text-gray-500 dark:text-gray-400 pt-4">
+          <p className="text-center text-[11px] text-gray-500 dark:text-gray-400 pt-4">
             {isSpectator
               ? "Spectator chat — audience reactions and commentary"
               : "Side chat — say anything while the debate is in progress"}
@@ -113,7 +111,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
       {/* Input */}
       <div className="pb-safe shrink-0 border-t border-gray-200 dark:border-gray-800 px-2 py-2">
         {readOnly ? (
-          <p className="px-2 py-1.5 text-[10px] text-gray-500 dark:text-gray-400 text-center">
+          <p className="px-2 py-1.5 text-[11px] text-gray-500 dark:text-gray-400 text-center">
             Only spectators can write here
           </p>
         ) : (
@@ -127,7 +125,7 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
             />
             <button
               onClick={handleSendClick}
-              className={`shrink-0 rounded-md ${sendBtnClass} px-2 py-0.5 text-[10px] font-semibold text-white transition-colors`}
+              className={`shrink-0 rounded-md ${sendBtnClass} px-2 py-0.5 text-[11px] font-semibold text-white transition-colors active:scale-[0.98] motion-reduce:active:scale-100`}
             >
               Send
             </button>

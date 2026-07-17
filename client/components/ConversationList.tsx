@@ -19,7 +19,19 @@ interface UserResult { id: string; username: string; avatarUrl?: string | null }
 function Avatar({ user, className = "h-9 w-9" }: { user: { username: string; avatarUrl?: string | null }; className?: string }) {
   return user.avatarUrl
     ? <img src={user.avatarUrl} alt={user.username} className={`${className} shrink-0 rounded-full object-cover`} />
-    : <span className={`${className} flex shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-600 dark:text-violet-400`}>{user.username[0]?.toUpperCase()}</span>;
+    : <span className={`${className} flex shrink-0 items-center justify-center rounded-full bg-brand-green/15 text-sm font-bold text-brand-green-ink dark:text-brand-green`}>{user.username[0]?.toUpperCase()}</span>;
+}
+
+function ConvoSkeletonRow() {
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5">
+      <div className="shimmer-track h-9 w-9 shrink-0 rounded-full bg-gray-100 dark:bg-gray-800" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="shimmer-track h-3 w-24 rounded bg-gray-100 dark:bg-gray-800" />
+        <div className="shimmer-track h-2.5 w-40 max-w-full rounded bg-gray-100 dark:bg-gray-800" />
+      </div>
+    </div>
+  );
 }
 
 function timeAgo(iso: string): string {
@@ -73,7 +85,7 @@ export default function ConversationList({ userId }: { userId: string }) {
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 px-4 pt-4 pb-3">
-        <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Messages</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Messages</h1>
       </div>
 
       <div className="shrink-0 px-3 pb-3">
@@ -82,14 +94,14 @@ export default function ConversationList({ userId }: { userId: string }) {
             <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
           </svg>
           <input ref={inputRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people…"
-            className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 py-1.5 pl-8 pr-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+            className="w-full rounded-xl bg-gray-100 dark:bg-gray-800 py-2 pl-8 pr-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green" />
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto pb-2">
         {searching ? (
           results.length === 0
-            ? <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">No users found</p>
+            ? <p className="px-4 py-6 text-center text-xs text-gray-500 dark:text-gray-400">No users found</p>
             : results.map((u) => (
               <button key={u.id} onClick={() => open(u.username)}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
@@ -98,26 +110,38 @@ export default function ConversationList({ userId }: { userId: string }) {
               </button>
             ))
         ) : loading ? (
-          <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">Loading…</p>
+          <div className="animate-fadeIn">
+            {[0, 1, 2, 3, 4].map((i) => <ConvoSkeletonRow key={i} />)}
+          </div>
         ) : convos.length === 0 ? (
-          <p className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">No conversations yet. Search for someone to start one.</p>
+          <div className="flex flex-col items-center gap-3 px-6 py-12 text-center animate-fadeIn">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6">
+                <path fillRule="evenodd" d="M10 2c-2.236 0-4.43.18-6.57.524C1.993 2.755 1 4.014 1 5.426v5.148c0 1.413.993 2.67 2.43 2.902.848.137 1.705.248 2.57.331v3.443a.75.75 0 0 0 1.28.53l3.58-3.579a.78.78 0 0 1 .527-.224 41.202 41.202 0 0 0 5.183-.501c1.437-.232 2.43-1.49 2.43-2.902V5.426c0-1.412-.993-2.67-2.43-2.902A41.289 41.289 0 0 0 10 2Z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-display text-sm font-bold text-gray-900 dark:text-white">No conversations yet</p>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">Search for someone above to start one.</p>
+            </div>
+          </div>
         ) : convos.map((c) => {
           const active = c.partner.username.toLowerCase() === activeUser;
           return (
             <button key={c.roomName} onClick={() => open(c.partner.username)}
-              className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${active ? "bg-indigo-50 dark:bg-indigo-950/40" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}>
+              className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${active ? "bg-brand-green/10 dark:bg-brand-green/15" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}>
               <Avatar user={c.partner} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
                   <span className={`truncate text-sm ${c.unread > 0 ? "font-bold text-gray-900 dark:text-gray-100" : "font-medium text-gray-800 dark:text-gray-200"}`}>{c.partner.username}</span>
-                  <span className="ml-auto shrink-0 text-[10px] text-gray-500 dark:text-gray-400">{timeAgo(c.lastActivity)}</span>
+                  <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">{timeAgo(c.lastActivity)}</span>
                 </div>
                 <p className={`truncate text-xs ${c.unread > 0 ? "text-gray-700 dark:text-gray-300" : "text-gray-500 dark:text-gray-400"}`}>
                   {c.lastMessage ? `${c.lastMessage.mine ? "You: " : ""}${c.lastMessage.content}` : "No messages yet"}
                 </p>
               </div>
               {c.unread > 0 && (
-                <span className="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{c.unread > 99 ? "99+" : c.unread}</span>
+                <span className="shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-bold text-white">{c.unread > 99 ? "99+" : c.unread}</span>
               )}
             </button>
           );

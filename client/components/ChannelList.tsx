@@ -146,14 +146,14 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
             onKeyDown={e => { if (e.key === "Enter") renameItem(); if (e.key === "Escape") setRenaming(null); }}
             onBlur={renameItem}
             title={renameError ?? undefined}
-            className={`mx-2 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ${renameError ? "ring-red-500" : "ring-indigo-500"}`} />
+            className={`mx-2 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ${renameError ? "ring-red-500" : "ring-brand-green"}`} />
         ) : (
           <button onClick={() => onSelectChannel(ch)}
             className={`flex flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors
-              ${isActive ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"}`}>
-            <span className="text-gray-500">#</span>
+              ${isActive ? "bg-brand-green/10 dark:bg-brand-green/15 text-brand-green-ink dark:text-brand-green font-semibold" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"}`}>
+            <span className={isActive ? "text-brand-green-ink/70 dark:text-brand-green/70" : "text-gray-400 dark:text-gray-500"}>#</span>
             <span className="truncate">{ch.name}</span>
-            {ch.isOpinionated && <span className="ml-auto shrink-0 h-1.5 w-1.5 rounded-full bg-amber-400" title="Opinions mode" />}
+            {ch.isOpinionated && <span className="ml-auto shrink-0 h-1.5 w-1.5 rounded-full bg-amber-400 dark:bg-amber-500" title="Opinions mode" />}
           </button>
         )}
         {canEdit && !isRenaming && (
@@ -191,10 +191,10 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
       {/* Unsectioned channels */}
       <div className="mb-1">
         <div className="flex items-center px-2 py-0.5">
-          <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">Channels</span>
+          <span className="flex-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Channels</span>
           {canEdit && (
             <button onClick={() => setAddingChannelToSection("root")}
-              className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" title="Add channel">
+              className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-orange-700 dark:hover:text-orange-400" title="Add channel">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
               </svg>
@@ -209,9 +209,9 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                 onKeyDown={e => { if (e.key === "Enter") addChannel(null); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
                 onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
                 placeholder="channel-name"
-                className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400" />
+                className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-brand-green placeholder-gray-500 dark:placeholder-gray-400" />
               <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(null)}
-                className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500">✓</button>
+                className="shrink-0 rounded bg-orange-700 px-2 py-1 text-xs text-white hover:bg-orange-600">✓</button>
             </div>
           )}
         </div>
@@ -226,7 +226,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
         return (
           <div key={sec.id} className="mb-1">
             <div className="group flex items-center px-2 py-0.5">
-              <button onClick={() => toggleSection(sec.id)} className="mr-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+              <button onClick={() => toggleSection(sec.id)} className="mr-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
                   className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}>
                   <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
@@ -239,15 +239,15 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                   onKeyDown={e => { if (e.key === "Enter") renameItem(); if (e.key === "Escape") setRenaming(null); }}
                   onBlur={renameItem}
                   title={renameError ?? undefined}
-                  className={`flex-1 rounded bg-gray-200 dark:bg-gray-700 px-1 py-0.5 text-[10px] font-bold uppercase tracking-wider outline-none ring-1 ${renameError ? "ring-red-500" : "ring-indigo-500"}`} />
+                  className={`flex-1 rounded bg-gray-200 dark:bg-gray-700 px-1 py-0.5 text-[11px] font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 outline-none ring-1 ${renameError ? "ring-red-500" : "ring-brand-green"}`} />
               ) : (
-                <span className="flex-1 truncate text-[10px] font-bold uppercase tracking-wider text-gray-500">{sec.name}</span>
+                <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{sec.name}</span>
               )}
 
               {canEdit && !isRenamingSection && (
                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 md:opacity-0 max-md:opacity-100">
                   <button onClick={() => setAddingChannelToSection(sec.id)}
-                    className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400">
+                    className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-orange-700 dark:hover:text-orange-400">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                       <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
                     </svg>
@@ -277,9 +277,9 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                       onKeyDown={e => { if (e.key === "Enter") addChannel(sec.id); if (e.key === "Escape") { setAddingChannelToSection(null); setNewChannelName(""); } }}
                       onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
                       placeholder="channel-name"
-                      className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400" />
+                      className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-brand-green placeholder-gray-500 dark:placeholder-gray-400" />
                     <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(sec.id)}
-                      className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-500">✓</button>
+                      className="shrink-0 rounded bg-orange-700 px-2 py-1 text-xs text-white hover:bg-orange-600">✓</button>
                   </div>
                 )}
               </div>
@@ -292,10 +292,10 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
       {sidebarChs.length > 0 && (
         <div className="mb-1 mt-2">
           <div className="flex items-center px-2 py-0.5 gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5 shrink-0 text-gray-500">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5 shrink-0 text-gray-400 dark:text-gray-500">
               <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v5A1.5 1.5 0 0 0 2.5 11H5v1.5a.5.5 0 0 0 .82.385l2.235-1.886H13.5A1.5 1.5 0 0 0 15 9.5v-5A1.5 1.5 0 0 0 13.5 3h-11Z" clipRule="evenodd" />
             </svg>
-            <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">Side chat</span>
+            <span className="flex-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Side chat</span>
           </div>
           <div className="space-y-0.5 px-1">
             {sidebarChs.map(ch => {
@@ -306,14 +306,14 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                   key={ch.id}
                   onClick={() => onSelectChannel(ch)}
                   className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors ${
-                    isActive ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
+                    isActive ? "bg-brand-green/10 dark:bg-brand-green/15 text-brand-green-ink dark:text-brand-green font-semibold" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
                   }`}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 shrink-0 text-gray-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={`h-3 w-3 shrink-0 ${isActive ? "text-brand-green-ink/70 dark:text-brand-green/70" : "text-gray-400 dark:text-gray-500"}`}>
                     <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v5A1.5 1.5 0 0 0 2.5 11H5v1.5a.5.5 0 0 0 .82.385l2.235-1.886H13.5A1.5 1.5 0 0 0 15 9.5v-5A1.5 1.5 0 0 0 13.5 3h-11Z" clipRule="evenodd" />
                   </svg>
                   <span className="truncate">{parentCh ? `#${parentCh.name}` : ch.name}</span>
-                  <span className="ml-auto shrink-0 text-[9px] text-gray-500 dark:text-gray-400">side chat</span>
+                  <span className="ml-auto shrink-0 text-[11px] text-gray-500 dark:text-gray-400">side chat</span>
                 </button>
               );
             })}
@@ -325,10 +325,10 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
       {subDebateChannels.length > 0 && (
         <div className="mb-1 mt-2">
           <div className="flex items-center px-2 py-0.5 gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5 shrink-0 text-amber-600">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-2.5 w-2.5 shrink-0 text-gray-400 dark:text-gray-500">
               <path d="M3 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 1.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM3 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM11.5 11.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z" />
             </svg>
-            <span className="flex-1 text-[10px] font-bold uppercase tracking-wider text-amber-700/80">Contentions</span>
+            <span className="flex-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Contentions</span>
           </div>
           <div className="space-y-0.5 px-1">
             {subDebateChannels.map(ch => {
@@ -338,17 +338,17 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                   <button
                     onClick={() => onSelectChannel(ch)}
                     className={`flex flex-1 flex-col rounded-md px-2 py-1.5 text-left transition-colors ${
-                      isActive ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200" : "text-gray-600 dark:text-gray-400 hover:bg-amber-100 dark:hover:bg-amber-950/20 hover:text-amber-700 dark:hover:text-amber-300"
+                      isActive ? "bg-brand-green/10 dark:bg-brand-green/15 text-brand-green-ink dark:text-brand-green" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className={`h-2.5 w-2.5 shrink-0 ${isActive ? "text-amber-600 dark:text-amber-400" : "text-amber-700"}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="currentColor" className={`h-2.5 w-2.5 shrink-0 ${isActive ? "text-brand-green-ink dark:text-brand-green" : "text-gray-400 dark:text-gray-500"}`}>
                         <path fillRule="evenodd" d="M3 1a1 1 0 0 0-1 1v2.586l-.293-.293a1 1 0 1 0-1.414 1.414L2 7.414V10a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7.414l1.707-1.707a1 1 0 0 0-1.414-1.414L11 4.586V2a1 1 0 0 0-1-1H3Z" clipRule="evenodd" />
                       </svg>
                       <span className="truncate text-[11px] font-medium">{ch.proposition ?? ch.name}</span>
                     </div>
                     {ch.parentMessagePreview && (
-                      <p className="mt-0.5 pl-4 text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 italic">↑ "{ch.parentMessagePreview}"</p>
+                      <p className="mt-0.5 pl-4 text-[11px] text-gray-500 dark:text-gray-400 line-clamp-1 italic">↑ "{ch.parentMessagePreview}"</p>
                     )}
                   </button>
                   {canEdit && (
@@ -376,10 +376,10 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
               onKeyDown={e => { if (e.key === "Enter") addSection(); if (e.key === "Escape") { setAddingSection(false); setNewSectionName(""); } }}
               onBlur={() => { if (!newSectionName.trim()) setAddingSection(false); }}
               placeholder="Section name"
-              className="w-full rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 placeholder-gray-500 dark:placeholder-gray-400" />
+              className="w-full rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-brand-green placeholder-gray-500 dark:placeholder-gray-400" />
           ) : (
             <button onClick={() => setAddingSection(true)}
-              className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-400 transition-colors">
+              className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                 <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
               </svg>

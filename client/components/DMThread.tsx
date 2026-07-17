@@ -118,9 +118,17 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
 
   if (error) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center animate-fadeIn">
+        <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-6 w-6">
+            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+          </svg>
+        </div>
         <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
-        <button onClick={() => router.push("/messages")} className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">Back to Messages</button>
+        <button onClick={() => router.push("/messages")}
+          className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50">
+          Back to Messages
+        </button>
       </div>
     );
   }
@@ -136,7 +144,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
           <button onClick={() => router.push(`/u/${partner.username}`)} className="flex items-center gap-2.5 text-left">
             {partner.avatarUrl
               ? <img src={partner.avatarUrl} alt={partner.username} className="h-8 w-8 shrink-0 rounded-full object-cover" />
-              : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-600 dark:text-violet-400">{partner.username[0]?.toUpperCase()}</span>}
+              : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-green/15 text-sm font-bold text-brand-green-ink dark:text-brand-green">{partner.username[0]?.toUpperCase()}</span>}
             <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{partner.username}</span>
           </button>
         )}
@@ -145,7 +153,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
-          <p className="py-12 text-center text-xs text-gray-500 dark:text-gray-400">
+          <p className="py-12 text-center text-sm text-gray-600 dark:text-gray-400">
             No messages yet. Say something to {partner?.username ?? "them"}.
           </p>
         ) : (
@@ -155,10 +163,10 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
               return (
                 <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${mine
-                    ? "bg-indigo-600 text-white"
-                    : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"}`}>
-                    <p className="whitespace-pre-wrap break-words text-sm">{m.content}</p>
-                    <p className={`mt-0.5 text-[10px] ${mine ? "text-indigo-200" : "text-gray-500 dark:text-gray-400"}`}>{stamp(m.createdAt)}</p>
+                    ? "rounded-tr-sm bg-orange-700 text-white shadow-sm"
+                    : "rounded-tl-sm bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"}`}>
+                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{m.content}</p>
+                    <p className={`mt-0.5 text-[11px] ${mine ? "text-orange-100" : "text-gray-500 dark:text-gray-400"}`}>{stamp(m.createdAt)}</p>
                   </div>
                 </div>
               );
@@ -177,10 +185,10 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             rows={1}
             placeholder={partner ? `Message ${partner.username}…` : "Message…"}
-            className="max-h-32 flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+            className="max-h-32 flex-1 resize-none rounded-xl bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green"
           />
           <button onClick={send} disabled={!draft.trim() || !roomName}
-            className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-40">
+            className="shrink-0 rounded-xl bg-orange-700 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.98] motion-reduce:active:scale-100 disabled:opacity-40">
             Send
           </button>
         </div>

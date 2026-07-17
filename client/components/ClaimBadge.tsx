@@ -38,14 +38,14 @@ export default function ClaimBadge({ claim, canChallenge, onChallenge }: Props) 
         </button>
 
         {claim.status !== "PENDING" && claim.score != null && (
-          <span className="rounded-full border border-gray-300 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:text-gray-400 tabular-nums">
+          <span className="rounded-full border border-gray-300 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:text-gray-300 tabular-nums">
             {Math.round(claim.score)}<span className="font-normal text-gray-500 dark:text-gray-400">/100</span>
           </span>
         )}
         {claim.status !== "PENDING" && canChallenge && (
           <button
             onClick={() => onChallenge(claim.id)}
-            className="rounded-full border border-gray-300 dark:border-gray-700 px-2 py-0.5 text-[10px] text-gray-500 hover:border-gray-300 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="rounded-full border border-gray-300 dark:border-gray-700 px-2 py-0.5 text-[11px] text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             Challenge{claim.challengeCount > 0 ? ` · ${claim.challengeCount}` : ""}
           </button>

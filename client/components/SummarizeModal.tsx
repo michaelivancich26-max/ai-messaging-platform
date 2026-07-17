@@ -39,9 +39,9 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-900 p-5 shadow-2xl ring-1 ring-gray-200 dark:ring-gray-800">
-        <h3 className="mb-1 text-sm font-semibold text-gray-900 dark:text-gray-100">Summarize conversation</h3>
-        <p className="mb-4 text-xs text-gray-500">Choose a time frame to summarize.</p>
+      <div className="fixed left-1/2 top-1/2 z-50 w-80 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white dark:bg-gray-900 p-5 shadow-elevated ring-1 ring-gray-200 dark:ring-gray-800 animate-fadeIn">
+        <h3 className="mb-1 font-display text-base font-bold text-gray-900 dark:text-gray-100">Summarize conversation</h3>
+        <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">Choose a time frame to summarize.</p>
 
         <div className="space-y-2">
           {PRESETS.map((p) => (
@@ -50,7 +50,7 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
               onClick={() => setSelected(p.minutes)}
               className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors ${
                 selected === p.minutes
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-emerald-50 text-brand-green-ink ring-1 ring-inset ring-brand-green/50 dark:bg-emerald-950/40 dark:text-brand-green"
                   : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
               }`}
             >
@@ -68,7 +68,7 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
             onClick={() => setSelected("custom")}
             className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors ${
               selected === "custom"
-                ? "bg-indigo-600 text-white"
+                ? "bg-emerald-50 text-brand-green-ink ring-1 ring-inset ring-brand-green/50 dark:bg-emerald-950/40 dark:text-brand-green"
                 : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
             }`}
           >
@@ -88,13 +88,13 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
                 value={customValue}
                 onChange={(e) => setCustomValue(e.target.value)}
                 placeholder="e.g. 45"
-                className="w-24 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-24 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-2 focus:ring-brand-green"
                 autoFocus
               />
               <select
                 value={customUnit}
                 onChange={(e) => setCustomUnit(e.target.value as "minutes" | "hours")}
-                className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="flex-1 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-2 focus:ring-brand-green"
               >
                 <option value="minutes">minutes</option>
                 <option value="hours">hours</option>
@@ -113,7 +113,7 @@ export default function SummarizeModal({ onConfirm, onClose }: Props) {
           <button
             onClick={() => { if (isReady()) onConfirm(getSince()); }}
             disabled={!isReady()}
-            className="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+            className="flex-1 rounded-lg bg-orange-700 py-2 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 disabled:opacity-40 disabled:shadow-none"
           >
             Summarize
           </button>

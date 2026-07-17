@@ -81,7 +81,7 @@ function ImageMessage({ payload, isSelf }: { payload: ImagePayload; isSelf: bool
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
               </svg>
             ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-500">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-500 dark:text-gray-400">
                 <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909-.48-.480a.75.75 0 0 0-1.06 0L6.75 13.09l-1.96-1.96a.75.75 0 0 0-1.06 0L2.5 11.06Zm9.25-7.56a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z" clipRule="evenodd" />
               </svg>
             )}
@@ -165,7 +165,7 @@ function ReactionPills({ reactions, messageId, currentUserId, onReact }: {
           onClick={() => onReact?.(messageId, emoji)}
           className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors ${
             iMine
-              ? "bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-500/50 hover:bg-indigo-800/60"
+              ? "bg-emerald-50 text-brand-green-ink ring-1 ring-brand-green/40 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-brand-green dark:ring-brand-green/30 dark:hover:bg-emerald-950/60"
               : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200"
           }`}
         >
@@ -223,14 +223,14 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
             <button
               onClick={() => setShowReactPicker(v => !v)}
               title="React"
-              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-yellow-400 transition-colors"
+              className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-700 dark:hover:text-orange-400 transition-colors"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
                 <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM5 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm7-1a1 1 0 1 0-2 0 1 1 0 0 0 2 0ZM5.5 10a.5.5 0 0 0-.5.5C5 11.4 6.343 12.5 8 12.5s3-1.1 3-2a.5.5 0 0 0-.5-.5h-5Z" />
               </svg>
             </button>
             {showReactPicker && (
-              <div className={`absolute z-20 flex gap-0.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 p-1.5 shadow-xl ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
+              <div className={`absolute z-20 flex gap-0.5 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-1.5 shadow-elevated ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
                 {REACTION_EMOJIS.map(emoji => (
                   <button
                     key={emoji}
@@ -248,7 +248,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => onStakeClaim!(message.id)}
             title="Stake claim"
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-brand-green-ink dark:hover:text-brand-green transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
@@ -259,7 +259,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => onChallengeClaim!(claim!.id)}
             title={`Challenge${claim!.challengeCount > 0 ? ` · ${claim!.challengeCount}` : ""}`}
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-700 dark:hover:text-orange-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
@@ -270,7 +270,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           <button
             onClick={() => onSubDebate!(message.id, message.content)}
             title="Branch into sub-debate"
-            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
+            className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-orange-700 dark:hover:text-orange-400 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
@@ -305,7 +305,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
       <div className="relative md:hidden shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity" ref={moreMenuRef}>
         <button
           onClick={() => setShowMoreMenu(v => !v)}
-          className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+          className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           title="More options"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
@@ -313,7 +313,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
           </svg>
         </button>
         {showMoreMenu && (
-          <div className={`absolute z-30 w-44 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 shadow-xl ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
+          <div className={`absolute z-30 w-44 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 py-1 shadow-elevated ${isSelf ? "right-0 bottom-8" : "left-0 bottom-8"}`}>
             {onReact && !isDeleted && (
               <div className="flex items-center justify-around border-b border-gray-200 dark:border-gray-800 px-2 py-1.5">
                 {REACTION_EMOJIS.map(emoji => (
@@ -330,7 +330,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
                 onClick={() => { onStakeClaim!(message.id); setShowMoreMenu(false); }}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-400">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-brand-green-ink dark:text-brand-green">
                   <path fillRule="evenodd" d="M8 1a.75.75 0 0 1 .697.473l1.203 2.859 3.144.415a.75.75 0 0 1 .415 1.28l-2.275 2.218.537 3.132a.75.75 0 0 1-1.088.79L8 10.56l-2.633 1.607a.75.75 0 0 1-1.088-.79l.537-3.132L2.54 6.027a.75.75 0 0 1 .416-1.28l3.144-.415L7.303 1.473A.75.75 0 0 1 8 1Z" clipRule="evenodd" />
                 </svg>
                 Stake claim
@@ -341,7 +341,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
                 onClick={() => { onChallengeClaim!(claim!.id); setShowMoreMenu(false); }}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-orange-700 dark:text-orange-400">
                   <path d="M3 2a1 1 0 0 0-1 1v10.586l2.293-2.293A1 1 0 0 1 5 11h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3Z" />
                 </svg>
                 Challenge
@@ -352,7 +352,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
                 onClick={() => { onSubDebate!(message.id, message.content); setShowMoreMenu(false); }}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0 text-orange-700 dark:text-orange-400">
                   <path fillRule="evenodd" d="M8.22 4.595a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L10.44 9H5a.75.75 0 0 1-.75-.75v-2.5a.75.75 0 0 1 1.5 0V7.5h4.44L8.22 5.655a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                 </svg>
                 Branch
@@ -413,11 +413,11 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
       {isSelf && actionBar}
 
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
-        <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500">
+        <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
           {isSelf ? "You" : username} · {time}
-          {message.editedAt && <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">edited</span>}
+          {message.editedAt && <span className="text-[11px] text-gray-500 dark:text-gray-400 italic">edited</span>}
           {posConfig && senderPosition !== "NEUTRAL" && (
-            <span className={`rounded-full px-1.5 py-0 text-[9px] font-bold ${posConfig.tag}`}>{senderPosition}</span>
+            <span className={`rounded-full px-1.5 py-0 text-[10px] font-bold ${posConfig.tag}`}>{senderPosition}</span>
           )}
           {credScore && <CredibilityBadge score={credScore} />}
         </span>
@@ -433,23 +433,23 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
               }}
               rows={2}
               autoFocus
-              className="rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-indigo-500 resize-none"
+              className="rounded-xl bg-gray-100 dark:bg-gray-800 px-4 py-2 text-sm text-gray-900 dark:text-gray-100 outline-none ring-1 ring-brand-green resize-none"
               style={{ maxHeight: "8rem", overflowY: "auto" }}
             />
             <div className="flex gap-2 text-xs">
-              <button onClick={submitEdit} className="rounded-lg bg-indigo-600 px-3 py-1 text-white hover:bg-indigo-500">Save</button>
+              <button onClick={submitEdit} className="rounded-lg bg-orange-700 px-3 py-1 font-semibold text-white shadow-glow hover:bg-orange-600">Save</button>
               <button onClick={() => setEditMode(false)} className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700">Cancel</button>
               <span className="text-gray-500 dark:text-gray-400 self-center">Esc to cancel · Enter to save</span>
             </div>
           </div>
         ) : imagePayload ? (
-          <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 rounded-2xl" : ""}`}>
+          <div className={`transition-all duration-300 ${highlighted ? "ring-2 ring-brand-green ring-offset-2 ring-offset-gray-50 dark:ring-offset-gray-950 rounded-2xl" : ""}`}>
             <ImageMessage payload={imagePayload} isSelf={isSelf} />
           </div>
         ) : (
           <div
             className={`max-w-prose rounded-2xl px-4 py-2 text-sm leading-relaxed transition-all duration-300 ${
-              highlighted ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950" : ""
+              highlighted ? "ring-2 ring-brand-green ring-offset-2 ring-offset-gray-50 dark:ring-offset-gray-950" : ""
             } ${isSelf ? `rounded-tr-sm ${selfBubble}` : `rounded-tl-sm ${otherBubble}`}`}
           >
             {message.content}
@@ -477,7 +477,7 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
       {/* Delete confirmation overlay */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowDeleteConfirm(false)}>
-          <div className="rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl ring-1 ring-gray-300 dark:ring-gray-700 w-72" onClick={e => e.stopPropagation()}>
+          <div className="rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-elevated ring-1 ring-gray-200 dark:ring-gray-800 w-72" onClick={e => e.stopPropagation()}>
             <p className="text-sm text-gray-800 dark:text-gray-200 mb-4">Delete this message? This can&apos;t be undone.</p>
             <div className="flex gap-3">
               <button

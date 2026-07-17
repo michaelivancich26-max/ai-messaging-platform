@@ -95,13 +95,13 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div
-        className="relative flex h-full w-full md:w-80 flex-col border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 shadow-2xl overflow-y-auto"
+        className="relative flex h-full w-full md:w-80 flex-col border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-elevated overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 px-4 py-3 shrink-0">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">Room details</span>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+          <span className="font-display font-bold text-gray-900 dark:text-gray-100">Room details</span>
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
               <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
             </svg>
@@ -110,11 +110,11 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
 
         {/* Room info */}
         <div className="border-b border-gray-200 dark:border-gray-800 px-4 py-3">
-          <p className="text-xs font-medium uppercase tracking-wider text-gray-500 mb-1">Room</p>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Room</p>
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">#{meta?.name ?? roomId}</span>
+            <span className="font-display text-base font-bold text-gray-900 dark:text-gray-100">#{meta?.name ?? roomId}</span>
             {meta?.isPrivate && (
-              <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
+              <span className="flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:text-gray-300">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                   <path fillRule="evenodd" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7A1.5 1.5 0 0 0 3 8.5v5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 11.5 7V4.5A3.5 3.5 0 0 0 8 1Zm2 6V4.5a2 2 0 1 0-4 0V7h4Z" clipRule="evenodd" />
                 </svg>
@@ -122,13 +122,13 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
               </span>
             )}
           </div>
-          {meta?.description && <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{meta.description}</p>}
+          {meta?.description && <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{meta.description}</p>}
           {meta?.maxMembers && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Max {meta.maxMembers} members</p>}
         </div>
 
         {/* Online now */}
         <div className="border-b border-gray-200 dark:border-gray-800 px-4 py-3">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Online — {onlineMembers.length}
           </p>
           {onlineMembers.length === 0 ? (
@@ -138,7 +138,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
               {onlineMembers.map((m) => (
                 <li key={m.userId} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                    <span className="h-2 w-2 rounded-full bg-brand-green shrink-0" />
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800 text-xs font-bold text-gray-700 dark:text-gray-300">
                       {m.username[0].toUpperCase()}
                     </span>
@@ -162,7 +162,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
         {/* Edit settings — owner/admin only */}
         {canEdit && (
           <div className="px-4 py-4 space-y-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">Edit room</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Edit room</p>
 
             {/* Description */}
             <div>
@@ -173,7 +173,7 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 maxLength={200}
                 rows={2}
                 placeholder="What's this room for?"
-                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green"
               />
             </div>
 
@@ -187,20 +187,20 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 placeholder="Unlimited"
                 min={2}
                 max={500}
-                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green"
               />
             </div>
 
             {/* Private toggle */}
-            <div className="flex items-center justify-between rounded-xl bg-gray-100/60 dark:bg-gray-800/60 px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50 px-3 py-2.5">
               <div>
                 <p className="text-sm text-gray-800 dark:text-gray-200">Private</p>
-                <p className="text-xs text-gray-500">Requires password</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Requires password</p>
               </div>
               <button
                 type="button"
                 onClick={() => setEditPrivate((v) => !v)}
-                className={`relative h-6 w-11 rounded-full transition-colors ${editPrivate ? "bg-indigo-600" : "bg-gray-200 dark:bg-gray-700"}`}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${editPrivate ? "bg-brand-green" : "bg-gray-200 dark:bg-gray-700"}`}
               >
                 <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${editPrivate ? "translate-x-5" : "translate-x-0"}`} />
               </button>
@@ -220,10 +220,10 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
                     placeholder="New password"
-                    className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                    className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green"
                   />
                   <button type="button" onClick={() => setShowPw((v) => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
                     {showPw ? (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
                         <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
@@ -251,9 +251,9 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
                 maxLength={500}
                 rows={3}
                 placeholder={"e.g. A strict Victorian professor who corrects errors with dry wit and quotes Shakespeare when disappointed."}
-                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                className="w-full resize-none rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green"
               />
-              <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">Describe a character. The AI will adopt this voice when flagging issues.</p>
+              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Describe a character. The AI will adopt this voice when flagging issues.</p>
             </div>
 
             {saveMsg && (
@@ -263,17 +263,17 @@ export default function RoomDetails({ roomId, meta, onlineMembers, currentUserId
             <button
               onClick={saveChanges}
               disabled={saving || (editPrivate && !meta?.isPrivate && !editPassword)}
-              className="w-full rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+              className="w-full rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 disabled:opacity-40 transition-colors active:scale-[0.98] motion-reduce:active:scale-100"
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
 
             {onDelete && (
               <div className="border-t border-gray-200 dark:border-gray-800 pt-4">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">Danger zone</p>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Danger zone</p>
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="w-full rounded-lg border border-red-900/50 bg-red-100 dark:bg-red-950/30 py-2 text-sm font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/60 transition-colors"
+                  className="w-full rounded-xl border border-red-300 dark:border-red-900/50 bg-red-50 dark:bg-red-950/20 py-2.5 text-sm font-semibold text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors"
                 >
                   Delete room
                 </button>

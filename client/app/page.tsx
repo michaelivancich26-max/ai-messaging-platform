@@ -7,6 +7,11 @@ import { WordmarkFull } from "@/components/Wordmark";
 
 type View = "login" | "signup" | "forgot";
 
+// Shared field + label styling — clean input, brand-green focus ring.
+const FIELD =
+  "w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder-gray-400 outline-none transition-colors focus:border-brand-green focus:ring-2 focus:ring-brand-green/40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500";
+const LABEL = "flex flex-col gap-1.5 text-xs font-medium text-gray-700 dark:text-gray-300";
+
 export default function AuthPage() {
   const router = useRouter();
   const { status } = useSession();
@@ -90,8 +95,11 @@ export default function AuthPage() {
   // redirecting — show a placeholder instead of flashing the login form.
   if (status === "loading" || status === "authenticated") {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4">
-        <p className="text-sm text-gray-500">Loading…</p>
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 dark:bg-gray-950">
+        <div className="flex flex-col items-center gap-3">
+          <WordmarkFull className="text-2xl opacity-90" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        </div>
       </main>
     );
   }
@@ -99,11 +107,11 @@ export default function AuthPage() {
   // ── Forgot password view ──────────────────────────────────────────────────
   if (view === "forgot") {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4">
-        <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 p-8 shadow-xl">
+      <main className="flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 dark:bg-gray-950">
+        <div className="w-full max-w-sm animate-fadeInUp rounded-2xl border border-gray-200 bg-white p-8 shadow-hero dark:border-gray-800 dark:bg-gray-900">
           <button
             onClick={() => switchView("login")}
-            className="mb-5 flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="mb-6 flex items-center gap-1.5 text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
               <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
@@ -111,21 +119,21 @@ export default function AuthPage() {
             Back to sign in
           </button>
 
-          <h1 className="mb-1 text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Forgot password?</h1>
-          <p className="mb-6 text-sm text-gray-500">
+          <h1 className="mb-1.5 font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Forgot password?</h1>
+          <p className="mb-6 text-sm text-gray-600 dark:text-gray-300">
             Enter your email and we'll send you a reset link.
           </p>
 
           {forgotSent ? (
-            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-4 text-center space-y-1">
-              <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Check your inbox</p>
-              <p className="text-xs text-gray-500">
-                If <span className="text-gray-700 dark:text-gray-300">{forgotEmail}</span> is registered, a reset link is on its way. It expires in 1 hour.
+            <div className="space-y-1 rounded-xl border border-brand-green/30 bg-brand-green/10 px-4 py-4 text-center">
+              <p className="text-sm font-semibold text-brand-green-ink dark:text-brand-green">Check your inbox</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                If <span className="font-medium text-gray-700 dark:text-gray-200">{forgotEmail}</span> is registered, a reset link is on its way. It expires in 1 hour.
               </p>
             </div>
           ) : (
-            <form onSubmit={handleForgot} className="flex flex-col gap-3">
-              <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
+            <form onSubmit={handleForgot} className="flex flex-col gap-4">
+              <label className={LABEL}>
                 Email address
                 <input
                   type="email"
@@ -133,14 +141,16 @@ export default function AuthPage() {
                   onChange={e => setForgotEmail(e.target.value)}
                   required
                   placeholder="alice@example.com"
-                  className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
+                  className={FIELD}
                 />
               </label>
-              {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+              {error && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
+              )}
               <button
                 type="submit"
                 disabled={loading}
-                className="mt-1 rounded-lg bg-indigo-600 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                className="mt-1 w-full rounded-xl bg-orange-700 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.99] disabled:opacity-50 motion-reduce:active:scale-100"
               >
                 {loading ? "Sending…" : "Send reset link →"}
               </button>
@@ -153,101 +163,134 @@ export default function AuthPage() {
 
   // ── Login / Signup view ───────────────────────────────────────────────────
   return (
-    <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-900 p-8 shadow-xl">
-        <WordmarkFull className="mb-6 block text-2xl" />
+    <main className="relative flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 py-10 dark:bg-gray-950">
+      <div className="grid w-full max-w-4xl items-center gap-10 lg:grid-cols-2 lg:gap-14">
 
-        {/* Tabs */}
-        <div className="mb-6 flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
-          {(["login", "signup"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => switchView(t)}
-              className={`flex-1 rounded-md py-1.5 text-sm font-medium capitalize transition-colors ${
-                view === t ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+        {/* Brand hero — the confident first impression. */}
+        <div className="animate-fadeInUp text-center lg:text-left">
+          <WordmarkFull className="text-3xl md:text-4xl" />
+          <h1 className="mt-6 font-display text-3xl font-bold leading-[1.05] tracking-tight text-balance text-gray-900 dark:text-white md:text-4xl">
+            Find someone who<br className="hidden sm:block" /> actually disagrees.
+          </h1>
+          <p className="mx-auto mt-4 max-w-md text-pretty text-sm leading-relaxed text-gray-600 dark:text-gray-300 md:text-base lg:mx-0">
+            Get matched on a claim you&rsquo;ve both taken a side on, then argue the side you actually hold — live, judged by the room.
+          </p>
+          <ul className="mx-auto mt-6 hidden max-w-md flex-col gap-2.5 text-left text-sm text-gray-700 dark:text-gray-300 lg:flex">
+            {[
+              "Matched by belief, never just a topic",
+              "Argue your real side in real time",
+              "Win the room as opinion shifts",
+            ].map((t) => (
+              <li key={t} className="flex items-center gap-2.5">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-brand-green/15 text-brand-green-ink dark:text-brand-green">
+                  <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
+                  </svg>
+                </span>
+                {t}
+              </li>
+            ))}
+          </ul>
         </div>
 
-        {/* Signup success — email verification notice */}
-        {signupDone && (
-          <div className="mb-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 px-4 py-3">
-            <p className="text-xs text-indigo-700 dark:text-indigo-300">
-              Account created! We sent a verification link to <span className="font-medium text-indigo-800 dark:text-indigo-200">{form.email}</span>. Check your inbox to verify your account.
-            </p>
+        {/* Auth card */}
+        <div className="mx-auto w-full max-w-sm animate-fadeInUp rounded-2xl border border-gray-200 bg-white p-8 shadow-hero dark:border-gray-800 dark:bg-gray-900">
+          {/* Tabs */}
+          <div className="mb-6 flex rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+            {(["login", "signup"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => switchView(t)}
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold capitalize transition-colors ${
+                  view === t
+                    ? "bg-white text-brand-green-ink shadow-sm dark:bg-gray-900 dark:text-brand-green"
+                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
           </div>
-        )}
 
-        <form onSubmit={view === "login" ? handleLogin : handleSignup} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
-            Username
-            <input value={form.username} onChange={set("username")} placeholder="alice" autoComplete="username"
-              className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
-          </label>
+          {/* Signup success — email verification notice */}
+          {signupDone && (
+            <div className="mb-4 rounded-xl border border-brand-green/30 bg-brand-green/10 px-4 py-3">
+              <p className="text-xs leading-relaxed text-brand-green-ink dark:text-brand-green">
+                Account created! We sent a verification link to <span className="font-semibold">{form.email}</span>. Check your inbox to verify your account.
+              </p>
+            </div>
+          )}
 
-          {view === "signup" && (
-            <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
-              Email
-              <input value={form.email} onChange={set("email")} type="email" placeholder="alice@example.com"
-                className="rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500" />
+          <form onSubmit={view === "login" ? handleLogin : handleSignup} className="flex flex-col gap-4">
+            <label className={LABEL}>
+              Username
+              <input value={form.username} onChange={set("username")} placeholder="alice" autoComplete="username"
+                className={FIELD} />
             </label>
-          )}
 
-          <label className="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-400">
-            Password
-            <div className="relative">
-              <input
-                value={form.password}
-                onChange={set("password")}
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                autoComplete={view === "login" ? "current-password" : "new-password"}
-                className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-indigo-500"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                tabIndex={-1}
-              >
-                {showPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                    <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd" />
-                    <path d="M10.748 13.93l2.523 2.523a10.006 10.006 0 0 1-8.512-4.865 1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 5.51 8.187l1.52 1.52a4 4 0 0 0 5.208 5.208l-1.49-1.486Z" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                    <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-                    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41Z" clipRule="evenodd" />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </label>
+            {view === "signup" && (
+              <label className={LABEL}>
+                Email
+                <input value={form.email} onChange={set("email")} type="email" placeholder="alice@example.com"
+                  className={FIELD} />
+              </label>
+            )}
 
-          {/* Forgot password link — login only */}
-          {view === "login" && (
-            <div className="flex justify-end -mt-1">
-              <button
-                type="button"
-                onClick={() => switchView("forgot")}
-                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
-              >
-                Forgot password?
-              </button>
-            </div>
-          )}
+            <label className={LABEL}>
+              Password
+              <div className="relative">
+                <input
+                  value={form.password}
+                  onChange={set("password")}
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  autoComplete={view === "login" ? "current-password" : "new-password"}
+                  className={`${FIELD} pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                      <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd" />
+                      <path d="M10.748 13.93l2.523 2.523a10.006 10.006 0 0 1-8.512-4.865 1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 5.51 8.187l1.52 1.52a4 4 0 0 0 5.208 5.208l-1.49-1.486Z" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                      <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                      <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41Z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </label>
 
-          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+            {/* Forgot password link — login only */}
+            {view === "login" && (
+              <div className="-mt-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => switchView("forgot")}
+                  className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            )}
 
-          <button type="submit" disabled={loading}
-            className="mt-2 rounded-lg bg-indigo-600 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors">
-            {loading ? "Please wait…" : view === "login" ? "Sign in →" : "Create account →"}
-          </button>
-        </form>
+            {error && (
+              <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
+            )}
+
+            <button type="submit" disabled={loading}
+              className="mt-1 w-full rounded-xl bg-orange-700 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.99] disabled:opacity-50 motion-reduce:active:scale-100">
+              {loading ? "Please wait…" : view === "login" ? "Sign in →" : "Create account →"}
+            </button>
+          </form>
+        </div>
       </div>
     </main>
   );
