@@ -14,23 +14,23 @@ type Stance = "agree" | "disagree" | "skip";
 // One tap gives a side AND how firmly it's held, which is the whole point:
 // the match needs both, and asking twice would cost more friction than the
 // answer is worth. Filled = strongly held, outline = held — the ramp reads
-// without a legend.
+// without a legend. Filled ends use the -700 shades so white labels clear AA.
 const CHOICES: { key: string; stance: Stance; confidence: number; label: string; cls: string }[] = [
   {
     key: "1", stance: "disagree", confidence: 2, label: "Strongly disagree",
-    cls: "bg-rose-600 text-white hover:bg-rose-500 border-rose-600",
+    cls: "bg-rose-700 text-white hover:bg-rose-600 border-rose-700",
   },
   {
     key: "2", stance: "disagree", confidence: 1, label: "Disagree",
-    cls: "border-rose-500/40 text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40",
+    cls: "border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400 dark:hover:bg-rose-950/40",
   },
   {
     key: "3", stance: "agree", confidence: 1, label: "Agree",
-    cls: "border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
+    cls: "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:bg-emerald-950/40",
   },
   {
     key: "4", stance: "agree", confidence: 2, label: "Strongly agree",
-    cls: "bg-emerald-600 text-white hover:bg-emerald-500 border-emerald-600",
+    cls: "bg-emerald-700 text-white hover:bg-emerald-600 border-emerald-700",
   },
 ];
 
@@ -159,9 +159,16 @@ export default function Deck({ userId }: { userId: string }) {
 
   const remaining = Math.max(0, gate - positioned);
   const ready = remaining === 0;
+  const pct = Math.min(100, (positioned / Math.max(1, gate)) * 100);
 
   if (loading) {
-    return <div className="py-24 text-center text-sm text-gray-500 dark:text-gray-400">Dealing the deck…</div>;
+    return (
+      <div className="mx-auto max-w-xl py-8">
+        <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800" />
+        <div className="shimmer-track h-56 rounded-3xl border border-gray-200 bg-white shadow-elevated dark:border-gray-800 dark:bg-gray-900" />
+        <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">Dealing the deck…</p>
+      </div>
+    );
   }
 
   // Distinct from the empty state, and only when there's nothing already on
@@ -170,12 +177,12 @@ export default function Deck({ userId }: { userId: string }) {
   if (error && !card) {
     return (
       <div className="mx-auto max-w-lg py-20 text-center">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Couldn&rsquo;t load the deck</h3>
+        <h3 className="font-display text-xl font-bold text-gray-900 dark:text-gray-100">Couldn&rsquo;t load the deck</h3>
         <p className="mx-auto mt-2 max-w-sm text-sm text-gray-600 dark:text-gray-400">
           Something went wrong reaching the server — this isn&rsquo;t an empty deck.
         </p>
         <button onClick={retry}
-          className="mt-6 rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-500">
+          className="mt-6 rounded-2xl bg-orange-700 px-5 py-3 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
           Try again
         </button>
       </div>
@@ -185,7 +192,10 @@ export default function Deck({ userId }: { userId: string }) {
   if (done || !card) {
     return (
       <div className="mx-auto max-w-lg py-20 text-center">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-7 w-7"><path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" /></svg>
+        </div>
+        <h3 className="font-display text-2xl font-bold text-gray-900 dark:text-gray-100">
           {positioned ? "That's the whole deck" : "Nothing to show yet"}
         </h3>
         <p className="mx-auto mt-2 max-w-sm text-sm text-gray-600 dark:text-gray-400">
@@ -195,8 +205,8 @@ export default function Deck({ userId }: { userId: string }) {
         </p>
         {ready && (
           <Link href="/rapid"
-            className="mt-6 inline-block rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-orange-500">
-            Find someone who disagrees →
+            className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-orange-700 px-6 py-3.5 text-base font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
+            Find someone who disagrees <span aria-hidden>→</span>
           </Link>
         )}
       </div>
@@ -206,14 +216,14 @@ export default function Deck({ userId }: { userId: string }) {
   return (
     <div className="mx-auto max-w-xl py-8">
       {/* Progress — the gate is a matching requirement, so it's stated as one. */}
-      <div className="mb-6">
+      <div className="mb-7">
         <div className="flex items-baseline justify-between text-xs">
           <span className="font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             {positioned} {positioned === 1 ? "position" : "positions"}
           </span>
           {ready ? (
-            <Link href="/rapid" className="font-semibold text-orange-600 transition-colors hover:text-orange-500 dark:text-orange-400">
-              Ready to queue →
+            <Link href="/rapid" className="font-semibold text-orange-700 transition-colors hover:text-orange-600 dark:text-orange-400">
+              Ready to queue <span aria-hidden>→</span>
             </Link>
           ) : (
             <span className="text-gray-500 dark:text-gray-400">
@@ -221,34 +231,41 @@ export default function Deck({ userId }: { userId: string }) {
             </span>
           )}
         </div>
-        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
           <div
-            className="h-full rounded-full bg-orange-500 transition-[width] duration-300"
-            style={{ width: `${Math.min(100, (positioned / Math.max(1, gate)) * 100)}%` }}
+            className={`h-full rounded-full transition-[width] duration-300 ${ready ? "bg-brand-green" : "bg-orange-500"}`}
+            style={{ width: `${Math.max(4, pct)}%` }}
           />
         </div>
       </div>
 
-      {/* The claim. `key` restarts the entry animation on every card. */}
-      <div
-        key={card.id}
-        className="animate-fadeIn rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900"
-      >
-        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
-          {labels[card.categoryId] ?? card.categoryId}
-        </p>
-        <p className="mt-4 text-xl font-semibold leading-snug text-gray-900 dark:text-gray-100">
-          {card.text}
-        </p>
+      {/* The claim, sitting on a subtle stack so it reads as one card of a deck. */}
+      <div className="relative">
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 translate-y-2 scale-[0.97] rounded-3xl border border-gray-200 bg-white/70 dark:border-gray-800 dark:bg-gray-900/60" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-20 translate-y-4 scale-[0.94] rounded-3xl border border-gray-200 bg-white/50 dark:border-gray-800 dark:bg-gray-900/40" />
+        {/* `key` restarts the entry animation on every card. */}
+        <div
+          key={card.id}
+          className="animate-fadeInUp rounded-3xl border border-gray-200 bg-white p-7 shadow-elevated dark:border-gray-800 dark:bg-gray-900 md:p-9"
+        >
+          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+            {labels[card.categoryId] ?? card.categoryId}
+          </span>
+          <p className="mt-5 font-display text-2xl font-semibold leading-snug text-balance text-gray-900 dark:text-white md:text-[28px]">
+            {card.text}
+          </p>
+        </div>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* Four-point ramp: strong ends filled, mild middle outlined. */}
+      <div className="mt-6 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         {CHOICES.map(c => (
           <button
             key={c.key}
             onClick={() => answer(c.stance, c.confidence)}
-            className={`rounded-xl border px-3 py-3 text-xs font-semibold transition-colors ${c.cls}`}
+            className={`relative rounded-xl border px-3 py-4 text-sm font-semibold leading-tight transition-all duration-150 active:scale-[0.97] motion-reduce:active:scale-100 ${c.cls}`}
           >
+            <span aria-hidden className="absolute left-2 top-1.5 hidden text-[10px] font-bold opacity-40 sm:block">{c.key}</span>
             {c.label}
           </button>
         ))}

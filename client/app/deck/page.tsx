@@ -16,7 +16,7 @@ export default function DeckPage() {
   return (
     <div className="h-full overflow-y-auto bg-gray-50 px-4 dark:bg-gray-950">
       <div className="mx-auto max-w-xl pt-8 text-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Where you stand</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 md:text-3xl">Where you stand</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-gray-600 dark:text-gray-400">
           Take a side on each claim. We use these to find you someone who genuinely
           disagrees — so you argue what you actually think, not a side you were dealt.
