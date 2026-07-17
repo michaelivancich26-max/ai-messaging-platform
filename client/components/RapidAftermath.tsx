@@ -8,12 +8,12 @@ import { api } from "@/lib/api";
 type Stance = "agree" | "disagree";
 
 // The four-point choice, same ramp as the deck so a position means the same
-// thing before and after a debate.
+// thing before and after a debate. Filled ends use -700 so white clears AA.
 const CHOICES: { stance: Stance; confidence: number; label: string; cls: string }[] = [
-  { stance: "disagree", confidence: 2, label: "Strongly disagree", cls: "bg-rose-600 text-white hover:bg-rose-500 border-rose-600" },
-  { stance: "disagree", confidence: 1, label: "Disagree", cls: "border-rose-500/40 text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40" },
-  { stance: "agree", confidence: 1, label: "Agree", cls: "border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40" },
-  { stance: "agree", confidence: 2, label: "Strongly agree", cls: "bg-emerald-600 text-white hover:bg-emerald-500 border-emerald-600" },
+  { stance: "disagree", confidence: 2, label: "Strongly disagree", cls: "bg-rose-700 text-white hover:bg-rose-600 border-rose-700" },
+  { stance: "disagree", confidence: 1, label: "Disagree", cls: "border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-400 dark:hover:bg-rose-950/40" },
+  { stance: "agree", confidence: 1, label: "Agree", cls: "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:bg-emerald-950/40" },
+  { stance: "agree", confidence: 2, label: "Strongly agree", cls: "bg-emerald-700 text-white hover:bg-emerald-600 border-emerald-700" },
 ];
 
 interface Aftermath {
@@ -73,13 +73,25 @@ export default function RapidAftermath({ roomName }: { roomName: string }) {
   if (dismissed || !data || !data.proposition) return null;
 
   if (outcome) {
+    const changed = outcome === "changed";
     return (
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white/60 p-4 text-center dark:border-gray-800 dark:bg-gray-900/60">
-        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-          {outcome === "changed" ? "You changed your mind — logged." : "You held your position."}
+      <div className={`mt-4 animate-popIn rounded-2xl border p-5 text-center shadow-card ${changed
+        ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30"
+        : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"}`}>
+        <div className={`mx-auto mb-2.5 grid h-11 w-11 place-items-center rounded-full ${changed
+          ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green"
+          : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+          {changed ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className="h-6 w-6"><path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-6 w-6"><path strokeLinecap="round" strokeLinejoin="round" d="M5 9h14M5 15h14" /></svg>
+          )}
+        </div>
+        <p className="font-display text-base font-bold text-gray-900 dark:text-gray-100">
+          {changed ? "You changed your mind — logged." : "You held your position."}
         </p>
-        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          {outcome === "changed"
+        <p className="mx-auto mt-1 max-w-sm text-xs text-gray-600 dark:text-gray-400">
+          {changed
             ? "Changing your mind on the evidence is the point — it counts for you, not against."
             : "That's fine — most debates sharpen a view rather than flip it."}
         </p>
@@ -91,19 +103,22 @@ export default function RapidAftermath({ roomName }: { roomName: string }) {
     ? `${data.before.stance}/${data.before.confidence}` : null;
 
   return (
-    <div className="mt-4 rounded-xl border border-gray-200 bg-white/60 p-4 dark:border-gray-800 dark:bg-gray-900/60">
-      <p className="text-center text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+    <div className="mt-4 animate-fadeInUp rounded-2xl border border-gray-200 bg-white p-5 shadow-card dark:border-gray-800 dark:bg-gray-900">
+      <p className="text-center font-display text-base font-bold text-gray-900 dark:text-gray-100">
         Did that move you?
       </p>
-      <p className="mx-auto mt-2 max-w-md text-center text-sm font-semibold text-gray-900 dark:text-gray-100">
+      <p className="mx-auto mt-1.5 max-w-md text-center text-sm text-gray-600 dark:text-gray-400">
+        Where do you stand now on &mdash;
+      </p>
+      <p className="mx-auto mt-1 max-w-md text-center text-base font-semibold leading-snug text-balance text-gray-900 dark:text-gray-100">
         &ldquo;{data.proposition.text}&rdquo;
       </p>
       {saveError && (
-        <p className="mt-2 text-center text-xs font-semibold text-rose-600 dark:text-rose-400">
+        <p className="mt-2 text-center text-xs font-semibold text-rose-700 dark:text-rose-400">
           Couldn&rsquo;t save that — tap your answer again.
         </p>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {CHOICES.map((c) => {
           const wasThis = before === `${c.stance}/${c.confidence}`;
           return (
@@ -111,7 +126,7 @@ export default function RapidAftermath({ roomName }: { roomName: string }) {
               key={c.label}
               disabled={submitting}
               onClick={() => submit(c.stance, c.confidence)}
-              className={`relative rounded-xl border px-3 py-3 text-xs font-semibold transition-colors disabled:opacity-50 ${c.cls}`}
+              className={`relative rounded-xl border px-3 py-3 text-sm font-semibold leading-tight transition-all duration-150 active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100 ${c.cls}`}
             >
               {c.label}
               {wasThis && (

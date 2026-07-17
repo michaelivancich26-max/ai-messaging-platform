@@ -1394,45 +1394,57 @@ export default function RoomPage() {
         </div>
       )}
 
-      {/* Competitive proposition bar — always visible to all parties */}
+      {/* Competitive proposition bar — the decisive element, so it reads as one */}
       {isCompetitiveRoom && matchState === "active" && propLabels && (
-        <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 px-4 py-2">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Proposition</span>
+        <div className="shrink-0 border-b border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-950/60 px-4 py-2.5">
+          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">Proposition</span>
             {winCondition.type === "proposition" && (
-              <span className="text-[10px] text-gray-500 dark:text-gray-400">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
+              <span className="text-[11px] text-gray-500 dark:text-gray-400">· win at {(winCondition as { type: "proposition"; threshold: number }).threshold}%</span>
             )}
             {isRapidMatch && (
-              <span className="text-[10px] text-gray-500 dark:text-gray-400">· whoever leads when you both move on</span>
-            )}
-            {isRapidMatch && moveOnTheirs && !moveOnMine && (
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
-                They&rsquo;re ready to move on
-              </span>
+              <span className="hidden text-[11px] text-gray-500 dark:text-gray-400 sm:inline">· leader wins when you both move on</span>
             )}
             {/* Forfeit lives here only for proposition rooms; exchanges/time rooms carry it in their own banners */}
             {winCondition.type === "proposition" && !isSpectator && (
-              <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
+              <button onClick={() => triggerJudge(true)} className="ml-auto shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
             )}
             {isRapidMatch && !isSpectator && (
-              <button onClick={moveOn}
-                title={moveOnMine ? "Waiting for them to agree. Click to stay in." : "Ends the round on the bar — only if they agree too."}
-                className={`ml-auto shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
-                  moveOnMine
-                    ? "border-gray-400 text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
-                    : "border-orange-700/50 text-orange-600 hover:bg-orange-100 dark:text-orange-400 dark:hover:bg-orange-900/20"
-                }`}>
-                {moveOnMine ? "Waiting for them…" : moveOnTheirs ? "Agree to move on →" : "Move on →"}
-              </button>
+              <div className="ml-auto flex items-center gap-2">
+                {/* Two-party handshake — makes it obvious why one press alone doesn't end it. */}
+                <span className="hidden items-center gap-1 sm:flex" title="Both players must agree to move on before the round ends">
+                  <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors ${moveOnMine ? "border-emerald-500 bg-emerald-50 text-brand-green-ink dark:bg-emerald-950/40 dark:text-brand-green" : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"}`}>You</span>
+                  <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors ${moveOnTheirs ? "border-emerald-500 bg-emerald-50 text-brand-green-ink dark:bg-emerald-950/40 dark:text-brand-green" : "border-gray-300 text-gray-400 dark:border-gray-700 dark:text-gray-500"}`}>Them</span>
+                </span>
+                <button onClick={moveOn}
+                  title={moveOnMine ? "Waiting for them to agree. Click to stay in." : "Ends the round on the bar — only if they agree too."}
+                  className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+                    moveOnTheirs && !moveOnMine
+                      ? "bg-orange-700 text-white shadow-glow hover:bg-orange-600 motion-safe:animate-pulse"
+                      : moveOnMine
+                        ? "border border-gray-400 text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
+                        : "border border-orange-700/50 text-orange-700 hover:bg-orange-50 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                  }`}>
+                  {moveOnMine ? "Waiting for them…" : moveOnTheirs ? "Agree to move on →" : "Move on →"}
+                </button>
+              </div>
             )}
           </div>
-          <div className="flex h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+          <div className="relative flex h-3.5 overflow-hidden rounded-full bg-gray-100 shadow-inner dark:bg-gray-800">
             <div className="bg-emerald-500 transition-all duration-700" style={{ width: `${Math.round(propPriceA * 100)}%` }} />
             <div className="bg-rose-500 transition-all duration-700" style={{ width: `${Math.round((1 - propPriceA) * 100)}%` }} />
+            {/* 50% reference line */}
+            <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/70 dark:bg-gray-950/60" />
+            {/* Pulse acknowledging each shift; the segments keep their own 700ms tween. */}
+            <div key={Math.round(propPriceA * 100)} className="pointer-events-none absolute inset-0 bg-white opacity-0 motion-safe:animate-barFlash" />
           </div>
-          <div className="mt-1 flex items-center justify-between text-[10px]">
-            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{propLabels.a} · {Math.round(propPriceA * 100)}%</span>
-            <span className="font-semibold text-rose-700 dark:text-rose-300">{Math.round((1 - propPriceA) * 100)}% · {propLabels.b}</span>
+          <div className="mt-1.5 flex items-start justify-between gap-3 text-[11px]">
+            <span className={`font-semibold ${propPriceA >= 0.5 ? "text-emerald-700 dark:text-emerald-300" : "text-emerald-700/60 dark:text-emerald-300/50"}`}>
+              <span className="tabular-nums text-sm font-bold">{Math.round(propPriceA * 100)}%</span> {propLabels.a}
+            </span>
+            <span className={`text-right font-semibold ${propPriceA < 0.5 ? "text-rose-700 dark:text-rose-300" : "text-rose-700/60 dark:text-rose-300/50"}`}>
+              {propLabels.b} <span className="tabular-nums text-sm font-bold">{Math.round((1 - propPriceA) * 100)}%</span>
+            </span>
           </div>
         </div>
       )}

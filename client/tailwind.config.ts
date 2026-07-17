@@ -62,11 +62,12 @@ const config: Config = {
           "0%, 100%": { opacity: "1", transform: "scale(1)" },
           "50%": { opacity: "0.55", transform: "scale(0.88)" },
         },
-        // The proposition bar caught a shift — a quick lift on the leading side.
+        // A quick white pulse over the proposition bar when it shifts — rides on a
+        // decorative overlay so the segments keep their own width transition.
         barFlash: {
-          "0%": { filter: "brightness(1)" },
-          "35%": { filter: "brightness(1.25)" },
-          "100%": { filter: "brightness(1)" },
+          "0%": { opacity: "0" },
+          "40%": { opacity: "0.35" },
+          "100%": { opacity: "0" },
         },
         // Skeleton shimmer for loading surfaces.
         shimmer: {
