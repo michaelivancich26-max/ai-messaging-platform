@@ -26,6 +26,7 @@ const check = (name, ok, detail = "") => {
 };
 
 async function clean() {
+  await prisma.$executeRawUnsafe(`DELETE FROM "RapidAftermathAnswered" WHERE "roomName"=$1`, ROOM);
   await prisma.$executeRawUnsafe(`DELETE FROM "BeliefChange" WHERE "userId" = ANY($1::text[])`, [A, B]);
   await prisma.$executeRawUnsafe(`DELETE FROM "UserBelief" WHERE "userId" = ANY($1::text[])`, [A, B]);
   await prisma.$executeRawUnsafe(`DELETE FROM "CompetitiveMatch" WHERE "roomName"=$1`, ROOM);
@@ -75,22 +76,14 @@ async function main() {
   check("aftermath returns A's prior stance", af?.before?.stance === "agree" && af?.before?.confidence === 2,
     JSON.stringify(af?.before));
 
-  // 2. A's mind is unchanged (agree/2 -> agree/2): NO BeliefChange logged.
-  await fetch(`${SERVER}/api/deck/position`, {
-    method: "POST", headers: authA,
-    body: JSON.stringify({ propositionId: prop.id, stance: "agree", confidence: 2, roomName: ROOM, correction: false }),
+  const postAftermath = (auth, body) => fetch(`${SERVER}/api/rapid/aftermath/${ROOM}`, {
+    method: "POST", headers: auth, body: JSON.stringify(body),
   });
-  let changes = await prisma.$queryRawUnsafe(
-    `SELECT COUNT(*)::int AS n FROM "BeliefChange" WHERE "userId"=$1`, A);
-  check("an unchanged position logs nothing", changes[0].n === 0, `${changes[0].n} rows`);
 
-  // 3. A is persuaded (agree/2 -> disagree/2): a BeliefChange IS logged, tagged
-  //    with the room the debate happened in.
-  const flip = await fetch(`${SERVER}/api/deck/position`, {
-    method: "POST", headers: authA,
-    body: JSON.stringify({ propositionId: prop.id, stance: "disagree", confidence: 2, roomName: ROOM, correction: false }),
-  }).then((r) => r.json());
-  check("the API reports the change", flip?.changed === true && flip?.flipped === true, JSON.stringify(flip));
+  // 2. A is persuaded (agree/2 -> disagree/2) through the AFTERMATH endpoint:
+  //    a BeliefChange IS logged, tagged with the room the debate happened in.
+  const flip = await postAftermath(authA, { stance: "disagree", confidence: 2 }).then((r) => r.json());
+  check("the aftermath reports the change", flip?.changed === true, JSON.stringify(flip));
 
   const row = await prisma.$queryRawUnsafe(
     `SELECT "fromStance","toStance","roomName" FROM "BeliefChange" WHERE "userId"=$1 ORDER BY "createdAt" DESC LIMIT 1`, A);
@@ -99,11 +92,35 @@ async function main() {
     `${row[0]?.fromStance} -> ${row[0]?.toStance}`);
   check("it's tagged with the debate room", row[0]?.roomName === ROOM, row[0]?.roomName);
 
-  // 4. A non-participant can't peek at the round.
+  // 3. IDEMPOTENCY — the review's finding. Answering again (a re-opened modal
+  //    remounts the component) must NOT log a second BeliefChange for one debate.
+  const again = await postAftermath(authA, { stance: "agree", confidence: 1 }).then((r) => r.json());
+  check("a second answer is refused as already-answered", again?.alreadyAnswered === true, JSON.stringify(again));
+  const total = await prisma.$queryRawUnsafe(
+    `SELECT COUNT(*)::int AS n FROM "BeliefChange" WHERE "userId"=$1`, A);
+  check("still exactly one BeliefChange after re-answering", total[0].n === 1, `${total[0].n} rows`);
+
+  // 4. And the GET now reports the round as answered, so a remount renders nothing.
+  const afAfter = await fetch(`${SERVER}/api/rapid/aftermath/${ROOM}`, { headers: authA }).then((r) => r.json());
+  check("GET reports answered after submitting", afAfter?.answered === true && afAfter?.proposition === null,
+    JSON.stringify(afAfter));
+
+  // 5. B, unchanged (disagree/2 -> disagree/2): answered once, NO BeliefChange.
+  const tokB = await encode({ token: { id: B, username: "aftbeta" }, secret, maxAge: 300 });
+  const authB = { Authorization: `Bearer ${tokB}`, "Content-Type": "application/json" };
+  const held = await postAftermath(authB, { stance: "disagree", confidence: 2 }).then((r) => r.json());
+  check("an unchanged answer reports no change", held?.changed === false && !held?.alreadyAnswered, JSON.stringify(held));
+  const bChanges = await prisma.$queryRawUnsafe(
+    `SELECT COUNT(*)::int AS n FROM "BeliefChange" WHERE "userId"=$1`, B);
+  check("an unchanged answer logs nothing", bChanges[0].n === 0, `${bChanges[0].n} rows`);
+
+  // 6. A non-participant can neither peek nor post.
   const tokC = await encode({ token: { id: "aftermath-probe-c", username: "aftcee" }, secret, maxAge: 300 });
-  const outsider = await fetch(`${SERVER}/api/rapid/aftermath/${ROOM}`,
-    { headers: { Authorization: `Bearer ${tokC}` } });
-  check("a non-participant is refused", outsider.status === 403, `HTTP ${outsider.status}`);
+  const authC = { Authorization: `Bearer ${tokC}`, "Content-Type": "application/json" };
+  const outsiderGet = await fetch(`${SERVER}/api/rapid/aftermath/${ROOM}`, { headers: authC });
+  check("a non-participant GET is refused", outsiderGet.status === 403, `HTTP ${outsiderGet.status}`);
+  const outsiderPost = await postAftermath(authC, { stance: "agree", confidence: 1 });
+  check("a non-participant POST is refused", outsiderPost.status === 403, `HTTP ${outsiderPost.status}`);
 
   await clean();
   const left = await prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "User" WHERE id = ANY($1::text[])`, [A, B]);

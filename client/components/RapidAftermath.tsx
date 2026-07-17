@@ -19,6 +19,7 @@ const CHOICES: { stance: Stance; confidence: number; label: string; cls: string 
 interface Aftermath {
   proposition: { id: string; text: string } | null;
   before?: { stance: string; confidence: number | null } | null;
+  answered?: boolean;
 }
 
 // The closing beat of the loop: deck -> match -> "did that move you?" -> deck.
@@ -30,6 +31,10 @@ export default function RapidAftermath({ roomName }: { roomName: string }) {
   const [outcome, setOutcome] = useState<null | "held" | "changed">(null);
   const [submitting, setSubmitting] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // A failed WRITE is not a held position. Without this the component would tell
+  // someone their mind didn't move when the save simply failed — dropping the
+  // one thing this prompt exists to capture.
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -43,24 +48,28 @@ export default function RapidAftermath({ roomName }: { roomName: string }) {
   const submit = useCallback(async (stance: Stance, confidence: number) => {
     if (!data?.proposition || submitting) return;
     setSubmitting(true);
+    setSaveError(false);
     try {
-      const r = await api(`${SERVER}/api/deck/position`, {
+      // The dedicated endpoint derives the proposition from the round and is
+      // idempotent per room, so it — not the generic deck write — is what a
+      // post-debate answer goes through.
+      const r = await api(`${SERVER}/api/rapid/aftermath/${encodeURIComponent(roomName)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // correction:false — a post-debate answer IS a potential change of mind,
-        // and the whole point is to log it when it moves.
-        body: JSON.stringify({ propositionId: data.proposition.id, stance, confidence, roomName, correction: false }),
+        body: JSON.stringify({ stance, confidence }),
       });
+      if (!r.ok) { setSaveError(true); return; }        // real failure — keep the buttons, let them retry
       const res = await r.json().catch(() => ({}));
-      setOutcome(res?.changed ? "changed" : "held");
+      setOutcome(res?.changed ? "changed" : "held");    // authoritative, from the server
     } catch {
-      setOutcome("held");   // the position still saved optimistically often enough; never block the user here
+      setSaveError(true);
     } finally {
       setSubmitting(false);
     }
   }, [data, roomName, submitting]);
 
-  // Nothing to ask (non-rapid round, no recorded proposition, or dismissed).
+  // Nothing to ask (non-rapid round, no proposition, already answered, or
+  // dismissed).
   if (dismissed || !data || !data.proposition) return null;
 
   if (outcome) {
@@ -89,6 +98,11 @@ export default function RapidAftermath({ roomName }: { roomName: string }) {
       <p className="mx-auto mt-2 max-w-md text-center text-sm font-semibold text-gray-900 dark:text-gray-100">
         &ldquo;{data.proposition.text}&rdquo;
       </p>
+      {saveError && (
+        <p className="mt-2 text-center text-xs font-semibold text-rose-600 dark:text-rose-400">
+          Couldn&rsquo;t save that — tap your answer again.
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {CHOICES.map((c) => {
           const wasThis = before === `${c.stance}/${c.confidence}`;

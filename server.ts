@@ -2390,6 +2390,42 @@ app.post("/api/deck/position", async (req, res) => {
   }
 });
 
+// Resolve which claim a rapid round was about, and confirm the caller argued
+// it. Shared by the aftermath GET and POST so the proposition is always taken
+// from the ROUND, never from the client — you can only answer for the debate
+// you were actually in, on the claim it was actually about.
+type RoundResolution =
+  | { kind: "ok"; propositionId: string }
+  | { kind: "none" }                              // not a rapid round with a proposition
+  | { kind: "error"; status: number; error: string };
+
+async function resolveRapidRoundForUser(roomName: string, userId: string): Promise<RoundResolution> {
+  // matchConfig is a raw-SQL column, NOT in the Prisma schema — every reader
+  // goes through $queryRawUnsafe; prisma.room.findUnique({ select: {
+  // matchConfig } }) throws a validation error.
+  const roomRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(
+    `SELECT "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
+  );
+  const matchConfig = roomRows[0]?.matchConfig ?? null;
+  if (!matchConfig) return { kind: "error", status: 404, error: "No such round" };
+
+  let cfg: any;
+  try { cfg = JSON.parse(matchConfig); } catch { return { kind: "none" }; }
+  if (!cfg?.isRapid || !cfg.propositionId) return { kind: "none" };
+  if (userId !== cfg.challengerId && userId !== cfg.challengedId) {
+    return { kind: "error", status: 403, error: "Not your round" };
+  }
+  return { kind: "ok", propositionId: cfg.propositionId };
+}
+
+async function aftermathAnswered(userId: string, roomName: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<{ one: number }[]>(
+    `SELECT 1 AS one FROM "RapidAftermathAnswered" WHERE "userId"=$1 AND "roomName"=$2 LIMIT 1`,
+    userId, roomName,
+  );
+  return rows.length > 0;
+}
+
 // What was argued in a round, and where the caller stood on it going in.
 //
 // This is what closes the loop: deck -> match -> "did that move you?" -> deck.
@@ -2399,22 +2435,14 @@ app.post("/api/deck/position", async (req, res) => {
 app.get("/api/rapid/aftermath/:roomName", async (req, res) => {
   try {
     const userId = actorId(req)!;
-    // matchConfig is a raw-SQL column, NOT in the Prisma schema — every other
-    // reader gets it through $queryRawUnsafe, and prisma.room.findUnique({
-    // select: { matchConfig } }) throws a validation error. This endpoint broke
-    // that rule and 500'd on every call.
-    const roomRows = await prisma.$queryRawUnsafe<{ matchConfig: string | null }[]>(
-      `SELECT "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`,
-      req.params.roomName,
-    );
-    const matchConfig = roomRows[0]?.matchConfig ?? null;
-    if (!matchConfig) return res.status(404).json({ error: "No such round" });
+    const round = await resolveRapidRoundForUser(req.params.roomName, userId);
+    if (round.kind === "error") return res.status(round.status).json({ error: round.error });
+    if (round.kind === "none") return res.json({ proposition: null });
 
-    const cfg = JSON.parse(matchConfig);
-    if (!cfg?.isRapid || !cfg.propositionId) return res.json({ proposition: null });
-    // Only the two people who argued it get asked.
-    if (userId !== cfg.challengerId && userId !== cfg.challengedId) {
-      return res.status(403).json({ error: "Not your round" });
+    // Already answered — don't re-prompt. This is what a remounted client sees
+    // after it's submitted once, so the prompt doesn't come back.
+    if (await aftermathAnswered(userId, req.params.roomName)) {
+      return res.json({ proposition: null, answered: true });
     }
 
     const rows = await prisma.$queryRawUnsafe<{ id: string; text: string; stance: string; confidence: number | null }[]>(
@@ -2422,7 +2450,7 @@ app.get("/api/rapid/aftermath/:roomName", async (req, res) => {
        FROM "Proposition" p
        LEFT JOIN "UserBelief" b ON b."propositionId" = p."id" AND b."userId" = $1
        WHERE p."id" = $2 LIMIT 1`,
-      userId, cfg.propositionId,
+      userId, round.propositionId,
     );
     if (!rows.length) return res.json({ proposition: null });
 
@@ -2433,6 +2461,51 @@ app.get("/api/rapid/aftermath/:roomName", async (req, res) => {
   } catch (e) {
     console.error("[GET /api/rapid/aftermath]", e);
     res.status(500).json({ error: "Failed to load round" });
+  }
+});
+
+// Record where the caller now stands, once. The proposition is the round's, not
+// the client's — so this can't be used to log a mind-change for a claim you
+// never argued or a room you weren't in. Idempotent per (user, room): the marker
+// is claimed inside the same transaction as the belief write, so a re-open, a
+// double-tap, or a page reload can't produce a second BeliefChange for one
+// debate. Returns { changed } authoritatively, so the client shows held vs
+// changed from the truth rather than guessing.
+app.post("/api/rapid/aftermath/:roomName", async (req, res) => {
+  try {
+    const userId = actorId(req)!;
+    const roomName = req.params.roomName;
+    const { stance, confidence } = req.body as { stance?: Stance; confidence?: number };
+    if (stance !== "agree" && stance !== "disagree") {
+      return res.status(400).json({ error: "stance must be agree or disagree" });
+    }
+    if (confidence !== 1 && confidence !== 2) {
+      return res.status(400).json({ error: "confidence must be 1 or 2" });
+    }
+
+    const round = await resolveRapidRoundForUser(roomName, userId);
+    if (round.kind === "error") return res.status(round.status).json({ error: round.error });
+    if (round.kind === "none") return res.status(404).json({ error: "No such round" });
+
+    const result = await prisma.$transaction(async (tx) => {
+      // The marker is the gate. ON CONFLICT DO NOTHING returns rowcount 0 when
+      // this room was already answered, and the whole transaction — marker AND
+      // belief write — rolls back together if anything below throws, so a
+      // failed write leaves nothing claimed and the user can retry.
+      const claimed = await tx.$executeRawUnsafe(
+        `INSERT INTO "RapidAftermathAnswered" ("userId","roomName") VALUES ($1,$2)
+         ON CONFLICT ("userId","roomName") DO NOTHING`,
+        userId, roomName,
+      );
+      if (claimed === 0) return { alreadyAnswered: true, changed: false };
+      const r = await recordBelief(tx as any, userId, round.propositionId, stance, confidence, roomName, true);
+      return { alreadyAnswered: false, changed: r.changed };
+    });
+
+    res.json(result);
+  } catch (e) {
+    console.error("[POST /api/rapid/aftermath]", e);
+    res.status(500).json({ error: "Failed to record" });
   }
 });
 
@@ -4819,6 +4892,21 @@ async function start() {
       )
     `);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BeliefChange_userId_idx" ON "BeliefChange"("userId","createdAt")`);
+
+    // One row per (user, rapid round) once they've answered the post-debate
+    // "did that move you?". It makes the aftermath idempotent: the prompt asks
+    // once and the answer lands once, so re-opening the result modal — which
+    // remounts the component and resets its in-memory guards — cannot log a
+    // second BeliefChange for the same debate and inflate the one metric this
+    // whole loop exists to measure.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "RapidAftermathAnswered" (
+        "userId"     TEXT NOT NULL,
+        "roomName"   TEXT NOT NULL,
+        "answeredAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+        PRIMARY KEY ("userId","roomName")
+      )
+    `);
     console.log("[DB] Belief layer ready");
   } catch (e) {
     console.error("[DB] Belief layer setup failed:", e);
