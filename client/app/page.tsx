@@ -204,7 +204,7 @@ export default function AuthPage() {
                 className={`flex-1 rounded-lg py-2 text-sm font-semibold capitalize transition-colors ${
                   view === t
                     ? "bg-white text-brand-green-ink shadow-sm dark:bg-gray-900 dark:text-brand-green"
-                    : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    : "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
               >
                 {t}
