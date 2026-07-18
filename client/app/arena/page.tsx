@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ArenaSidebar from "@/components/ArenaSidebar";
@@ -562,12 +563,13 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
         </button>
       </div>
 
-      {modalOpen && (
+      {modalOpen && typeof document !== "undefined" && createPortal(
         <MatchSetupModal
           bot={bot}
           onConfirm={challenge}
           onClose={() => setModalOpen(false)}
-        />
+        />,
+        document.body,
       )}
     </div>
   );
