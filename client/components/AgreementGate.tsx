@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
 
@@ -15,6 +16,7 @@ const DOC_LINK = "text-brand-green-ink underline hover:no-underline dark:text-br
 // without dismissing the gate.
 export default function AgreementGate() {
   const { status } = useSession();
+  const pathname = usePathname() ?? "";
   const [needsAccept, setNeedsAccept] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -28,7 +30,9 @@ export default function AgreementGate() {
     return () => { active = false; };
   }, [status]);
 
-  if (!needsAccept) return null;
+  // The /legal documents must stay readable without accepting — you have to be
+  // able to read the terms before you can agree to them.
+  if (!needsAccept || pathname.startsWith("/legal")) return null;
 
   const accept = async () => {
     setSubmitting(true);
