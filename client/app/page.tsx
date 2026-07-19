@@ -23,6 +23,7 @@ export default function AuthPage() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
   const [signupDone, setSignupDone] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   // Already signed in? Skip the login screen and go straight to the app.
   useEffect(() => {
@@ -56,11 +57,12 @@ export default function AuthPage() {
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!agreed) return setError("Please accept the Terms, Privacy Policy, and Community Guidelines to continue.");
     setLoading(true);
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, agreed }),
     });
     const data = await res.json();
     if (!res.ok) { setLoading(false); return setError(data.error); }
@@ -250,8 +252,9 @@ export default function AuthPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  tabIndex={-1}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-gray-500 hover:text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 dark:text-gray-400 dark:hover:text-gray-200"
                 >
                   {showPassword ? (
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
@@ -281,6 +284,24 @@ export default function AuthPage() {
               </div>
             )}
 
+            {/* Agreement consent — required to create an account */}
+            {view === "signup" && (
+              <label className="flex items-start gap-2.5 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-orange-700 focus:ring-2 focus:ring-orange-500 dark:border-gray-600 dark:bg-gray-800"
+                />
+                <span>
+                  I am at least 13 years old and I agree to the{" "}
+                  <a href="/legal/terms" target="_blank" rel="noopener noreferrer" className="font-medium text-orange-700 underline dark:text-orange-400">Terms of Service</a>,{" "}
+                  <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" className="font-medium text-orange-700 underline dark:text-orange-400">Privacy Policy</a>, and{" "}
+                  <a href="/legal/guidelines" target="_blank" rel="noopener noreferrer" className="font-medium text-orange-700 underline dark:text-orange-400">Community Guidelines</a>.
+                </span>
+              </label>
+            )}
+
             {error && (
               <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">{error}</p>
             )}
@@ -290,6 +311,13 @@ export default function AuthPage() {
               {loading ? "Please wait…" : view === "login" ? "Sign in →" : "Create account →"}
             </button>
           </form>
+          <p className="mt-5 text-center text-[11px] text-gray-400 dark:text-gray-500">
+            <a href="/legal/terms" className="underline hover:text-gray-600 dark:hover:text-gray-300">Terms</a>
+            {" · "}
+            <a href="/legal/privacy" className="underline hover:text-gray-600 dark:hover:text-gray-300">Privacy</a>
+            {" · "}
+            <a href="/legal/guidelines" className="underline hover:text-gray-600 dark:hover:text-gray-300">Guidelines</a>
+          </p>
         </div>
       </div>
     </main>

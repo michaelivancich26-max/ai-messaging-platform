@@ -100,6 +100,9 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
     <div className="relative" ref={panelRef}>
       <button
         onClick={toggleOpen}
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-expanded={open}
+        aria-haspopup="menu"
         className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
           open ? "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200"
         }`}

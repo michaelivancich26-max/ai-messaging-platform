@@ -14,6 +14,7 @@ import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId, categoryLabel } from "./services/topics";
 import { getDeck, beliefCount, recordBelief, seedFromCatalog, type Stance } from "./services/propositions";
 import { transcriptText } from "./services/transcript";
+import { AGREEMENTS_VERSION } from "./services/legal";
 import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
 import bcrypt from "bcryptjs";
 
@@ -4714,6 +4715,77 @@ app.delete("/api/notifications", async (req, res) => {
 });
 
 
+// ── Legal / agreements ──────────────────────────────────────────────────────
+// Whether the signed-in user has accepted the CURRENT agreements version.
+app.get("/api/legal/status", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not signed in" });
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ v: string | null }[]>(
+      `SELECT "acceptedAgreementsVersion" AS v FROM "User" WHERE id = $1`, userId,
+    );
+    res.json({ accepted: rows[0]?.v === AGREEMENTS_VERSION, currentVersion: AGREEMENTS_VERSION });
+  } catch (e) { console.error("[legal/status]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// Record acceptance of the current agreements version.
+app.post("/api/legal/accept", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not signed in" });
+  try {
+    await prisma.$executeRawUnsafe(
+      `UPDATE "User" SET "acceptedAgreementsVersion" = $1, "acceptedAgreementsAt" = NOW() WHERE id = $2`,
+      AGREEMENTS_VERSION, userId,
+    );
+    res.json({ ok: true, version: AGREEMENTS_VERSION });
+  } catch (e) { console.error("[legal/accept]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// ── Data rights (GDPR/CCPA-style access & erasure) ──────────────────────────
+// Download a machine-readable copy of the signed-in user's data.
+app.get("/api/me/export", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not signed in" });
+  try {
+    const q = (sql: string) => prisma.$queryRawUnsafe<any[]>(sql, userId).catch(() => [] as any[]);
+    const [account] = await q(`SELECT id, username, email, bio, "avatarUrl", "createdAt", "isAdmin", elo, "arenaElo", "rapidElo", "dailyStreak", "longestStreak", "acceptedAgreementsVersion", "acceptedAgreementsAt" FROM "User" WHERE id = $1`);
+    const messages       = await q(`SELECT id, content, "roomId", "channelId", "createdAt" FROM "Message" WHERE "userId" = $1 ORDER BY "createdAt"`);
+    const claims         = await q(`SELECT id, text, status, score, "roomId", "createdAt" FROM "Claim" WHERE "claimantId" = $1 ORDER BY "createdAt"`);
+    const beliefs        = await q(`SELECT "propositionId", stance, confidence FROM "UserBelief" WHERE "userId" = $1`);
+    const roomMemberships = await q(`SELECT "roomId", role, "joinedAt" FROM "RoomMember" WHERE "userId" = $1`);
+    const notifications  = await q(`SELECT type, "roomName", content, read, "createdAt" FROM "Notification" WHERE "userId" = $1`);
+    const competitive    = await q(`SELECT "roomName", "challengerId", "challengedId", "winnerId", verdict, status, "completedAt" FROM "CompetitiveMatch" WHERE "challengerId" = $1 OR "challengedId" = $1`);
+    const arena          = await q(`SELECT "roomName", "botId", winner, verdict, ranked, "createdAt" FROM "ArenaMatch" WHERE "userId" = $1`);
+    const payload = { exportedAt: new Date().toISOString(), account, messages, claims, beliefs, roomMemberships, notifications, matches: { competitive, arena } };
+    res.setHeader("Content-Disposition", `attachment; filename="grounds-for-debate-data.json"`);
+    res.setHeader("Content-Type", "application/json");
+    res.send(JSON.stringify(payload, null, 2));
+  } catch (e) { console.error("[me/export]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// Delete the signed-in user's account: irreversibly de-identify the profile,
+// disable login, and purge private communications and tokens. Debate content is
+// retained but attributed to a de-identified user, so shared debates and other
+// players' match history stay intact.
+app.post("/api/me/delete", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not signed in" });
+  try {
+    const deadPass = await bcrypt.hash(`deleted-${userId}-${Math.random()}`, 10);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "User" SET username = $2, email = $3, password = $4,
+         bio = NULL, "avatarUrl" = NULL, "emailVerified" = NULL, "deletedAt" = NOW()
+       WHERE id = $1`,
+      userId, `deleted_${userId}`, `${userId}@deleted.invalid`, deadPass,
+    );
+    await prisma.$executeRawUnsafe(`DELETE FROM "Notification" WHERE "userId" = $1 OR "fromUserId" = $1`, userId).catch(() => {});
+    await prisma.$executeRawUnsafe(`DELETE FROM "PasswordResetToken" WHERE "userId" = $1`, userId).catch(() => {});
+    await prisma.$executeRawUnsafe(`DELETE FROM "EmailVerificationToken" WHERE "userId" = $1`, userId).catch(() => {});
+    await prisma.$executeRawUnsafe(`DELETE FROM "DebateQueue" WHERE "userId" = $1`, userId).catch(() => {});
+    res.json({ ok: true });
+  } catch (e) { console.error("[me/delete]", e); res.status(500).json({ error: "Server error" }); }
+});
+
 const PORT = process.env.PORT ?? 3001;
 
 async function start() {
@@ -5071,6 +5143,16 @@ async function start() {
     console.log("[DB] User rubric-average + streak columns ready");
   } catch (e) {
     console.error("[DB] User rubric-average/streak setup failed:", e);
+  }
+
+  // Agreement acceptance (Terms/Privacy/Community Guidelines) + soft-delete marker.
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "acceptedAgreementsVersion" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "acceptedAgreementsAt" TIMESTAMP(3)`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`);
+    console.log("[DB] User agreement-acceptance columns ready");
+  } catch (e) {
+    console.error("[DB] User agreement-acceptance setup failed:", e);
   }
 
   try {

@@ -7,6 +7,7 @@ import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import { api } from "@/lib/api";
+import { signOutEverywhere } from "@/lib/session";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
@@ -137,6 +138,12 @@ export default function DashboardPage() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  const [dataOpen, setDataOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [dataMsg, setDataMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
   useEffect(() => {
     if (status !== "authenticated" || !userId) return;
     api(`${SERVER}/api/users/${userId}/profile`)
@@ -219,6 +226,32 @@ export default function DashboardPage() {
       if (!res.ok) { setPwMsg({ type: "err", text: data.error ?? "Something went wrong." }); }
       else { setPwMsg({ type: "ok", text: "Password changed." }); setPw({ current: "", next: "", confirm: "" }); setPwOpen(false); }
     } finally { setPwSaving(false); }
+  }
+
+  async function exportData() {
+    setDataMsg(null); setExporting(true);
+    try {
+      const res = await api(`${SERVER}/api/me/export`);
+      if (!res.ok) { setDataMsg({ type: "err", text: "Could not export your data. Please try again." }); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "grounds-for-debate-data.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      setDataMsg({ type: "ok", text: "Your data download has started." });
+    } catch { setDataMsg({ type: "err", text: "Could not export your data. Please try again." }); }
+    finally { setExporting(false); }
+  }
+
+  async function deleteAccount() {
+    setDataMsg(null); setDeleting(true);
+    try {
+      const res = await api(`${SERVER}/api/me/delete`, { method: "POST" });
+      if (!res.ok) { setDataMsg({ type: "err", text: "Could not delete your account. Please try again." }); setDeleting(false); return; }
+      // Account is de-identified and login disabled — sign out everywhere.
+      signOutEverywhere();
+    } catch { setDataMsg({ type: "err", text: "Could not delete your account. Please try again." }); setDeleting(false); }
   }
 
   if (status === "loading") return (
@@ -417,6 +450,51 @@ export default function DashboardPage() {
                   {pwMsg && <p className={`text-xs ${pwMsg.type === "ok" ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{pwMsg.text}</p>}
                   <button type="submit" disabled={pwSaving} className="w-full rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-50">{pwSaving ? "Updating…" : "Update password"}</button>
                 </form>
+              )}
+            </div>
+
+            {/* ── Privacy & your data ── */}
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
+              <button onClick={() => { setDataOpen(v => !v); setDataMsg(null); }} className="flex w-full items-center justify-between px-5 py-4 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+                <span className="font-semibold">Privacy &amp; your data</span>
+                <svg viewBox="0 0 16 16" fill="currentColor" className={`h-4 w-4 text-gray-500 dark:text-gray-400 transition-transform ${dataOpen ? "rotate-180" : ""}`}><path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
+              </button>
+              {dataOpen && (
+                <div className="border-t border-gray-200 dark:border-gray-800 px-5 py-4 space-y-5">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    <a href="/legal/terms" target="_blank" rel="noopener noreferrer" className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Terms</a>
+                    <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Privacy Policy</a>
+                    <a href="/legal/guidelines" target="_blank" rel="noopener noreferrer" className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Community Guidelines</a>
+                    <a href="/legal/cookies" target="_blank" rel="noopener noreferrer" className="text-gray-500 underline hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">Cookies</a>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Download your data</p>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Export a copy of your account, messages, claims, positions, and match history as JSON.</p>
+                    <button onClick={exportData} disabled={exporting}
+                      className="mt-2.5 rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/60">
+                      {exporting ? "Preparing…" : "Download my data"}
+                    </button>
+                  </div>
+
+                  <div className="rounded-xl border border-red-200 bg-red-50/60 p-3.5 dark:border-red-900/40 dark:bg-red-950/20">
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-400">Delete your account</p>
+                    <p className="mt-0.5 text-xs text-red-700/80 dark:text-red-300/80">
+                      This permanently removes your personal information and signs you out. Your past debate content stays but is de-identified so it no longer links to you. This cannot be undone.
+                    </p>
+                    <label className="mt-2.5 block text-xs text-red-700/90 dark:text-red-300/90">
+                      Type <span className="font-mono font-bold">DELETE</span> to confirm
+                      <input value={deleteText} onChange={e => setDeleteText(e.target.value)} placeholder="DELETE"
+                        className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm text-gray-900 outline-none ring-1 ring-red-300 focus:ring-2 focus:ring-red-500 dark:bg-gray-900 dark:text-gray-100 dark:ring-red-900/60" />
+                    </label>
+                    <button onClick={deleteAccount} disabled={deleting || deleteText !== "DELETE"}
+                      className="mt-2.5 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-40">
+                      {deleting ? "Deleting…" : "Permanently delete my account"}
+                    </button>
+                  </div>
+
+                  {dataMsg && <p className={`text-xs ${dataMsg.type === "ok" ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{dataMsg.text}</p>}
+                </div>
               )}
             </div>
 

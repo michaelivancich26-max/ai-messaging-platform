@@ -76,6 +76,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full">
+      {/* Keyboard users can jump past the navigation straight to the page content. */}
+      <a href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[80] focus:rounded-lg focus:bg-brand-green focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white focus:shadow-elevated">
+        Skip to content
+      </a>
       {/* Desktop left rail */}
       <aside className="hidden md:flex md:flex-col w-52 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pt-safe">
         <div className="flex items-center gap-2 px-4 h-14 border-b border-gray-200 dark:border-gray-800">
@@ -83,11 +88,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <Wordmark className="text-sm" />
           <div className="ml-auto">{userId && <NotificationBell userId={userId} username={username} />}</div>
         </div>
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+        <nav aria-label="Primary" className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
           {NAV.map(({ href, label, match, Icon }) => {
             const active = isActive(href, match);
             return (
-              <button key={href} onClick={() => router.push(href)}
+              <button key={href} onClick={() => router.push(href)} aria-current={active ? "page" : undefined}
                 className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${active ? "bg-brand-green/15 font-semibold text-brand-green-ink dark:bg-brand-green/20 dark:text-brand-green" : "font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"}`}>
                 {active && <span aria-hidden className="absolute left-0 top-1/2 h-5 w-1 -translate-x-0.5 -translate-y-1/2 rounded-r-full bg-brand-green" />}
                 <Icon className="h-5 w-5 shrink-0" />
@@ -149,14 +154,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
+        <main id="main-content" tabIndex={-1} className="flex-1 min-h-0 overflow-hidden focus:outline-none">{children}</main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="md:hidden flex shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pb-safe">
+        <nav aria-label="Primary" className="md:hidden flex shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pb-safe">
           {NAV.map(({ href, short, match, Icon }) => {
             const active = isActive(href, match);
             return (
-              <button key={href} onClick={() => router.push(href)}
+              <button key={href} onClick={() => router.push(href)} aria-current={active ? "page" : undefined}
                 className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors ${active ? "font-semibold text-brand-green-ink dark:text-brand-green" : "font-medium text-gray-500 dark:text-gray-400"}`}>
                 {active && <span aria-hidden className="absolute top-0 h-0.5 w-7 rounded-b-full bg-brand-green" />}
                 <Icon className="h-5 w-5" />
