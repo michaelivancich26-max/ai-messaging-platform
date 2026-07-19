@@ -111,9 +111,9 @@ function StarRow({ tier, color }: { tier: number; color: Bot["color"] }) {
 // ─── Win Condition types ──────────────────────────────────────────────────────
 
 type WinCondition =
-  | { type: "exchanges"; limit: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean }
-  | { type: "time"; minutes: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean }
-  | { type: "proposition"; threshold: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean };
+  | { type: "exchanges"; limit: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean; propositionId?: string }
+  | { type: "time"; minutes: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean; propositionId?: string }
+  | { type: "proposition"; threshold: number; topic?: string; stance?: "affirmative" | "negative"; botFirst?: boolean; propositionId?: string };
 
 // ─── Topic catalog ────────────────────────────────────────────────────────────
 
@@ -193,6 +193,8 @@ function MatchSetupModal({
 }) {
   const [step, setStep] = useState<"topic" | "condition">("topic");
   const [topicInput, setTopicInput] = useState("");
+  const [selectedPropId, setSelectedPropId] = useState<string | null>(null);
+  const [rankedClaims, setRankedClaims] = useState<{ category: string; claims: { id: string; text: string }[] }[]>([]);
   const [stance, setStance] = useState<"affirmative" | "negative">("affirmative");
   const [botFirst, setBotFirst] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -202,16 +204,41 @@ function MatchSetupModal({
   const [propThreshold, setPropThreshold] = useState(70);
   const c = BOT_COLORS[bot.color];
 
+  // The vetted live claims a RANKED (ELO-earning) match can use. Falls back to the
+  // static catalog (as practice suggestions) if none load.
+  useEffect(() => {
+    api(`${SERVER}/api/arena/claims`).then(r => r.json())
+      .then(d => Array.isArray(d) && d.length && setRankedClaims(d)).catch(() => {});
+  }, []);
+
   const effectiveTopic = topicInput.trim();
-  const filteredTopics = activeCategory
-    ? TOPIC_CATALOG.find(g => g.category === activeCategory)?.topics ?? []
-    : TOPIC_CATALOG.flatMap(g => g.topics);
+  const claimGroups = rankedClaims.length
+    ? rankedClaims
+    : TOPIC_CATALOG.map(g => ({ category: g.category, claims: g.topics.map(t => ({ id: "", text: t })) }));
+  const filteredClaims = activeCategory
+    ? claimGroups.find(g => g.category === activeCategory)?.claims ?? []
+    : claimGroups.flatMap(g => g.claims);
+  // A ranked match needs a live claim id — either picked, or a typed topic that
+  // exactly matches one. Server re-checks this; the flag here is just for the UI.
+  const claimIdByText = new Map<string, string>();
+  for (const g of rankedClaims) for (const cl of g.claims) claimIdByText.set(cl.text.trim().toLowerCase(), cl.id);
+  const ranked = !!selectedPropId;
+
+  function setTopic(v: string) {
+    setTopicInput(v);
+    setSelectedPropId(claimIdByText.get(v.trim().toLowerCase()) ?? null);
+  }
+  function pickClaim(cl: { id: string; text: string }) {
+    setTopicInput(cl.text);
+    setSelectedPropId(cl.id || null);
+  }
 
   function confirm() {
-    const topic = effectiveTopic ?? undefined;
-    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit, topic, stance, botFirst });
-    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes, topic, stance, botFirst });
-    else onConfirm({ type: "proposition", threshold: propThreshold, topic, stance, botFirst });
+    const topic = effectiveTopic || undefined;
+    const propositionId = selectedPropId ?? undefined;
+    if (type === "exchanges") onConfirm({ type: "exchanges", limit: exchangeLimit, topic, stance, botFirst, propositionId });
+    else if (type === "time") onConfirm({ type: "time", minutes: timeMinutes, topic, stance, botFirst, propositionId });
+    else onConfirm({ type: "proposition", threshold: propThreshold, topic, stance, botFirst, propositionId });
   }
 
   const optionCls = (active: boolean) =>
@@ -253,10 +280,19 @@ function MatchSetupModal({
               <input
                 autoFocus
                 value={topicInput}
-                onChange={e => setTopicInput(e.target.value)}
-                placeholder="Type your own topic, or pick one below…"
+                onChange={e => setTopic(e.target.value)}
+                placeholder="Pick a ranked claim below, or type your own for practice…"
                 className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3.5 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:border-orange-500 transition-colors"
               />
+              {effectiveTopic && (
+                <p className={`mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold ${ranked ? "text-emerald-700 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}`}>
+                  {ranked ? (
+                    <><svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3"><path d="M8 1.5 10 5l3.5.5-2.5 2.5.6 3.5L8 10l-3.1 1.5.6-3.5L3 5.5 6.5 5 8 1.5Z" /></svg>Ranked · earns arena ELO</>
+                  ) : (
+                    <>Practice · no ELO — pick a claim below to make it ranked</>
+                  )}
+                </p>
+              )}
             </div>
 
             {/* Stance + turn order */}
@@ -304,7 +340,9 @@ function MatchSetupModal({
 
             {/* Divider + category pills */}
             <div className="px-5 pb-2 shrink-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">or choose from catalog</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                {rankedClaims.length ? "ranked claims — pick one to earn ELO" : "or choose from catalog"}
+              </p>
               <div className="flex gap-1.5 flex-wrap">
                 <button
                   onClick={() => setActiveCategory(null)}
@@ -312,7 +350,7 @@ function MatchSetupModal({
                 >
                   All
                 </button>
-                {TOPIC_CATALOG.map(g => (
+                {claimGroups.map(g => (
                   <button
                     key={g.category}
                     onClick={() => setActiveCategory(g.category === activeCategory ? null : g.category)}
@@ -324,19 +362,19 @@ function MatchSetupModal({
               </div>
             </div>
 
-            {/* Topic list */}
+            {/* Claim list — picking one makes the match ranked */}
             <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-1.5 min-h-0">
-              {filteredTopics.map(topic => (
+              {filteredClaims.map((cl, i) => (
                 <button
-                  key={topic}
-                  onClick={() => setTopicInput(topic)}
+                  key={cl.id || `${cl.text}-${i}`}
+                  onClick={() => pickClaim(cl)}
                   className={`w-full text-left rounded-xl border px-3.5 py-2.5 text-xs leading-snug transition-colors ${
-                    topicInput === topic
+                    topicInput === cl.text
                       ? "border-orange-600 bg-orange-50 dark:bg-orange-950/20 text-gray-900 dark:text-gray-100"
                       : "border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-700 dark:hover:text-gray-300"
                   }`}
                 >
-                  {topic}
+                  {cl.text}
                 </button>
               ))}
             </div>

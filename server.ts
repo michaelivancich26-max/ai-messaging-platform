@@ -11,7 +11,7 @@ import { summarizeConversation } from "./services/summarizer";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
-import { TOPIC_CATALOG, isCategoryId } from "./services/topics";
+import { TOPIC_CATALOG, isCategoryId, categoryLabel } from "./services/topics";
 import { getDeck, beliefCount, recordBelief, seedFromCatalog, type Stance } from "./services/propositions";
 import { transcriptText } from "./services/transcript";
 import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
@@ -3492,14 +3492,35 @@ app.get("/api/arena-leaderboard", async (_req, res) => {
          COALESCE(w.count, 0)::int AS wins,
          COALESCE(l.count, 0)::int AS losses
        FROM "User" u
-       JOIN (SELECT "userId", COUNT(*) AS c FROM "ArenaMatch" GROUP BY "userId") am ON am."userId" = u.id
-       LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'human' GROUP BY "userId") w ON w.uid = u.id
-       LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'bot'   GROUP BY "userId") l ON l.uid = u.id
+       JOIN (SELECT "userId", COUNT(*) AS c FROM "ArenaMatch" WHERE "ranked" = true GROUP BY "userId") am ON am."userId" = u.id
+       LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'human' AND "ranked" = true GROUP BY "userId") w ON w.uid = u.id
+       LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'bot'   AND "ranked" = true GROUP BY "userId") l ON l.uid = u.id
        ORDER BY u."arenaElo" DESC LIMIT 25`,
     ).catch(() => [] as any[]);
     res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
   } catch (e) {
     console.error("[arena-leaderboard]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// GET /api/arena/claims — the vetted, two-sided LIVE claims a ranked (ELO-earning)
+// arena match can be built on, grouped by category. Free-text topics stay allowed
+// in the UI but only these earn ELO.
+app.get("/api/arena/claims", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ id: string; text: string; categoryId: string }[]>(
+      `SELECT id, text, "categoryId" FROM "Proposition" WHERE status = 'live' ORDER BY "categoryId", text LIMIT 300`,
+    );
+    const byCat = new Map<string, { id: string; text: string }[]>();
+    for (const r of rows) {
+      const label = categoryLabel(r.categoryId);
+      if (!byCat.has(label)) byCat.set(label, []);
+      byCat.get(label)!.push({ id: r.id, text: r.text });
+    }
+    res.json(Array.from(byCat, ([category, claims]) => ({ category, claims })));
+  } catch (e) {
+    console.error("[arena/claims]", e);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -3628,41 +3649,49 @@ app.post("/api/arena-judge", async (req, res) => {
     );
     if (existing.length > 0) {
       const row = existing[0];
-      return res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId });
+      return res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId, ranked: !!row.ranked });
     }
 
-    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null }[]>(
-      `SELECT id, "botId" FROM "Room" WHERE name = $1 LIMIT 1`,
+    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null; matchConfig: string | null }[]>(
+      `SELECT id, "botId", "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`,
       roomName,
     );
     if (roomRows.length === 0) return res.status(404).json({ error: "Room not found" });
     const roomDbId = roomRows[0].id;
     const botId = roomRows[0].botId ?? roomName.replace("arena-", "").split("-")[0];
     if (!botId) return res.status(400).json({ error: "Bot not found for room" });
+    // Ranked was decided at room creation (server-authoritative): true only for a
+    // vetted live claim. Unranked practice never touches ELO or the leaderboard.
+    let ranked = false;
+    try { ranked = !!JSON.parse(roomRows[0].matchConfig ?? "{}").ranked; } catch { /* unranked */ }
 
     const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit, forcedWinner);
 
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact")
-       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6)
+      `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact","ranked")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT ("roomName") DO NOTHING`,
-      roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact,
+      roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact, ranked,
     );
 
     // Training counts toward the daily streak, not just chatting.
     bumpDailyStreak(userId).catch(() => {});
 
-    // Update the user's arena ELO against a tier-scaled bot rating (tier 1→1200 … tier 5→2000)
-    try {
-      const tier = BOT_TIER[result.botId] ?? 3;
-      const botRating = 1000 + tier * 200;
-      const aeRows = await prisma.$queryRawUnsafe<{ arenaElo: number }[]>(
-        `SELECT "arenaElo" FROM "User" WHERE id = $1`, userId,
-      ).catch(() => [] as any[]);
-      const cur = Number(aeRows[0]?.arenaElo ?? 1200);
-      const { newA } = calcElo(cur, botRating, result.winner === "human");
-      await prisma.$executeRawUnsafe(`UPDATE "User" SET "arenaElo" = $1 WHERE id = $2`, newA, userId);
-    } catch (e) { console.error("[arena elo]", e); }
+    // Update the user's arena ELO against a tier-scaled bot rating (tier 1→1200 … tier 5→2000).
+    // RANKED matches only — a win on a custom topic (where the bot may hold an
+    // indefensible stance) moves nothing, which is the whole anti-farm gate.
+    if (ranked) {
+      try {
+        const tier = BOT_TIER[result.botId] ?? 3;
+        const botRating = 1000 + tier * 200;
+        const aeRows = await prisma.$queryRawUnsafe<{ arenaElo: number }[]>(
+          `SELECT "arenaElo" FROM "User" WHERE id = $1`, userId,
+        ).catch(() => [] as any[]);
+        const cur = Number(aeRows[0]?.arenaElo ?? 1200);
+        const { newA } = calcElo(cur, botRating, result.winner === "human");
+        await prisma.$executeRawUnsafe(`UPDATE "User" SET "arenaElo" = $1 WHERE id = $2`, newA, userId);
+      } catch (e) { console.error("[arena elo]", e); }
+    }
 
     // Keep only the last 5 arena match logs per user — delete messages from older completed rooms
     const ARENA_LOG_LIMIT = 5;
@@ -3673,7 +3702,7 @@ app.post("/api/arena-judge", async (req, res) => {
       await prisma.$executeRawUnsafe(`DELETE FROM "Message" WHERE "roomId" = $1`, roomDbId);
     }
 
-    res.json(result);
+    res.json({ ...result, ranked });
   } catch (e) {
     console.error("[arena-judge]", e);
     res.status(500).json({ error: "Server error" });
@@ -4039,7 +4068,7 @@ app.post("/api/dm/read", async (req, res) => {
 app.post("/api/bot-rooms", async (req, res) => {
   const userId = actorId(req)!;
   const { botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {
-    botId: string; winCondition?: object;
+    botId: string; winCondition?: { topic?: string; propositionId?: string; [k: string]: unknown };
   };
   if (!botId) return res.status(400).json({ error: "botId required" });
   if (!BOT_IDS.includes(botId)) return res.status(400).json({ error: "Unknown bot" });
@@ -4047,6 +4076,30 @@ app.post("/api/bot-rooms", async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Ranked iff the debate is on a vetted, two-sided LIVE claim — either chosen
+    // by id, or a free-text topic that exactly matches one. Curated claims are
+    // balanced by construction, so no side is a free win; anything else is
+    // unranked practice that earns no ELO. This is the anti-farm gate: you can no
+    // longer deal a bot an indefensible custom stance and bank a ranked win. The
+    // server is the authority — the client's flag is never trusted.
+    const wc: any = { ...(winCondition as any) };
+    let liveClaim: { id: string; text: string } | null = null;
+    if (typeof wc.propositionId === "string" && wc.propositionId) {
+      const rows = await prisma.$queryRawUnsafe<{ id: string; text: string }[]>(
+        `SELECT id, text FROM "Proposition" WHERE id = $1 AND status = 'live' LIMIT 1`, wc.propositionId,
+      );
+      if (rows[0]) liveClaim = rows[0];
+    }
+    if (!liveClaim && typeof wc.topic === "string" && wc.topic.trim()) {
+      const rows = await prisma.$queryRawUnsafe<{ id: string; text: string }[]>(
+        `SELECT id, text FROM "Proposition" WHERE status = 'live' AND lower(text) = lower($1) LIMIT 1`, wc.topic.trim(),
+      );
+      if (rows[0]) liveClaim = rows[0];
+    }
+    wc.ranked = !!liveClaim;
+    if (liveClaim) { wc.topic = liveClaim.text; wc.propositionId = liveClaim.id; }
+    else { delete wc.propositionId; }
 
     const shortId = Date.now().toString(36).slice(-5);
     const name = `arena-${botId}-${userId.slice(-5)}-${shortId}`;
@@ -4057,7 +4110,7 @@ app.post("/api/bot-rooms", async (req, res) => {
 
     await prisma.$executeRawUnsafe(
       `UPDATE "Room" SET "isBotRoom" = true, "botId" = $1, "matchConfig" = $2 WHERE "id" = $3`,
-      botId, JSON.stringify(winCondition), room.id,
+      botId, JSON.stringify(wc), room.id,
     );
 
     await prisma.roomMember.create({ data: { userId, roomId: room.id } } as any);
@@ -4642,6 +4695,24 @@ app.patch("/api/notifications/read", async (req, res) => {
   }
 });
 
+// DELETE /api/notifications — "Clear all". Persists the clear so dismissed
+// notifications don't reappear on the next fetch (i.e. after a refresh). Keeps
+// UNRESOLVED invites: for a room/DM invite the notification is the invite record
+// itself (respondInvite resolves it by notifId), so deleting one would strand an
+// invite the user can no longer accept or decline.
+app.delete("/api/notifications", async (req, res) => {
+  const userId = actorId(req)!;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  try {
+    await (prisma as any).notification.deleteMany({
+      where: { userId, NOT: { type: "invite", resolved: false } },
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 const PORT = process.env.PORT ?? 3001;
 
@@ -4959,6 +5030,10 @@ async function start() {
         "createdAt"   TIMESTAMP NOT NULL DEFAULT NOW()
       )
     `);
+    // Only matches on a vetted, two-sided curated claim count toward arena ELO
+    // and the leaderboard — custom free-text topics are unranked practice. This
+    // is what stops farming a bot you've dealt an indefensible stance.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ArenaMatch" ADD COLUMN IF NOT EXISTS "ranked" BOOLEAN NOT NULL DEFAULT false`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ArenaMatch_userId_idx" ON "ArenaMatch"("userId")`);
     console.log("[DB] ArenaMatch table ready");
   } catch (e) {

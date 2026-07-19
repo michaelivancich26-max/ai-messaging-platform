@@ -123,7 +123,16 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
             <span className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Notifications</span>
             {notifs.length > 0 && (
               <button
-                onClick={() => setNotifs([])}
+                onClick={() => {
+                  // Persist the clear so dismissed notifications don't reappear on
+                  // refresh. Unresolved invites are kept — they still need a response.
+                  api(`${SERVER}/api/notifications`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ userId }),
+                  }).catch(() => {});
+                  setNotifs(prev => prev.filter(n => n.type === "invite" && !n.resolved));
+                }}
                 className="text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
               >
                 Clear all
