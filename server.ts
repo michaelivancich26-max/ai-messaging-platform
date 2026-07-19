@@ -13,6 +13,7 @@ import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./servi
 import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId } from "./services/topics";
 import { getDeck, beliefCount, recordBelief, seedFromCatalog, type Stance } from "./services/propositions";
+import { transcriptText } from "./services/transcript";
 import { verifySessionToken, bearerToken, assertAuthConfigured, type Actor } from "./services/auth";
 import bcrypt from "bcryptjs";
 
@@ -215,6 +216,41 @@ function leavePresence(socketId: string) {
       if (members.size === 0) presence.delete(roomId);
     }
   }
+}
+
+// A message too trivial to be a real debate claim — "ok", "lol", "yes", a lone
+// emoji. We skip the whole per-message AI chain for these: the auto-stake + claim
+// evaluation, and any bot reply. Evaluating them spends a model call to score
+// noise, and a bot answering an ack adds nothing. The message is still delivered
+// and stored — only the (paid) AI work is skipped.
+function isTrivialForAI(content: string): boolean {
+  const t = (content ?? "").trim();
+  if (!/[\p{L}\p{N}]/u.test(t)) return true;          // punctuation / emoji only
+  const words = t.split(/\s+/).filter(Boolean);
+  return words.length <= 2 && t.length < 15;          // very short acknowledgements
+}
+
+// Bot replies are debounced per room+channel: a burst of quick human messages
+// draws ONE reply to the latest instead of one (expensive) reply each. The timer
+// always fires, so a lone message is still answered — just after a short pause.
+const botReplyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const botReplyLatest = new Map<string, { content: string; channelId: string | null }>();
+const BOT_REPLY_DEBOUNCE_MS = 800;
+
+function scheduleBotReply(
+  roomDbId: string, roomName: string, botId: string,
+  content: string, channelId: string | null,
+): void {
+  const key = `${roomName}::${channelId ?? ""}`;
+  botReplyLatest.set(key, { content, channelId });
+  const existing = botReplyTimers.get(key);
+  if (existing) clearTimeout(existing);
+  botReplyTimers.set(key, setTimeout(() => {
+    botReplyTimers.delete(key);
+    const latest = botReplyLatest.get(key);
+    botReplyLatest.delete(key);
+    if (latest) respondAsBot(roomDbId, roomName, botId, latest.content, latest.channelId, io, prisma);
+  }, BOT_REPLY_DEBOUNCE_MS));
 }
 
 io.on("connection", (socket) => {
@@ -666,6 +702,8 @@ io.on("connection", (socket) => {
       }
 
       const content = isImage ? rawContent : rawContent.slice(0, 2000);
+      // Trivial acks skip the paid AI chain (claim eval + bot reply) below.
+      const trivial = isTrivialForAI(content);
 
       if (!isImage && containsSlur(content)) {
         socket.emit("error", { message: "Message contains prohibited language and was not sent." });
@@ -757,12 +795,13 @@ io.on("connection", (socket) => {
         // Bot auto-reply (fire-and-forget; delay is handled inside respondAsBot)
         // Skip for competitive (human vs human) rooms even if isBotRoom is set
         const isCompetitiveRoom = room.name.startsWith("comp-");
-        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg && !isCompetitiveRoom && (room as any).isBotRoom && (room as any).botId) {
-          respondAsBot(room.id, room.name, (room as any).botId as string, content, channelId ?? null, io, prisma);
+        if (!isImage && !trivial && !isSidebarMsg && !isSpectatorChatMsg && !isCompetitiveRoom && (room as any).isBotRoom && (room as any).botId) {
+          scheduleBotReply(room.id, room.name, (room as any).botId as string, content, channelId ?? null);
         }
 
-        // Auto-stake every human message as a claim (skip DMs, images, sidebar, spectator chat)
-        if (!isImage && !isSidebarMsg && !isSpectatorChatMsg && !room.isDM) {
+        // Auto-stake every human message as a claim (skip DMs, images, sidebar,
+        // spectator chat, and trivial acks that would only score noise)
+        if (!isImage && !trivial && !isSidebarMsg && !isSpectatorChatMsg && !room.isDM) {
           (async () => {
             try {
               const existing = await (prisma as any).claim.findFirst({ where: { messageId: message.id } });
@@ -1094,6 +1133,21 @@ io.on("connection", (socket) => {
 
       const challenges = await (prisma as any).claimChallenge.findMany({ where: { claimId } });
       const emitTarget = channelId ? `channel:${channelId}` : roomId;
+
+      // The first few challenges re-judge the claim "with fresh eyes"; past that
+      // the verdict has stabilised and re-running the model on identical text just
+      // burns calls. Record the challenge and bump the count, but reuse the
+      // existing verdict.
+      const REEVAL_CAP = 3;
+      if (challenges.length > REEVAL_CAP) {
+        io.to(emitTarget).emit("claimVerdict", {
+          claimId, messageId: claim.messageId, status: claim.status, reasoning: claim.verdict,
+          claimantId: claim.claimantId, challengeCount: challenges.length,
+          score: Number(claim.score ?? 0), relevance: claim.relevance,
+          evidence: claim.evidence, logic: claim.logic, impact: claim.impact,
+        });
+        return;
+      }
 
       // Re-evaluate with fresh eyes
       try {
@@ -1839,6 +1893,37 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
     if (matches.length === 0) return null;
     const match = matches[0];
 
+    // Single-flight: for a client-driven competitive match (status 'active'),
+    // every debater's browser may POST /complete at the same instant and each
+    // would otherwise run the ~1-2s judge and write ELO. Take the match with one
+    // atomic transition; the losers wait for and return the winner's stored
+    // result. Rapid/forfeit settle paths pre-claim the round to 'closing', so
+    // status is not 'active'/'judging' here and they skip this and proceed.
+    if (match.status === "active" || match.status === "judging") {
+      const claimed = await prisma.$executeRawUnsafe(
+        `UPDATE "CompetitiveMatch" SET status='judging' WHERE "roomName"=$1 AND status='active'`, roomName,
+      );
+      if (claimed !== 1) {
+        for (let i = 0; i < 25; i++) {
+          await new Promise((r) => setTimeout(r, 200));
+          const done = await prisma.$queryRawUnsafe<any[]>(
+            `SELECT * FROM "CompetitiveMatch" WHERE "roomName"=$1 AND status='complete' LIMIT 1`, roomName,
+          );
+          if (done.length) {
+            const m = done[0];
+            return {
+              winnerId: m.winnerId, verdict: m.verdict,
+              challengerEloChange: (m.challengerEloAfter ?? m.challengerEloBefore) - m.challengerEloBefore,
+              challengedEloChange: (m.challengedEloAfter ?? m.challengedEloBefore) - m.challengedEloBefore,
+              challengerEloAfter: m.challengerEloAfter, challengedEloAfter: m.challengedEloAfter,
+              challengerId: m.challengerId, challengedId: m.challengedId,
+            };
+          }
+        }
+        return null;   // winner still completing; the client also gets the matchComplete socket broadcast
+      }
+    }
+
     // Fetch room messages for transcript
     const roomRows = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
     if (!roomRows) return null;
@@ -1851,7 +1936,7 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
     });
 
     const transcript = messages
-      .map(m => `${m.user?.username ?? "User"}: ${m.content}`)
+      .map(m => `${m.user?.username ?? "User"}: ${transcriptText(m.content)}`)
       .join("\n");
 
     // The real proposition lives in Room.matchConfig — a raw column, so Prisma's
@@ -3055,6 +3140,26 @@ app.post("/api/team/complete", async (req, res) => {
       return res.json({ isTeam: true, winningSide: match.winningSide, verdict: match.verdict, teamA, teamB, eloBefore, eloAfter, sideAStance: match.sideAStance, topic: match.topic });
     }
 
+    // Single-flight (see /api/competitive/complete): every member of both teams
+    // posts /complete at match end, so without this each would run the judge and
+    // write ELO. One atomic claim; the rest wait for and return the stored result.
+    const claimed = await prisma.$executeRawUnsafe(
+      `UPDATE "TeamMatch" SET status='judging' WHERE "roomName"=$1 AND status='active'`, roomName,
+    );
+    if (claimed !== 1) {
+      for (let i = 0; i < 25; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        const done = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT * FROM "TeamMatch" WHERE "roomName"=$1 AND status='complete' LIMIT 1`, roomName,
+        );
+        if (done.length) {
+          const m = done[0];
+          return res.json({ isTeam: true, winningSide: m.winningSide, verdict: m.verdict, teamA, teamB, eloBefore, eloAfter: JSON.parse(m.eloAfter ?? "{}"), sideAStance: m.sideAStance, topic: m.topic });
+        }
+      }
+      return res.status(409).json({ error: "Match is being completed" });
+    }
+
     const roomRow = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
     if (!roomRow) return res.status(404).json({ error: "Room not found" });
 
@@ -3066,7 +3171,7 @@ app.post("/api/team/complete", async (req, res) => {
     });
     const sideOf = (uid: string) => (teamA.includes(uid) ? "A" : teamB.includes(uid) ? "B" : "?");
     const transcript = messages
-      .map((m) => `[Team ${sideOf(m.userId ?? "")}] ${m.user?.username ?? "User"}: ${m.content}`)
+      .map((m) => `[Team ${sideOf(m.userId ?? "")}] ${m.user?.username ?? "User"}: ${transcriptText(m.content)}`)
       .join("\n");
 
     let winningSide: "A" | "B" = "A";

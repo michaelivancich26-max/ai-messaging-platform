@@ -98,9 +98,11 @@ async function runScan(roomId: string, { redis, io, prisma, emitRoom }: Deps) {
     const response = await client.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 256,
-      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      // No prompt caching: this static prefix (~150 tokens) is far below Haiku's
+      // minimum cacheable length, so cache_control would silently cache nothing.
+      system: systemPrompt,
       messages: [{ role: "user", content: `CONVERSATION:\n${context}` }],
-    } as any);
+    });
 
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
     const jsonMatch = raw.match(/\{[\s\S]*\}/);

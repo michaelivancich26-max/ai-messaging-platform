@@ -21,6 +21,14 @@ export async function summarizeConversation({ roomId, io, prisma, since, channel
   if (!room) return;
 
   try {
+    // Bound the input. With no `since`, "All messages" would otherwise send a
+    // busy room's entire human history verbatim in a single call — the app's only
+    // unbounded prompt. Take the most recent slice and cap the total characters,
+    // truncating any single over-long message.
+    const MAX_MSGS = 300;
+    const MAX_MSG_CHARS = 2000;
+    const MAX_TOTAL_CHARS = 60_000;
+
     const messages = await prisma.message.findMany({
       where: {
         roomId: room.id,
@@ -29,16 +37,26 @@ export async function summarizeConversation({ roomId, io, prisma, since, channel
         ...(since ? { createdAt: { gte: new Date(since) } } : {}),
       },
       include: { user: true },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },   // newest first, so the cap keeps recent history
+      take: MAX_MSGS,
     });
 
     // Filter out image messages — base64 content is huge and meaningless to summarize
     const textMessages = messages.filter(m => !m.content.startsWith('{"type":"image"'));
     if (textMessages.length === 0) return;
 
-    const context = textMessages
-      .map((m) => `[${m.user?.username ?? "unknown"}]: ${m.content}`)
-      .join("\n");
+    // Accumulate newest-first within the char budget, then restore chronological order.
+    const lines: string[] = [];
+    let total = 0;
+    for (const m of textMessages) {
+      const body = m.content.length > MAX_MSG_CHARS ? `${m.content.slice(0, MAX_MSG_CHARS)}…` : m.content;
+      const line = `[${m.user?.username ?? "unknown"}]: ${body}`;
+      if (total + line.length > MAX_TOTAL_CHARS) break;
+      lines.push(line);
+      total += line.length;
+    }
+    lines.reverse();
+    const context = lines.join("\n");
 
     const timeLabel = since
       ? `since ${new Date(since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`

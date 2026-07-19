@@ -3,6 +3,7 @@ import type { Server } from "socket.io";
 import type { PrismaClient } from "@prisma/client";
 import { SenderType } from "@prisma/client";
 import { evaluateClaim, computeCredibility } from "./claimEvaluator";
+import { transcriptText } from "./transcript";
 
 const anthropic = new Anthropic();
 
@@ -286,7 +287,7 @@ export async function respondAsBot(
       .map((m) => {
         const isBot = m.userId === botUser!.id;
         const speaker = isBot ? config.name : (m.user?.username ?? "Opponent");
-        return `${speaker}: ${m.content}`;
+        return `${speaker}: ${transcriptText(m.content)}`;
       })
       .join("\n");
     // Collect bot's own prior messages so we can explicitly forbid repetition
@@ -425,7 +426,7 @@ export async function judgeMatch(
   });
 
   const transcript = msgs
-    .map((m) => `${m.userId === botUser?.id ? config.name : "Human"}: ${m.content}`)
+    .map((m) => `${m.userId === botUser?.id ? config.name : "Human"}: ${transcriptText(m.content)}`)
     .join("\n");
 
   const judgePrompt =
@@ -436,45 +437,53 @@ export async function judgeMatch(
   let winner: "human" | "bot" = forcedWinner ?? "bot";
   let verdict = "The debate was inconclusive.";
 
+  // Rubric: average claim score per side. This is a no-LLM DB read, and for a
+  // real (non-forced) finish it DECIDES the winner — the judge model is only ever
+  // asked to author a verdict sentence. So when the winner is already forced (a
+  // proposition threshold was crossed, or a side conceded) we skip the model call
+  // entirely and template the verdict from the rubric.
+  let rubricLine = "";
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 150,
-      messages: [{ role: "user", content: judgePrompt }],
-    });
-    const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-    const jsonStart = raw.indexOf("{");
-    const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
-    if (!forcedWinner && (parsed.winner === "human" || parsed.winner === "bot")) winner = parsed.winner;
-    if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
+    const scoreRows = await prisma.$queryRawUnsafe<{ claimant_id: string; avg_score: number }[]>(
+      `SELECT "claimantId" AS claimant_id, AVG(score) AS avg_score
+       FROM "Claim" WHERE "roomId" = $1 AND score IS NOT NULL
+       GROUP BY "claimantId"`,
+      roomDbId,
+    );
+    const botRow    = scoreRows.find(r => r.claimant_id === botUser?.id);
+    const humanRow  = scoreRows.find(r => r.claimant_id !== botUser?.id);
+    if (botRow && humanRow) {
+      const botAvg   = Math.round(Number(botRow.avg_score));
+      const humanAvg = Math.round(Number(humanRow.avg_score));
+      if (!forcedWinner) winner = humanAvg >= botAvg ? "human" : "bot";
+      rubricLine = `Average claim score — You: ${humanAvg}/100 · ${config.name}: ${botAvg}/100.`;
+    }
   } catch (e) {
-    console.error("[Judge] Haiku error:", e);
+    console.error("[Judge] rubric score error:", e);
   }
 
-  // Rubric-score comparison: average claim scores per side are the tiebreaker
-  // (and the primary signal for short debates where AI tends to be inconclusive)
-  if (!forcedWinner) {
+  if (forcedWinner) {
+    // Winner already decided — don't pay for a judge call that would only
+    // re-author a sentence. Template the verdict from the rubric.
+    verdict = rubricLine || "Decided on the proposition bar.";
+  } else {
     try {
-      const scoreRows = await prisma.$queryRawUnsafe<{ claimant_id: string; avg_score: number }[]>(
-        `SELECT "claimantId" AS claimant_id, AVG(score) AS avg_score
-         FROM "Claim" WHERE "roomId" = $1 AND score IS NOT NULL
-         GROUP BY "claimantId"`,
-        roomDbId,
-      );
-      const botRow    = scoreRows.find(r => r.claimant_id === botUser?.id);
-      const humanRow  = scoreRows.find(r => r.claimant_id !== botUser?.id);
-      if (botRow && humanRow) {
-        const botAvg   = Math.round(Number(botRow.avg_score));
-        const humanAvg = Math.round(Number(humanRow.avg_score));
-        winner = humanAvg >= botAvg ? "human" : "bot";
-        const rubricLine = `Average claim score — You: ${humanAvg}/100 · ${config.name}: ${botAvg}/100.`;
-        verdict = verdict === "The debate was inconclusive."
-          ? rubricLine
-          : `${rubricLine} ${verdict}`;
-      }
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 150,
+        messages: [{ role: "user", content: judgePrompt }],
+      });
+      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+      const jsonStart = raw.indexOf("{");
+      const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
+      if (typeof parsed.verdict === "string" && parsed.verdict) verdict = parsed.verdict;
+      // Rubric decides the winner; fall back to the model's call only when no
+      // claims were scored (nothing for the rubric to compare).
+      if (!rubricLine && (parsed.winner === "human" || parsed.winner === "bot")) winner = parsed.winner;
     } catch (e) {
-      console.error("[Judge] rubric score error:", e);
+      console.error("[Judge] Haiku error:", e);
     }
+    if (rubricLine) verdict = verdict === "The debate was inconclusive." ? rubricLine : `${rubricLine} ${verdict}`;
   }
 
   const scoreImpact = winner === "human" ? (TIER_BONUS[config.tier] ?? 1.0) : -LOSS_PENALTY;
@@ -494,38 +503,25 @@ export async function scoreMatch(
   const botUser = await prisma.user
     .findUnique({ where: { username: config.name }, select: { id: true } })
     .catch(() => null);
+  if (!botUser) return 50;
 
-  const msgs = await prisma.message.findMany({
-    where: { roomId: roomDbId },
-    include: { user: { select: { id: true } } },
-    orderBy: { createdAt: "asc" },
-    take: 30,
-  });
+  // The live "who's winning" bar is the human's share of average claim quality.
+  // Every human and bot message is already staked and rubric-scored (Claim.score),
+  // and judgeMatch settles the match on this same signal — so read it straight
+  // from the DB instead of paying for a per-message judge call that re-sent the
+  // entire transcript every turn (cost grew O(n^2) with the debate's length).
+  const scoreRows = await prisma.$queryRawUnsafe<{ id: string; avg: number }[]>(
+    `SELECT "claimantId" AS id, AVG(score) AS avg FROM "Claim"
+     WHERE "roomId" = $1 AND score IS NOT NULL GROUP BY "claimantId"`,
+    roomDbId,
+  );
+  const botRow   = scoreRows.find(r => r.id === botUser.id);
+  const humanRow = scoreRows.find(r => r.id !== botUser.id);
+  if (!botRow || !humanRow) return 50;   // not enough scored claims yet — even
 
-  if (msgs.length < 2) return 50;
-
-  const transcript = msgs
-    .map((m) => `${m.userId === botUser?.id ? config.name : "Human"}: ${m.content}`)
-    .join("\n");
-
-  const prompt =
-    `You are an impartial debate judge. Rate who is currently winning from 0 to 100:\n` +
-    `0 = ${config.name} is decisively winning\n` +
-    `50 = Exactly even\n` +
-    `100 = Human is decisively winning\n` +
-    `Return ONLY valid JSON: {"score":<integer>}\n\nConversation:\n${transcript}`;
-
-  try {
-    const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 50,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-    const jsonStart = raw.indexOf("{");
-    const parsed = JSON.parse(jsonStart >= 0 ? raw.slice(jsonStart) : raw);
-    return Math.max(0, Math.min(100, Number(parsed.score ?? 50)));
-  } catch {
-    return 50;
-  }
+  const botAvg   = Number(botRow.avg);
+  const humanAvg = Number(humanRow.avg);
+  const denom = botAvg + humanAvg;
+  if (denom <= 0) return 50;
+  return Math.max(0, Math.min(100, Math.round((100 * humanAvg) / denom)));
 }
