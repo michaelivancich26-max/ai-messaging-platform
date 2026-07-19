@@ -1447,6 +1447,10 @@ app.post("/api/arena-score", async (req, res) => {
 const BAR_SHARPEN = 2.5;               // >1 pushes the bar toward the extremes
 const TIE_EPSILON = 0.02;              // |priceA-0.5| below this at close => draw
 const PRICE_MIN = 0.02, PRICE_MAX = 0.98;
+// A per-side neutral prior, ~one average claim's worth of score. It keeps the
+// bar centred before anyone has a scored claim and stops a single early verdict
+// from slamming it to an extreme; real claim scores swamp it as the debate builds.
+const PROP_PRIOR = 50;
 
 // roomName -> which sides have spoken since the last bar update
 const exchangeTracker = new Map<string, { a: boolean; b: boolean }>();
@@ -1478,18 +1482,21 @@ async function recomputePropositionBar(roomName: string): Promise<void> {
     const sideA: string[] = JSON.parse(prop.sideA), sideB: string[] = JSON.parse(prop.sideB);
     const roomRow = await prisma.room.findUnique({ where: { name: roomName }, select: { id: true } });
     if (!roomRow) return;
-    const claimRows = await prisma.$queryRawUnsafe<{ claimantId: string; status: string; n: number }[]>(
-      `SELECT "claimantId", status, COUNT(*)::int AS n FROM "Claim"
-       WHERE "roomId"=$1 AND status IN ('SUPPORTED','REFUTED') GROUP BY "claimantId", status`, roomRow.id,
+    // Each staked claim is scored 0–100 by the evaluator, blending the verdict
+    // (SUPPORTED > CONTESTED > REFUTED) with relevance, evidence, logic and impact.
+    // The bar is side A's share of that quality-weighted total. Scoring on claim
+    // QUALITY — not just the comparatively rare SUPPORTED/REFUTED verdict — means
+    // an all-CONTESTED opinion debate (the norm) still separates the two debaters
+    // instead of pinning the bar at 0.5, which used to void almost every round.
+    const scoreRows = await prisma.$queryRawUnsafe<{ claimantId: string; total: number }[]>(
+      `SELECT "claimantId", COALESCE(SUM(score), 0)::float AS total FROM "Claim"
+       WHERE "roomId"=$1 AND status IN ('SUPPORTED','CONTESTED','REFUTED') GROUP BY "claimantId"`, roomRow.id,
     );
-    const sup: Record<string, number> = {}, ref: Record<string, number> = {};
-    for (const r of claimRows) { if (r.status === "SUPPORTED") sup[r.claimantId] = r.n; else ref[r.claimantId] = r.n; }
-    const pts = (ids: string[]) => ids.reduce((t, id) => {
-      const s = sup[id] || 0, f = ref[id] || 0;
-      return t + (s || f ? Math.max(0, s * 2 - f * 3) : 1);   // base 1 until a debater has a scored claim
-    }, 0);
-    const pa = pts(sideA), pb = pts(sideB);
-    const raw = pa + pb > 0 ? pa / (pa + pb) : 0.5;
+    const scoreOf: Record<string, number> = {};
+    for (const r of scoreRows) scoreOf[r.claimantId] = Number(r.total);
+    const strength = (ids: string[]) => PROP_PRIOR + ids.reduce((t, id) => t + (scoreOf[id] ?? 0), 0);
+    const pa = strength(sideA), pb = strength(sideB);
+    const raw = pa / (pa + pb);   // both sides carry the prior, so this is always defined
     const priceA = sharpenProb(raw);
     await prisma.$executeRawUnsafe(`UPDATE "MatchProposition" SET "priceA"=$1, "lastExchange"="lastExchange"+1 WHERE "roomName"=$2`, priceA, roomName);
     io.to(roomName).emit("propositionUpdate", { roomName, priceA, priceB: 1 - priceA });
