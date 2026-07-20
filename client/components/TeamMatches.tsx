@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { TOPIC_CATALOG } from "@/lib/topics";
 import { api } from "@/lib/api";
+import { Zap, X } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -186,7 +187,7 @@ function CreateTeamModal({
           <>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
               <div className="flex items-start gap-2 rounded-xl bg-gray-100 dark:bg-gray-800 px-3 py-2">
-                <span className="text-brand-green-ink dark:text-brand-green">⚡</span>
+                <span className="text-brand-green-ink dark:text-brand-green"><Zap className="h-4 w-4 shrink-0" aria-hidden /></span>
                 <p className="text-[11px] leading-snug text-gray-600 dark:text-gray-300">{topic}</p>
               </div>
 
@@ -344,7 +345,7 @@ function LobbyModal({
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4">
           <h2 className="flex-1 font-display text-base font-bold tracking-tight text-gray-900 dark:text-white">Team Lobby</h2>
           {roster && <SizeTag size={roster.teamSize} />}
-          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">✕</button>
+          <button onClick={onClose} aria-label="Close" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><X className="h-4 w-4" aria-hidden /></button>
         </div>
 
         {!roster ? (
@@ -517,7 +518,13 @@ export default function TeamMatches({ userId, username }: { userId: string; user
               <p className="text-sm font-medium leading-relaxed text-gray-900 dark:text-gray-100">&ldquo;{c.claim}&rdquo;</p>
               <div className="flex flex-wrap items-center gap-2">
                 <SizeTag size={c.teamSize} />
-                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{c.captainName} ⚡{c.captainElo}</span>
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {c.captainName}
+                  <span className="inline-flex items-center gap-0.5">
+                    <Zap className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {c.captainElo}
+                  </span>
+                </span>
                 <StanceTag stance={c.stance} />
                 <span className="rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[11px] text-gray-600 dark:text-gray-400">{WC_LABEL(c.winCondition)}</span>
                 <button onClick={() => acceptOpen(c)} disabled={busy === c.id}

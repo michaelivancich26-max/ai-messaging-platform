@@ -8,6 +8,7 @@ import ArenaSidebar from "@/components/ArenaSidebar";
 import TrainingTabs from "@/components/TrainingTabs";
 import { BOTS, BOT_COLORS, botWinRate, type Bot } from "@/lib/bots";
 import { api } from "@/lib/api";
+import { Trophy, Medal, Zap, Star } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -664,7 +665,11 @@ function ArenaLeaderboard() {
           </div>
         ) : (
           rows.map((entry, i) => {
-            const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+            const medal =
+              i === 0 ? <Trophy className="inline-block h-4 w-4 align-middle text-amber-500" aria-hidden /> :
+              i === 1 ? <Medal className="inline-block h-4 w-4 align-middle text-gray-400" aria-hidden /> :
+              i === 2 ? <Medal className="inline-block h-4 w-4 align-middle text-amber-700" aria-hidden /> :
+              null;
             const isMe = entry.id === myId;
             const rate = entry.wins + entry.losses > 0 ? Math.round((entry.wins / (entry.wins + entry.losses)) * 100) : 0;
             return (
@@ -677,7 +682,7 @@ function ArenaLeaderboard() {
                   {entry.username}{isMe && <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(you)</span>}
                 </button>
                 <span className="text-xs text-gray-500 dark:text-gray-400">{entry.wins}W {entry.losses}L · {rate}%</span>
-                <span className="shrink-0 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">⚡{entry.elo}</span>
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"><Zap className="h-3 w-3 shrink-0" aria-hidden />{entry.elo}</span>
               </div>
             );
           })
@@ -748,7 +753,7 @@ function ArenaContent() {
           <div className="mb-6 flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Choose your opponent</h2>
             <div className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-              <span className="flex h-3 w-3 items-center justify-center">★</span>
+              <span className="flex h-3 w-3 items-center justify-center"><Star className="h-3 w-3" aria-hidden /></span>
               <span>= difficulty</span>
             </div>
           </div>

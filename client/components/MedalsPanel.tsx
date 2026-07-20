@@ -1,6 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { X } from "@/lib/icons";
+import {
+  Swords, Sword, Target, Trophy, Bot, Flame, Star, BadgeCheck, Zap, Drama,
+  BarChart3, Pin, Handshake, MessageSquare, PenLine, Medal as MedalGlyph, type LucideIcon,
+} from "lucide-react";
 
 export type MedalTier = "bronze" | "silver" | "gold" | "platinum" | "diamond";
 
@@ -18,6 +23,20 @@ export interface Medal {
   unit: string;
   earned: boolean;
   progress: number;
+}
+
+// Medal-group icons are stored as stable KEYS in services/medals.ts (they used to
+// be emoji) and mapped to Lucide icons here.
+const MEDAL_ICONS: Record<string, LucideIcon> = {
+  swords: Swords, sword: Sword, target: Target, trophy: Trophy, bot: Bot,
+  flame: Flame, star: Star, "badge-check": BadgeCheck, zap: Zap, drama: Drama,
+  "bar-chart": BarChart3, pin: Pin, handshake: Handshake, message: MessageSquare,
+  pen: PenLine, medal: MedalGlyph,
+};
+
+function MedalIcon({ name, className }: { name: string; className?: string }) {
+  const Ic = MEDAL_ICONS[name] ?? MedalGlyph;
+  return <Ic className={className} aria-hidden />;
 }
 
 const TIER_RANK: Record<MedalTier, number> = { bronze: 1, silver: 2, gold: 3, platinum: 4, diamond: 5 };
@@ -101,7 +120,7 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
                 title={`${m.name} — ${m.description}`}
                 className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${s.bg} ${s.text} ${s.ring}`}
               >
-                <span className="text-sm leading-none">{m.icon}</span>
+                <MedalIcon name={m.icon} className="h-3.5 w-3.5 shrink-0" />
                 <span>{m.name}</span>
               </div>
             );
@@ -122,10 +141,10 @@ export function MedalsPanel({ medals }: { medals: Medal[] }) {
           return (
             <div key={g.groupId} className="flex items-center gap-3">
               {/* Medal disc */}
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg ring-1 ${
-                s ? `${s.bg} ${s.ring}` : "bg-gray-100 dark:bg-gray-800 ring-gray-300/50 dark:ring-gray-700/50 grayscale opacity-60"
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${
+                s ? `${s.bg} ${s.ring} ${s.text}` : "bg-gray-100 dark:bg-gray-800 ring-gray-300/50 dark:ring-gray-700/50 text-gray-400 dark:text-gray-600 opacity-60"
               }`}>
-                {g.icon}
+                <MedalIcon name={g.icon} className="h-5 w-5" />
               </div>
 
               {/* Info */}
@@ -180,7 +199,7 @@ function MedalCard({ medal }: { medal: Medal }) {
       title={`${medal.name} — ${medal.description}`}
       className={`flex min-w-[80px] flex-1 flex-col items-center gap-1 rounded-xl px-2.5 py-3 ring-1 ${s.bg} ${s.ring}`}
     >
-      <span className="text-2xl leading-none">{medal.icon}</span>
+      <MedalIcon name={medal.icon} className={`h-6 w-6 ${s.text}`} />
       <span className={`text-center text-[11px] font-semibold leading-tight ${s.text}`}>{medal.name}</span>
       <span className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{s.label}</span>
     </div>
@@ -209,7 +228,7 @@ function MedalPicker({
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-5 py-4">
           <h2 className="flex-1 font-display text-sm font-bold text-gray-900 dark:text-white">Choose featured medals</h2>
           <span className="rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:text-gray-400 tabular-nums">{sel.length}/{MAX_FEATURED}</span>
-          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">✕</button>
+          <button onClick={onClose} aria-label="Close" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"><X className="h-4 w-4" aria-hidden="true" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {earned.length === 0 ? (
@@ -229,7 +248,7 @@ function MedalPicker({
                       on ? `${s.bg} ${s.ring} ring-1 border-transparent` : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
                     }`}
                   >
-                    <span className="text-lg leading-none">{m.icon}</span>
+                    <MedalIcon name={m.icon} className={`h-5 w-5 shrink-0 ${on ? s.text : "text-gray-500 dark:text-gray-400"}`} />
                     <span className="min-w-0 flex-1">
                       <span className={`block truncate text-[11px] font-semibold ${on ? s.text : "text-gray-700 dark:text-gray-300"}`}>{m.name}</span>
                       <span className="block text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{s.label}</span>

@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useParams } from "next/navigation";
 import { findSeries, findLesson } from "../../content";
 import { api } from "@/lib/api";
+import { Check, X } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -159,8 +160,12 @@ export default function LessonPage() {
                   {section.examples.map((ex, i) => (
                     <div key={i} className={`rounded-xl border p-4 space-y-1 ${ex.type === "bad" ? "border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/10" : "border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/10"}`}>
                       <div className="flex items-center gap-2">
-                        <span className={`text-[11px] font-bold uppercase tracking-wider ${ex.type === "bad" ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
-                          {ex.type === "bad" ? "✗ Fallacy" : "✓ Better"}
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider ${ex.type === "bad" ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
+                          {ex.type === "bad" ? (
+                            <><X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Fallacy</>
+                          ) : (
+                            <><Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />Better</>
+                          )}
                         </span>
                         <span className="text-[11px] text-gray-500 dark:text-gray-400">{ex.label}</span>
                       </div>

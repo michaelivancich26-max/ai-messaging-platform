@@ -8,6 +8,7 @@ import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
+import { Flame } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 const MAX_AVATAR_BYTES = 1.5 * 1024 * 1024;
@@ -88,7 +89,7 @@ function Pill({ color, label }: { color: "emerald" | "red" | "gray"; label: stri
   );
 }
 
-function StatCard({ value, label, sub }: { value: string | number; label: string; sub?: string }) {
+function StatCard({ value, label, sub }: { value: React.ReactNode; label: string; sub?: string }) {
   return (
     <div className="flex flex-col gap-1 rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900 p-4">
       <span className="font-display text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{value}</span>
@@ -331,7 +332,9 @@ export default function DashboardPage() {
               <StatCard value={stats?.messageCount ?? "—"} label="Messages sent" />
               <StatCard value={stats?.arenaMatchCount ?? "—"} label="Bot matches" />
               <StatCard
-                value={stats?.dailyStreak != null ? `${stats.dailyStreak}🔥` : "—"}
+                value={stats?.dailyStreak != null
+                  ? <span className="inline-flex items-center gap-1">{stats.dailyStreak}<Flame className="h-5 w-5 shrink-0" aria-hidden="true" /></span>
+                  : "—"}
                 label="Day streak"
                 sub={stats?.longestStreak ? `best ${stats.longestStreak}` : undefined}
               />

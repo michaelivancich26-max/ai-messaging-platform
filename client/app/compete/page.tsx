@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import TeamMatches from "@/components/TeamMatches";
 import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
 import { api } from "@/lib/api";
+import { Zap, X, Trophy, Medal } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -51,7 +52,7 @@ function EloBadge({ elo, className = "" }: { elo: number; className?: string }) 
     "text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900";
   return (
     <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${color} ${className}`}>
-      ⚡{elo}
+      <Zap className="h-3 w-3 shrink-0" aria-hidden />{elo}
     </span>
   );
 }
@@ -388,7 +389,7 @@ export default function CompetePage() {
           >
             Join Room →
           </button>
-          <button onClick={() => setNotification(null)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">✕</button>
+          <button onClick={() => setNotification(null)} aria-label="Close" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><X className="h-4 w-4" aria-hidden /></button>
         </div>
       )}
 
@@ -528,7 +529,11 @@ export default function CompetePage() {
                 />
               ) : (
                 leaderboard.map((entry, i) => {
-                  const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+                  const medal =
+                    i === 0 ? <Trophy className="mx-auto h-4 w-4 text-amber-500" aria-hidden /> :
+                    i === 1 ? <Medal className="mx-auto h-4 w-4 text-gray-400" aria-hidden /> :
+                    i === 2 ? <Medal className="mx-auto h-4 w-4 text-amber-700" aria-hidden /> :
+                    null;
                   const isMe = entry.id === userId;
                   return (
                     <div

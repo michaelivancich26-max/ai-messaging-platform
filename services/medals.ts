@@ -54,7 +54,7 @@ interface GroupDef {
 
 const GROUPS: GroupDef[] = [
   {
-    groupId: "elo", group: "Ranked Ladder", icon: "⚔️", unit: "ELO",
+    groupId: "elo", group: "Ranked Ladder", icon: "swords", unit: "ELO",
     metric: (s) => s.elo,
     tiers: [
       { tier: "bronze",   name: "Contender",   description: "Reach 1200 ELO",  target: 1200 },
@@ -65,7 +65,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "winrate", group: "Win Rate", icon: "🎯", unit: "%",
+    groupId: "winrate", group: "Win Rate", icon: "target", unit: "%",
     // Gated: only counts once the user has ≥10 arena matches
     metric: (s) => (s.arenaMatches >= 10 ? Math.round((s.arenaWins / Math.max(1, s.arenaMatches)) * 100) : 0),
     tiers: [
@@ -76,7 +76,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "arenawins", group: "Arena Victories", icon: "🏆", unit: "wins",
+    groupId: "arenawins", group: "Arena Victories", icon: "trophy", unit: "wins",
     metric: (s) => s.arenaWins,
     tiers: [
       { tier: "bronze",   name: "First Blood",  description: "Win 1 arena match",    target: 1 },
@@ -87,7 +87,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "botslayer", group: "Bot Slayer", icon: "🤖", unit: "bots",
+    groupId: "botslayer", group: "Bot Slayer", icon: "bot", unit: "bots",
     metric: (s) => s.botsDefeated,
     tiers: [
       { tier: "bronze",   name: "Bot Hunter",   description: "Beat 3 different arena bots", target: 3 },
@@ -96,7 +96,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "streak", group: "Daily Streak", icon: "🔥", unit: "days",
+    groupId: "streak", group: "Daily Streak", icon: "flame", unit: "days",
     metric: (s) => s.longestStreak,
     tiers: [
       { tier: "bronze",   name: "Warming Up",   description: "3-day activity streak",   target: 3 },
@@ -106,7 +106,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "veritas", group: "Grounds Score", icon: "⭐", unit: "pts",
+    groupId: "veritas", group: "Grounds Score", icon: "star", unit: "pts",
     metric: (s) => Math.round(s.veritasScore),
     tiers: [
       { tier: "bronze",   name: "Rated",       description: "Reach a Grounds score of 10",  target: 10 },
@@ -116,7 +116,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "supported", group: "Truth Teller", icon: "✅", unit: "claims",
+    groupId: "supported", group: "Truth Teller", icon: "badge-check", unit: "claims",
     metric: (s) => s.supported,
     tiers: [
       { tier: "bronze",   name: "Fact Checker",  description: "5 supported claims",   target: 5 },
@@ -126,7 +126,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "contested", group: "Lightning Rod", icon: "⚡", unit: "claims",
+    groupId: "contested", group: "Lightning Rod", icon: "zap", unit: "claims",
     metric: (s) => s.contested,
     tiers: [
       { tier: "bronze",   name: "Provocateur",  description: "5 contested claims",   target: 5 },
@@ -135,7 +135,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "refuted", group: "Devil's Advocate", icon: "🎭", unit: "claims",
+    groupId: "refuted", group: "Devil's Advocate", icon: "drama", unit: "claims",
     metric: (s) => s.refuted,
     tiers: [
       { tier: "bronze",   name: "Risk Taker",      description: "Have 5 claims refuted",   target: 5 },
@@ -144,7 +144,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "quality", group: "Argument Quality", icon: "📊", unit: "avg",
+    groupId: "quality", group: "Argument Quality", icon: "bar-chart", unit: "avg",
     // Gated: only counts once the user has ≥5 non-pending claims
     metric: (s) => (s.totalClaims >= 5 ? Math.round(s.avgClaimScore) : 0),
     tiers: [
@@ -155,7 +155,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "prolific", group: "Prolific", icon: "📌", unit: "claims",
+    groupId: "prolific", group: "Prolific", icon: "pin", unit: "claims",
     metric: (s) => s.totalClaims,
     tiers: [
       { tier: "bronze",   name: "Staker",      description: "Stake 10 claims",  target: 10 },
@@ -164,7 +164,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "duelist", group: "Duelist (1v1)", icon: "🥊", unit: "wins",
+    groupId: "duelist", group: "Duelist (1v1)", icon: "sword", unit: "wins",
     metric: (s) => s.competitiveWins,
     tiers: [
       { tier: "bronze",   name: "First Duel",  description: "Win a 1v1 competitive match", target: 1 },
@@ -173,7 +173,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "team", group: "Team Player", icon: "🤝", unit: "wins",
+    groupId: "team", group: "Team Player", icon: "handshake", unit: "wins",
     metric: (s) => s.teamWins,
     tiers: [
       { tier: "bronze",   name: "Teammate",     description: "Win a team match",     target: 1 },
@@ -182,7 +182,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "debates", group: "Debater", icon: "💬", unit: "debates",
+    groupId: "debates", group: "Debater", icon: "message", unit: "debates",
     metric: (s) => s.debateCount,
     tiers: [
       { tier: "bronze",   name: "Newcomer",   description: "Join 5 debates",   target: 5 },
@@ -191,7 +191,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "messages", group: "Wordsmith", icon: "✍️", unit: "msgs",
+    groupId: "messages", group: "Wordsmith", icon: "pen", unit: "msgs",
     metric: (s) => s.messageCount,
     tiers: [
       { tier: "bronze",   name: "Speaker",    description: "Send 50 messages",    target: 50 },
@@ -200,7 +200,7 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    groupId: "veteran", group: "Veteran", icon: "🎖️", unit: "days",
+    groupId: "veteran", group: "Veteran", icon: "medal", unit: "days",
     metric: (s) => s.accountAgeDays,
     tiers: [
       { tier: "bronze",   name: "Settled In",  description: "30 days on Grounds for Debate",  target: 30 },

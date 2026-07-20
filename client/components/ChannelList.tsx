@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Check } from "@/lib/icons";
 
 export interface Channel {
   id: string;
@@ -210,8 +211,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                 onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
                 placeholder="channel-name"
                 className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-brand-green placeholder-gray-500 dark:placeholder-gray-400" />
-              <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(null)}
-                className="shrink-0 rounded bg-orange-700 px-2 py-1 text-xs text-white hover:bg-orange-600">✓</button>
+              <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(null)} aria-label="Confirm"
+                className="shrink-0 rounded bg-orange-700 px-2 py-1 text-xs text-white hover:bg-orange-600"><Check aria-hidden className="inline-block h-3.5 w-3.5" /></button>
             </div>
           )}
         </div>
@@ -278,8 +279,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                       onBlur={e => { if (!e.relatedTarget && !newChannelName.trim()) { setAddingChannelToSection(null); } }}
                       placeholder="channel-name"
                       className="min-w-0 flex-1 rounded bg-gray-200 dark:bg-gray-700 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 outline-none ring-1 ring-brand-green placeholder-gray-500 dark:placeholder-gray-400" />
-                    <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(sec.id)}
-                      className="shrink-0 rounded bg-orange-700 px-2 py-1 text-xs text-white hover:bg-orange-600">✓</button>
+                    <button onMouseDown={e => e.preventDefault()} onClick={() => addChannel(sec.id)} aria-label="Confirm"
+                      className="shrink-0 rounded bg-orange-700 px-2 py-1 text-xs text-white hover:bg-orange-600"><Check aria-hidden className="inline-block h-3.5 w-3.5" /></button>
                   </div>
                 )}
               </div>

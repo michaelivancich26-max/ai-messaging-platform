@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, X } from "@/lib/icons";
 import type { ClaimInfo } from "@/lib/types";
 
 interface Props {
@@ -11,8 +12,8 @@ interface Props {
 
 const VERDICT_STYLES = {
   PENDING:   { pill: "bg-gray-200/60 dark:bg-gray-700/60 text-gray-600 dark:text-gray-400 border-gray-300/40 dark:border-gray-600/40",  icon: "⏳", label: "Checking…" },
-  SUPPORTED: { pill: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30", icon: "✓", label: "Supported" },
-  REFUTED:   { pill: "bg-red-500/20    text-red-700 dark:text-red-300    border-red-500/30",        icon: "✗", label: "Refuted"   },
+  SUPPORTED: { pill: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30", icon: <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />, label: "Supported" },
+  REFUTED:   { pill: "bg-red-500/20    text-red-700 dark:text-red-300    border-red-500/30",        icon: <X className="h-3.5 w-3.5 shrink-0" aria-hidden />, label: "Refuted"   },
   CONTESTED: { pill: "bg-amber-500/20  text-amber-700 dark:text-amber-300  border-amber-500/30",      icon: "~", label: "Contested" },
 };
 

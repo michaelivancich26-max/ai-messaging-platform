@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { Zap } from "@/lib/icons";
 import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -62,7 +63,7 @@ function Side({ players, stance }: { players: { username: string; elo: number }[
       <span className={`text-[10px] font-bold uppercase tracking-wider ${color}`}>{stance === "affirmative" ? "For" : "Against"}</span>
       <div className="mt-0.5 space-y-0.5">
         {players.map((p, i) => (
-          <p key={i} className="truncate text-xs text-gray-800 dark:text-gray-200">{p.username} <span className="text-[11px] text-gray-500 dark:text-gray-400">⚡{p.elo}</span></p>
+          <p key={i} className="truncate text-xs text-gray-800 dark:text-gray-200">{p.username} <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 dark:text-gray-400"><Zap className="inline-block h-3 w-3 shrink-0" aria-hidden="true" />{p.elo}</span></p>
         ))}
       </div>
     </div>

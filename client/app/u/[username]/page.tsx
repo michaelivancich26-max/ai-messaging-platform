@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import type { CredScore } from "@/lib/types";
 import { api } from "@/lib/api";
+import { Flame, Zap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -40,7 +41,7 @@ interface MatchItem {
   challengedId: string;
 }
 
-function StatCard({ value, label, sub }: { value: string | number; label: string; sub?: string }) {
+function StatCard({ value, label, sub }: { value: ReactNode; label: string; sub?: string }) {
   return (
     <div className="flex flex-col gap-1 rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900 p-4">
       <span className="font-display text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{value}</span>
@@ -60,7 +61,7 @@ function EloBadge({ elo }: { elo: number }) {
     "text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900";
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold tabular-nums ${color}`}>
-      ⚡{elo}
+      <Zap className="h-3.5 w-3.5 shrink-0" aria-hidden />{elo}
     </span>
   );
 }
@@ -182,7 +183,7 @@ export default function PublicProfilePage() {
                   <StatCard value={data.stats.debateCount} label="Debates joined" />
                   <StatCard value={data.stats.arenaMatchCount} label="Bot matches" />
                   <StatCard value={`${data.stats.arenaWins}W ${data.stats.arenaLosses}L`} label="Bot record" />
-                  <StatCard value={`${data.stats.dailyStreak}🔥`} label="Day streak" sub={data.stats.longestStreak ? `best ${data.stats.longestStreak}` : undefined} />
+                  <StatCard value={<span className="inline-flex items-center gap-1"><span>{data.stats.dailyStreak}</span><Flame className="h-5 w-5 shrink-0" aria-hidden /></span>} label="Day streak" sub={data.stats.longestStreak ? `best ${data.stats.longestStreak}` : undefined} />
                 </div>
 
                 {/* Match history — completed 1v1 competitive matches */}

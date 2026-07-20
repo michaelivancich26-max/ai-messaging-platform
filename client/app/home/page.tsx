@@ -9,6 +9,7 @@ import type { CredScore } from "@/lib/types";
 import { SERIES, TOTAL_LESSONS } from "@/app/learn/content";
 import { PUZZLES } from "@/app/learn/puzzles/content";
 import { api } from "@/lib/api";
+import { Flame, Scale } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -143,13 +144,13 @@ export default function HomePage() {
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <StatChip onClick={() => router.push("/dashboard")} title="Days in a row you've been active">
-              <span className="text-sm leading-none">🔥</span>
+              <Flame className="h-3.5 w-3.5 shrink-0" aria-hidden />
               <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">{streak ? `${streak.current}d` : "—"}</span>
               <span className="text-[11px] text-gray-500 dark:text-gray-400">{streak && streak.longest > 0 ? `best ${streak.longest}` : "streak"}</span>
             </StatChip>
             {/* Unrated below 3 scored claims — a bare 0 reads as "you scored zero". */}
             <StatChip onClick={() => router.push("/dashboard")} title={rated ? "Your Grounds Score, from how your claims hold up" : "Make at least 3 verified claims to earn a score"}>
-              <span className="text-sm leading-none">⚖️</span>
+              <Scale className="h-3.5 w-3.5 shrink-0" aria-hidden />
               <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">{rated ? cred!.score : "—"}</span>
               <span className="text-[11px] text-gray-500 dark:text-gray-400">{rated ? "score" : "unrated"}</span>
             </StatChip>
