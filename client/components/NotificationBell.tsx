@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import type { AppNotification } from "@/lib/types";
 import { api } from "@/lib/api";
+import { Bell } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -108,9 +109,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
         }`}
         title="Notifications"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-          <path fillRule="evenodd" d="M4 8a6 6 0 1 1 12 0c0 1.887-.454 3.665-1.257 5.234a.75.75 0 0 1-.515.403l-.138.028A4.5 4.5 0 0 1 10 18a4.5 4.5 0 0 1-4.09-4.335l-.138-.028a.75.75 0 0 1-.515-.403A11.947 11.947 0 0 1 4 8Zm6 10a3 3 0 0 1-2.83-2h5.66A3 3 0 0 1 10 18Z" clipRule="evenodd" />
-        </svg>
+        <Bell className="h-5 w-5" />
         {unread > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">
             {unread > 9 ? "9+" : unread}

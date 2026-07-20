@@ -10,4 +10,6 @@ export {
   Check,   // affirmative / supported / confirm
   X,       // negative / refuted / close
   Star,    // featured / highlight
+  Bell,    // notifications
+  Shield,  // brand mark next to the wordmark
 } from "lucide-react";

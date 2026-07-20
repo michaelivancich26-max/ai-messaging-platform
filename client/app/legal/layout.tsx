@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LEGAL_DOCS, LEGAL_EFFECTIVE_DATE } from "@/lib/legal";
+import { Shield } from "@/lib/icons";
 
 // Standalone chrome for the legal documents — no app shell, so the pages work
 // logged-out (they are linked from the sign-up form) and read like documents.
@@ -9,7 +10,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
       <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/90 backdrop-blur dark:border-gray-800 dark:bg-gray-900/90">
         <div className="mx-auto flex max-w-3xl items-center gap-2 px-5 h-14">
           <Link href="/" className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
-            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-brand-green" aria-hidden><path d="M10 1.5 3 4v5c0 4 3 7.5 7 9.5 4-2 7-5.5 7-9.5V4l-7-2.5Z" /></svg>
+            <Shield className="h-5 w-5 text-brand-green" aria-hidden />
             <span className="font-display text-sm font-bold">Grounds for Debate</span>
           </Link>
           <nav className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" aria-label="Legal documents">

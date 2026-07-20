@@ -8,7 +8,7 @@ import { Wordmark } from "./Wordmark";
 import { useTheme } from "./ThemeProvider";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
-import { Home, Users, Swords, Layers, Zap, GraduationCap, MessageSquare, LogOut, Sun, Moon, type LucideIcon } from "lucide-react";
+import { Home, Users, Swords, Layers, Zap, GraduationCap, MessageSquare, LogOut, Sun, Moon, Shield, type LucideIcon } from "lucide-react";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -72,7 +72,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {/* Desktop left rail */}
       <aside className="hidden md:flex md:flex-col w-52 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 pt-safe">
         <div className="flex items-center gap-2 px-4 h-14 border-b border-gray-200 dark:border-gray-800">
-          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-brand-green"><path d="M10 1.5 3 4v5c0 4 3 7.5 7 9.5 4-2 7-5.5 7-9.5V4l-7-2.5Z" /></svg>
+          <Shield className="h-5 w-5 text-brand-green" />
           <Wordmark className="text-sm" />
           <div className="ml-auto">{userId && <NotificationBell userId={userId} username={username} />}</div>
         </div>
