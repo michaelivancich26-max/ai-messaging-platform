@@ -12,4 +12,6 @@ export {
   Star,    // featured / highlight
   Bell,    // notifications
   Shield,  // brand mark next to the wordmark
+  Lock,    // gated / locked features
+  GraduationCap, // Training Grounds
 } from "lucide-react";

@@ -1797,23 +1797,114 @@ async function bumpDailyStreak(userId: string): Promise<void> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Battle Grounds — ranked human-vs-human debate
+//
+// Entry gate: ranked competition is not the first thing a new account should do.
+// You prove yourself in Training Grounds first — earn a Grounds Score (>= 3
+// verified claims) AND win at least one RANKED Training Grounds match. Ranked
+// arena wins are anti-farm gated (curated, two-sided propositions only), so this
+// half can't be faked. Both halves are required — a combination gate.
+//
+// Provisional rating: a competitor's first few ranked matches move their ELO with
+// a larger K so they converge toward their true rating fast, and are flagged
+// provisional so the ladder reads honestly. Rapid Fire uses a separate ladder and
+// is exempt from all of this.
+// ═══════════════════════════════════════════════════════════════════════════
+const BG_RATED_NEED = 3;               // verified claims for a Grounds Score
+const BG_ARENA_WINS_NEED = 1;          // ranked Training Grounds wins
+const BG_MAX_OPEN_CHALLENGES = 3;      // open 1v1 challenges a user may hold
+const BG_CHALLENGE_TTL_HOURS = 24;     // an open challenge goes stale after this
+const BG_PROVISIONAL_MATCHES = 5;      // ranked matches to graduate from provisional
+const BG_K_PROVISIONAL = 48;           // faster ELO convergence while provisional
+const BG_K_STABLE = 32;
+
+interface BattleEligibility {
+  eligible: boolean;
+  claimsRated: number; ratedNeed: number;
+  arenaWins: number; arenaNeed: number;
+  battleMatches: number; provisional: boolean;
+}
+
+// Count a user's completed RANKED (non-rapid) competitive matches — the signal
+// for both provisional status and the "matches played" a card can show.
+async function battleMatchesPlayed(userId: string): Promise<number> {
+  try {
+    const r = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      `SELECT COUNT(*) AS n FROM "CompetitiveMatch"
+       WHERE status = 'complete' AND ("isRapid" IS NOT TRUE)
+         AND ("challengerId" = $1 OR "challengedId" = $1)`,
+      userId,
+    );
+    return Number(r[0]?.n ?? 0);
+  } catch { return 0; }
+}
+
+async function battleEligibility(userId: string): Promise<BattleEligibility> {
+  let claimsRated = 0, arenaWins = 0;
+  try {
+    const u = await prisma.$queryRawUnsafe<{ claimsRated: number | null }[]>(
+      `SELECT "claimsRated" FROM "User" WHERE id = $1`, userId,
+    );
+    claimsRated = Number(u[0]?.claimsRated ?? 0);
+  } catch { /* column may be absent */ }
+  try {
+    const a = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      `SELECT COUNT(*) AS n FROM "ArenaMatch" WHERE "userId" = $1 AND winner = 'human' AND ranked = true`,
+      userId,
+    );
+    arenaWins = Number(a[0]?.n ?? 0);
+  } catch { /* table/column may be absent */ }
+  const battleMatches = await battleMatchesPlayed(userId);
+  const eligible = claimsRated >= BG_RATED_NEED && arenaWins >= BG_ARENA_WINS_NEED;
+  return {
+    eligible,
+    claimsRated, ratedNeed: BG_RATED_NEED,
+    arenaWins, arenaNeed: BG_ARENA_WINS_NEED,
+    battleMatches, provisional: battleMatches < BG_PROVISIONAL_MATCHES,
+  };
+}
+
+// GET /api/battle/eligibility — can the caller enter Battle Grounds yet, and are
+// they still provisionally rated?
+app.get("/api/battle/eligibility", async (req, res) => {
+  try {
+    const userId = actorId(req)!;
+    if (!userId) return res.status(401).json({ error: "Authentication required" });
+    res.json(await battleEligibility(userId));
+  } catch (e) {
+    console.error("[battle eligibility]", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // GET /api/challenges — list open challenges (optionally excluding the requesting user's own)
 app.get("/api/challenges", async (req, res) => {
   try {
     const excludeUserId = actorId(req);
     const rows = excludeUserId
       ? await prisma.$queryRawUnsafe<any[]>(
-          `SELECT c.*, u.username, u.elo FROM "Challenge" c
+          `SELECT c.*, u.username, u.elo,
+             (SELECT COUNT(*)::int FROM "CompetitiveMatch" cm
+                WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
+                  AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
+           FROM "Challenge" c
            JOIN "User" u ON c."userId" = u.id
            WHERE c.status = 'open' AND c."userId" != $1
+             AND c."createdAt" > NOW() - INTERVAL '${BG_CHALLENGE_TTL_HOURS} hours'
              AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)
            ORDER BY c."createdAt" DESC LIMIT 50`,
           excludeUserId,
         )
       : await prisma.$queryRawUnsafe<any[]>(
-          `SELECT c.*, u.username, u.elo FROM "Challenge" c
+          `SELECT c.*, u.username, u.elo,
+             (SELECT COUNT(*)::int FROM "CompetitiveMatch" cm
+                WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
+                  AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
+           FROM "Challenge" c
            JOIN "User" u ON c."userId" = u.id
            WHERE c.status = 'open'
+             AND c."createdAt" > NOW() - INTERVAL '${BG_CHALLENGE_TTL_HOURS} hours'
              AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)
            ORDER BY c."createdAt" DESC LIMIT 50`,
         );
@@ -1853,6 +1944,22 @@ app.post("/api/challenges", async (req, res) => {
     if (!userId || !claim?.trim() || !stance || !winCondition) {
       return res.status(400).json({ error: "userId, claim, stance, and winCondition required" });
     }
+    const elig = await battleEligibility(userId);
+    if (!elig.eligible) {
+      return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
+    }
+    // Anti-spam: cap the open 1v1 challenges a user may hold at once. Stale ones
+    // past the TTL don't count — the board already hides them.
+    const openRows = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
+      `SELECT COUNT(*) AS n FROM "Challenge" c
+       WHERE c."userId" = $1 AND c.status = 'open'
+         AND c."createdAt" > NOW() - INTERVAL '${BG_CHALLENGE_TTL_HOURS} hours'
+         AND NOT EXISTS (SELECT 1 FROM "ChallengeMember" m WHERE m."challengeId" = c.id)`,
+      userId,
+    );
+    if (Number(openRows[0]?.n ?? 0) >= BG_MAX_OPEN_CHALLENGES) {
+      return res.status(409).json({ error: `You already have ${BG_MAX_OPEN_CHALLENGES} open challenges. Withdraw one or wait for one to be accepted.` });
+    }
     const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `INSERT INTO "Challenge" ("id","userId","claim","stance","winCondition")
        VALUES (gen_random_uuid()::text,$1,$2,$3,$4) RETURNING "id"`,
@@ -1886,6 +1993,11 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
     const userId = actorId(req)!;
     const { id: challengeId } = req.params;
     if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const elig = await battleEligibility(userId);
+    if (!elig.eligible) {
+      return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
+    }
 
     // Fetch challenge
     const challenges = await prisma.$queryRawUnsafe<any[]>(
@@ -2090,13 +2202,26 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
       }
     }
 
-    // Calculate ELO
+    // Calculate ELO. Provisional competitors (their first few RANKED matches) move
+    // with a larger K so they converge toward their true rating quickly instead of
+    // grinding up from 1200; Rapid settles on its own ladder at the stable K. K is
+    // per-side, so a settled player facing a newcomer isn't yanked around.
     const challengerWon = winnerId === match.challengerId;
-    const { newA: challengerEloAfter, newB: challengedEloAfter } = calcElo(
-      match.challengerEloBefore ?? 1200,
-      match.challengedEloBefore ?? 1200,
-      challengerWon,
-    );
+    const aBefore = match.challengerEloBefore ?? 1200;
+    const bBefore = match.challengedEloBefore ?? 1200;
+    let kA = BG_K_STABLE, kB = BG_K_STABLE;
+    if (!match.isRapid) {
+      const [pa, pb] = await Promise.all([
+        battleMatchesPlayed(match.challengerId),
+        battleMatchesPlayed(match.challengedId),
+      ]);
+      kA = pa < BG_PROVISIONAL_MATCHES ? BG_K_PROVISIONAL : BG_K_STABLE;
+      kB = pb < BG_PROVISIONAL_MATCHES ? BG_K_PROVISIONAL : BG_K_STABLE;
+    }
+    const expectedA = 1 / (1 + Math.pow(10, (bBefore - aBefore) / 400));
+    const scoreA = challengerWon ? 1 : 0;
+    const challengerEloAfter = Math.round(aBefore + kA * (scoreA - expectedA));
+    const challengedEloAfter = Math.round(bBefore + kB * ((1 - scoreA) - (1 - expectedA)));
 
     // Rapid Fire settles on its own ladder — short rounds against strangers
     // shouldn't move the Battle Grounds rating. Column name is derived from a
@@ -2930,6 +3055,10 @@ app.post("/api/team/challenges", async (req, res) => {
     if (!userId || !topic?.trim() || !stance || !winCondition) {
       return res.status(400).json({ error: "userId, topic, stance, and winCondition required" });
     }
+    const elig = await battleEligibility(userId);
+    if (!elig.eligible) {
+      return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
+    }
     const size = Math.min(3, Math.max(1, Number(teamSize) || 1));
     // Solo team (size 1) is immediately open; larger teams start in 'forming' while the captain invites
     const status = size === 1 ? "open" : "forming";
@@ -3061,6 +3190,11 @@ app.post("/api/team/challenges/:id/accept", async (req, res) => {
     const userId = actorId(req)!;
     const { id: challengeId } = req.params;
     if (!userId) return res.status(400).json({ error: "userId required" });
+
+    const elig = await battleEligibility(userId);
+    if (!elig.eligible) {
+      return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
+    }
 
     const chRows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "Challenge" WHERE id = $1 AND status = 'open' LIMIT 1`, challengeId,
@@ -3565,7 +3699,10 @@ app.get("/api/leaderboard", async (req, res) => {
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT u.id, u.username, u.elo,
          COALESCE(wins.count, 0)::int AS wins,
-         COALESCE(losses.count, 0)::int AS losses
+         COALESCE(losses.count, 0)::int AS losses,
+         (SELECT COUNT(*)::int FROM "CompetitiveMatch" cm
+            WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
+              AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
        FROM "User" u
        LEFT JOIN (
          SELECT "winnerId" AS uid, COUNT(*)::int AS count FROM "CompetitiveMatch" WHERE status='complete' GROUP BY "winnerId"
@@ -3578,7 +3715,7 @@ app.get("/api/leaderboard", async (req, res) => {
        WHERE u.elo != 1200 OR wins.count IS NOT NULL
        ORDER BY u.elo DESC LIMIT 25`,
     );
-    res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
+    res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo), battleMatches: Number(r.battleMatches ?? 0) })));
   } catch (e) {
     console.error("[leaderboard]", e);
     res.status(500).json({ error: "Server error" });

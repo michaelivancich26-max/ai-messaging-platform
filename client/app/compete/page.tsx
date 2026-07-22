@@ -6,9 +6,20 @@ import { useRouter } from "next/navigation";
 import TeamMatches from "@/components/TeamMatches";
 import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
 import { api } from "@/lib/api";
-import { Zap, X, Trophy, Medal } from "@/lib/icons";
+import { Zap, X, Trophy, Medal, Check, Lock, GraduationCap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+
+// Below this many ranked matches a competitor's rating is still settling, so it's
+// shown as provisional. Mirrors BG_PROVISIONAL_MATCHES on the server.
+const PROVISIONAL_MATCHES = 5;
+
+interface BattleEligibility {
+  eligible: boolean;
+  claimsRated: number; ratedNeed: number;
+  arenaWins: number; arenaNeed: number;
+  battleMatches: number; provisional: boolean;
+}
 
 type WinCondition =
   | { type: "exchanges"; limit: number }
@@ -25,6 +36,7 @@ interface Challenge {
   winCondition: string; // raw JSON
   status: string;
   createdAt: string;
+  battleMatches?: number;
 }
 
 interface LeaderboardEntry {
@@ -33,6 +45,7 @@ interface LeaderboardEntry {
   elo: number;
   wins: number;
   losses: number;
+  battleMatches?: number;
 }
 
 const WC_LABEL: Record<string, (wc: any) => string> = {
@@ -41,21 +54,36 @@ const WC_LABEL: Record<string, (wc: any) => string> = {
   proposition: (wc) => `Prop ≥${wc.threshold}%`,
 };
 
+// One-line explanation of how each win condition actually resolves — surfaced in
+// the post modal so the rules are legible before you commit.
+const WC_HELP: Record<string, string> = {
+  exchanges: "Ends after this many back-and-forth exchanges, then the AI judge reads the full transcript and picks the stronger case.",
+  time: "You each have this long to argue. When the clock runs out, the AI judge decides the winner from the transcript.",
+  proposition: "A live persuasion bar moves as claims land and get scored. The first side to push it past this threshold wins.",
+};
+
 // EloBadge tier colors are intentional DATA (yellow/violet/sky/gray rank tiers),
 // each tuned for AA in light + dark — not chrome. Do not fold these into the
 // green/orange chrome roles.
-function EloBadge({ elo, className = "" }: { elo: number; className?: string }) {
+function EloBadge({ elo, provisional = false, className = "" }: { elo: number; provisional?: boolean; className?: string }) {
   const color =
     elo >= 1600 ? "text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-800 bg-yellow-100 dark:bg-yellow-950/40" :
     elo >= 1400 ? "text-violet-700 dark:text-violet-400 border-violet-300 dark:border-violet-800 bg-violet-100 dark:bg-violet-950/40" :
     elo >= 1200 ? "text-sky-700 dark:text-sky-400 border-sky-300 dark:border-sky-800 bg-sky-100 dark:bg-sky-950/40" :
     "text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900";
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${color} ${className}`}>
-      <Zap className="h-3 w-3 shrink-0" aria-hidden />{elo}
+    <span
+      title={provisional ? "Provisional rating — still settling over the first few ranked matches" : undefined}
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${color} ${className}`}
+    >
+      <Zap className="h-3 w-3 shrink-0" aria-hidden />{elo}{provisional && <span className="font-bold opacity-70">?</span>}
     </span>
   );
 }
+
+// Is a competitor still provisionally rated? Undefined battleMatches (older API
+// payloads) reads as settled so we never wrongly brand an established player.
+const isProvisional = (battleMatches?: number) => typeof battleMatches === "number" && battleMatches < PROVISIONAL_MATCHES;
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -102,6 +130,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   const [minutes, setMinutes] = useState(10);
   const [threshold, setThreshold] = useState(60);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const wc: WinCondition =
     wcType === "exchanges" ? { type: "exchanges", limit } :
@@ -111,14 +140,22 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   async function submit() {
     if (!claim.trim()) return;
     setLoading(true);
+    setError("");
     try {
-      await api(`${SERVER}/api/challenges`, {
+      const res = await api(`${SERVER}/api/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, claim: claim.trim(), stance, winCondition: wc }),
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? "Couldn't post that challenge.");
+        return;
+      }
       onPosted();
       onClose();
+    } catch {
+      setError("Couldn't post that challenge.");
     } finally {
       setLoading(false);
     }
@@ -194,6 +231,15 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           </div>
         )}
 
+        {/* How it resolves + what's at stake */}
+        <p className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-[11px] leading-relaxed text-gray-600 dark:bg-gray-800/60 dark:text-gray-400">
+          {WC_HELP[wcType]} A win raises your ELO and drops your opponent&rsquo;s — by more when you beat a higher-rated debater.
+        </p>
+
+        {error && (
+          <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>
+        )}
+
         {/* Actions */}
         <div className="mt-6 flex gap-3">
           <button onClick={onClose} className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
@@ -235,7 +281,7 @@ function ChallengeCard({
 
       {/* Meta row */}
       <div className="flex flex-wrap items-center gap-2">
-        <EloBadge elo={challenge.elo} />
+        <EloBadge elo={challenge.elo} provisional={isProvisional(challenge.battleMatches)} />
         <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{challenge.username}</span>
         <span className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${stanceColor}`}>
           {challenge.stance === "affirmative" ? "FOR" : "AGAINST"}
@@ -271,6 +317,74 @@ function ChallengeCard({
   );
 }
 
+// ── Entry gate ────────────────────────────────────────────────────────────────
+
+function RequirementRow({ met, label, detail, have, need, cta }: {
+  met: boolean; label: string; detail: string; have: number; need: number; cta: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${met ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green" : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"}`}>
+        {met ? <Check className="h-5 w-5" aria-hidden /> : <Lock className="h-4 w-4" aria-hidden />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{detail}</p>
+      </div>
+      {met ? (
+        <span className="shrink-0 text-xs font-semibold text-brand-green-ink dark:text-brand-green">Done</span>
+      ) : (
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className="text-xs font-bold tabular-nums text-gray-700 dark:text-gray-200">{Math.min(have, need)} / {need}</span>
+          {cta}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EntryGate({ eligibility, onGoTo }: { eligibility: BattleEligibility; onGoTo: (href: string) => void }) {
+  const ratedMet = eligibility.claimsRated >= eligibility.ratedNeed;
+  const arenaMet = eligibility.arenaWins >= eligibility.arenaNeed;
+  const done = (ratedMet ? 1 : 0) + (arenaMet ? 1 : 0);
+  return (
+    <div className="mx-auto max-w-xl animate-fadeIn">
+      <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-hero dark:border-gray-800 dark:bg-gray-900">
+        <div className="border-b border-gray-200 bg-gray-50 px-6 py-5 dark:border-gray-800 dark:bg-gray-950/40">
+          <div className="flex items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400"><Lock className="h-5 w-5" aria-hidden /></span>
+            <div className="min-w-0">
+              <h2 className="font-display text-lg font-bold tracking-tight text-gray-900 dark:text-white">Earn your way into Battle Grounds</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">Ranked 1v1 and team debates unlock once you&rsquo;ve proven yourself in Training Grounds — <span className="font-semibold text-gray-700 dark:text-gray-300">{done} of 2</span> done.</p>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-3 p-5">
+          <RequirementRow
+            met={ratedMet}
+            label="Earn a Grounds Score"
+            detail="Make verified claims in debates to build a credibility rating."
+            have={eligibility.claimsRated} need={eligibility.ratedNeed}
+            cta={<button onClick={() => onGoTo("/lobby")} className="text-[11px] font-semibold text-orange-700 hover:text-orange-600 dark:text-orange-400">Go debate →</button>}
+          />
+          <RequirementRow
+            met={arenaMet}
+            label="Win a Training Grounds match"
+            detail="Beat a bot in a ranked practice debate on a curated topic."
+            have={eligibility.arenaWins} need={eligibility.arenaNeed}
+            cta={<button onClick={() => onGoTo("/arena")} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-700 hover:text-orange-600 dark:text-orange-400"><GraduationCap className="h-3.5 w-3.5" aria-hidden />Train →</button>}
+          />
+        </div>
+        <div className="border-t border-gray-200 px-5 py-4 dark:border-gray-800">
+          <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+            This keeps the ladder meaningful — everyone you face has learned the ropes first. You can still watch live matches and browse the leaderboard while you qualify.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CompetePage() {
@@ -286,9 +400,15 @@ export default function CompetePage() {
   const [myChallenges, setMyChallenges] = useState<Challenge[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [myElo, setMyElo] = useState<number>(1200);
+  const [eligibility, setEligibility] = useState<BattleEligibility | null>(null);
   const [postOpen, setPostOpen] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ roomName: string; acceptedBy: string } | null>(null);
+
+  // Default to unlocked until eligibility is known, so the gate never flashes for
+  // players who are actually allowed in.
+  const locked = eligibility ? !eligibility.eligible : false;
+  const myProvisional = isProvisional(eligibility?.battleMatches);
 
   function loadBoard() {
     if (!userId) return;
@@ -309,6 +429,8 @@ export default function CompetePage() {
     if (!userId) return;
     api(`${SERVER}/api/users/${userId}/profile`)
       .then(r => r.json()).then(d => setMyElo(d.elo ?? 1200)).catch(() => {});
+    api(`${SERVER}/api/battle/eligibility`)
+      .then(r => r.json()).then(d => setEligibility(d as BattleEligibility)).catch(() => {});
     loadBoard();
     loadMine();
     loadLeaderboard();
@@ -406,17 +528,27 @@ export default function CompetePage() {
           </svg>
           <h1 className="truncate font-display text-lg md:text-xl font-bold tracking-tight text-gray-900 dark:text-white">Battle Grounds</h1>
         </div>
-        <EloBadge elo={myElo} className="ml-1 shrink-0" />
+        <EloBadge elo={myElo} provisional={myProvisional} className="ml-1 shrink-0" />
         <div className="ml-auto">
-          <button
-            onClick={() => setPostOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-700 px-3 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.98] motion-reduce:active:scale-100"
-          >
-            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-              <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
-            </svg>
-            Post Challenge
-          </button>
+          {locked ? (
+            <button
+              onClick={() => setTab("board")}
+              title="Complete the entry requirements to post a challenge"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600"
+            >
+              <Lock className="h-3.5 w-3.5" aria-hidden /> Locked
+            </button>
+          ) : (
+            <button
+              onClick={() => setPostOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-700 px-3 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.98] motion-reduce:active:scale-100"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+                <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
+              </svg>
+              Post Challenge
+            </button>
+          )}
         </div>
       </div>
 
@@ -444,6 +576,12 @@ export default function CompetePage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
 
+        {/* The entry gate stands in for the interactive tabs until the player
+            qualifies. Live + Leaderboard stay open — you can watch and browse. */}
+        {locked && eligibility && tab !== "live" && tab !== "leaderboard" && (
+          <EntryGate eligibility={eligibility} onGoTo={(href) => router.push(href)} />
+        )}
+
         {/* Live matches */}
         {tab === "live" && (
           <div className="mx-auto max-w-4xl">
@@ -452,10 +590,10 @@ export default function CompetePage() {
         )}
 
         {/* Team matches */}
-        {tab === "teams" && <TeamMatches userId={userId} username={myUsername} />}
+        {!locked && tab === "teams" && <TeamMatches userId={userId} username={myUsername} />}
 
         {/* Open challenges board */}
-        {tab === "board" && (
+        {!locked && tab === "board" && (
           <div className="space-y-3 max-w-2xl mx-auto">
             {challenges.length === 0 ? (
               <EmptyState
@@ -477,7 +615,7 @@ export default function CompetePage() {
         )}
 
         {/* My challenges */}
-        {tab === "mine" && (
+        {!locked && tab === "mine" && (
           <div className="space-y-3 max-w-2xl mx-auto">
             {myChallenges.length === 0 ? (
               <EmptyState
@@ -560,12 +698,17 @@ export default function CompetePage() {
                         </button>
                       )}
                       <span className="text-xs text-gray-500 dark:text-gray-400">{Number(entry.wins)}W {Number(entry.losses)}L</span>
-                      <EloBadge elo={entry.elo} />
+                      <EloBadge elo={entry.elo} provisional={isProvisional(entry.battleMatches)} />
                     </div>
                   );
                 })
               )}
             </div>
+            {leaderboard.length > 0 && (
+              <p className="mt-3 px-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                <span className="font-bold">?</span> marks a provisional rating — still settling over a player&rsquo;s first {PROVISIONAL_MATCHES} ranked matches.
+              </p>
+            )}
           </div>
         )}
       </div>
