@@ -3694,16 +3694,28 @@ app.get("/api/live-matches", async (_req, res) => {
       }),
     ];
 
+    // Drop matches whose room no longer exists. A deleted room now retires its
+    // match status, but this also clears any historical ghost left 'active' by an
+    // earlier deletion — nothing to watch, and the card would link to a dead room.
+    const roomNames = matches.map((m) => m.roomName);
+    const existingRooms = roomNames.length
+      ? await prisma.$queryRawUnsafe<{ name: string }[]>(
+          `SELECT name FROM "Room" WHERE name = ANY($1::text[])`, roomNames,
+        ).catch(() => [] as any[])
+      : [];
+    const existing = new Set(existingRooms.map((r) => r.name));
+    const liveMatches = matches.filter((m) => existing.has(m.roomName));
+
     // Surface the highest-rated / most-watched matches first
     const prominence = (m: typeof matches[number]) => {
       const maxElo = Math.max(0, ...[...m.sideA, ...m.sideB].map(p => p.elo));
       return m.viewers * 10000 + maxElo;
     };
-    matches.sort((a, b) => prominence(b) - prominence(a));
+    liveMatches.sort((a, b) => prominence(b) - prominence(a));
 
     // Attach the live proposition bar so cards can show who's ahead.
-    const stats = await propositionStats(matches.map((m) => m.roomName));
-    const enriched = matches.map((m) => {
+    const stats = await propositionStats(liveMatches.map((m) => m.roomName));
+    const enriched = liveMatches.map((m) => {
       const s = stats.get(m.roomName);
       return {
         ...m,
@@ -4749,6 +4761,15 @@ app.delete("/api/rooms/:name", async (req, res) => {
     const isAdmin = requestingUser?.isAdmin ?? false;
     if (room.creatorId !== userId && !isAdmin) return res.status(403).json({ error: "Only the creator can delete this room" });
     io.to(name).emit("roomDeleted");
+    // If this room backs a competitive/team match, retire the match record too —
+    // otherwise its status stays 'active' and it lingers as a ghost in
+    // /api/live-matches that links to a now-deleted room.
+    await prisma.$executeRawUnsafe(
+      `UPDATE "CompetitiveMatch" SET status='void', "completedAt"=NOW() WHERE "roomName"=$1 AND status IN ('active','closing','judging')`, name,
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `UPDATE "TeamMatch" SET status='void', "completedAt"=NOW() WHERE "roomName"=$1 AND status IN ('active','judging')`, name,
+    ).catch(() => {});
     await prisma.message.deleteMany({ where: { roomId: room.id } });
     await prisma.room.delete({ where: { name } });
     res.json({ ok: true });
