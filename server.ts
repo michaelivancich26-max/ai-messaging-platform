@@ -96,6 +96,24 @@ function requireActor(req: Request, res: Response): Actor | null {
   return req.actor;
 }
 
+// REST-side room-participation check for PRIVATE rooms: the creator, an admin, or
+// someone with a RoomMember row (invited, or auto-joined on create). Public rooms
+// are open, so callers gate on `room.isPrivate` before consulting this. Unlike the
+// socket path there is no socket.join state to read, so a password-only guest with
+// no RoomMember row is treated as a non-member here (fail-closed).
+async function restUserInRoom(
+  userId: string | null,
+  room: { id: string; creatorId?: string | null },
+): Promise<boolean> {
+  if (!userId) return false;
+  if (room.creatorId === userId) return true;
+  const [u, member] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } }),
+    prisma.roomMember.findUnique({ where: { userId_roomId: { userId, roomId: room.id } } }).catch(() => null),
+  ]);
+  return !!u?.isAdmin || !!member;
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: ALLOWED_ORIGINS, credentials: true },
@@ -252,6 +270,39 @@ function scheduleBotReply(
     botReplyLatest.delete(key);
     if (latest) respondAsBot(roomDbId, roomName, botId, latest.content, latest.channelId, io, prisma);
   }, BOT_REPLY_DEBOUNCE_MS));
+}
+
+// May this authenticated user act in / read this room? Mirrors joinRoom's entry
+// gates so that room-scoped socket handlers (sendMessage, createPoll, votePoll,
+// joinChannel, sendInvite) can't be reached for a room the caller was never
+// admitted to. Public rooms are open to any signed-in user (joinRoom lets anyone
+// join them). DM rooms are limited to their two participants. Private password
+// rooms require the creator, an admin, or a socket that already cleared the
+// password in joinRoom — which is exactly the sockets that have joined the room
+// (socket.join(room.name) only runs after the password check passes).
+async function userMayAccessRoom(
+  userId: string,
+  socketRooms: ReadonlySet<string>,
+  room: {
+    name: string;
+    isDM?: boolean | null;
+    participant1Id?: string | null;
+    participant2Id?: string | null;
+    isPrivate?: boolean | null;
+    password?: string | null;
+    creatorId?: string | null;
+  },
+): Promise<boolean> {
+  if (room.isDM) {
+    return room.participant1Id === userId || room.participant2Id === userId;
+  }
+  if (room.isPrivate && room.password) {
+    if (room.creatorId === userId) return true;
+    if (socketRooms.has(room.name)) return true;
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } });
+    return !!u?.isAdmin;
+  }
+  return true;
 }
 
 io.on("connection", (socket) => {
@@ -534,6 +585,14 @@ io.on("connection", (socket) => {
       const channel = await prisma.channel.findUnique({ where: { id: channelId }, include: { room: true } });
       if (!channel) { socket.emit("error", { message: "Channel not found." }); return; }
 
+      // Reading a channel is reading its parent room. Gate on the same access as
+      // joinRoom so an outsider can't pull a private room's channel history — or
+      // subscribe to its live messages — without having been admitted to the room.
+      if (!(await userMayAccessRoom(socketUser.id, socket.rooms, channel.room as any))) {
+        socket.emit("error", { message: "You don't have access to this channel." });
+        return;
+      }
+
       socket.join(`channel:${channelId}`);
 
       // Note: bot-first opening is triggered in joinRoom, not here —
@@ -726,6 +785,16 @@ io.on("connection", (socket) => {
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         if (!room) { socket.emit("roomDeleted"); return; }
 
+        // Membership gate. joinRoom enforces DM-participant and private-password
+        // access, but sendMessage looks the room up by name straight from the
+        // payload, so without this an outsider could inject a message into another
+        // pair's DM or into a password room they never entered (the broadcast
+        // still reaches the real occupants). Public rooms stay open to everyone.
+        if (!(await userMayAccessRoom(user.id, socket.rooms, room as any))) {
+          socket.emit("error", { message: "You don't have access to this room." });
+          return;
+        }
+
         // Enforce fishbowl channel access rules
         let isSidebarMsg = false;
         let isSpectatorChatMsg = false;
@@ -889,6 +958,13 @@ io.on("connection", (socket) => {
       if (target.id === socketUser.id) { socket.emit("inviteError", { message: "You can't invite yourself." }); return; }
       const room = await prisma.room.findUnique({ where: { name: roomName } });
       if (!room) return;
+      // Only someone admitted to the room may invite others to it — otherwise an
+      // outsider could spam invites referencing a room (including a private one)
+      // they have no part in. Public rooms stay invitable by anyone in them.
+      if (!(await userMayAccessRoom(socketUser.id, socket.rooms, room as any))) {
+        socket.emit("inviteError", { message: "You don't have access to this room." });
+        return;
+      }
       const alreadyMember = await prisma.roomMember.findUnique({ where: { userId_roomId: { userId: target.id, roomId: room.id } } });
       if (alreadyMember) { socket.emit("inviteError", { message: "That user is already in this room." }); return; }
       const pending = await (prisma as any).notification.findFirst({ where: { userId: target.id, type: "invite", roomId: room.id, resolved: false } });
@@ -1007,6 +1083,11 @@ io.on("connection", (socket) => {
     try {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
+      // Don't let an outsider inject polls into a DM or private room they were
+      // never admitted to. (Combined with the closePoll owner gate, this also
+      // shuts the door on priming the "Should this debate be structured?" poll
+      // in a room you have no part in.)
+      if (!(await userMayAccessRoom(userId, socket.rooms, room as any))) return;
       const poll = await (prisma as any).poll.create({
         data: { roomId: room.id, channelId: channelId ?? null, question: question.trim().slice(0, 200), options: options.map((o: string) => o.trim().slice(0, 100)).filter(Boolean).slice(0, 4), createdBy: userId },
         include: { votes: true },
@@ -1021,6 +1102,14 @@ io.on("connection", (socket) => {
   socket.on("votePoll", async ({ pollId, option }: { pollId: string; option: string }) => {
     const userId = socketUser.id;   // never the payload — that would be voting as anyone
     try {
+      // Resolve the poll's room and gate on access BEFORE recording the vote.
+      // pollIds leak in pollCreated/pollUpdated broadcasts, so without this an
+      // outsider could stuff the ballot of a DM/private room's poll — including
+      // the "Should this debate be structured?" vote that closePoll tallies.
+      const target = await (prisma as any).poll.findUnique({ where: { id: pollId } });
+      if (!target) return;
+      const room = await prisma.room.findUnique({ where: { id: target.roomId } });
+      if (!room || !(await userMayAccessRoom(userId, socket.rooms, room as any))) return;
       await (prisma as any).pollVote.upsert({
         where: { pollId_userId: { pollId, userId } },
         update: { option },
@@ -1028,8 +1117,7 @@ io.on("connection", (socket) => {
       });
       const poll = await (prisma as any).poll.findUnique({ where: { id: pollId }, include: { votes: true } });
       if (!poll) return;
-      const room = await prisma.room.findUnique({ where: { id: poll.roomId } });
-      const emitTarget = poll.channelId ? `channel:${poll.channelId}` : room?.name ?? poll.roomId;
+      const emitTarget = poll.channelId ? `channel:${poll.channelId}` : room.name;
       io.to(emitTarget).emit("pollUpdated", poll);
     } catch (err) {
       console.error("[votePoll]", err);
@@ -1055,8 +1143,14 @@ io.on("connection", (socket) => {
       const emitTarget = poll.channelId ? `channel:${poll.channelId}` : room?.name ?? poll.roomId;
       io.to(emitTarget).emit("pollUpdated", updated);
 
-      // Auto-apply debate mode when the structured debate vote closes
-      if (room && poll.question === "Should this debate be structured?") {
+      // Auto-apply debate mode when the structured debate vote closes — but ONLY
+      // when the room owner (or an admin) is the one closing it. Anyone can mint a
+      // poll with this exact title via `createPoll` and, as its creator, close it
+      // (the check above lets a poll's creator close it). Without this guard that
+      // is a backdoor around `setDebateMode`'s ownership check: a non-owner could
+      // flip any Common Grounds debate between structured and open at will.
+      if (room && poll.question === "Should this debate be structured?"
+          && (room.creatorId === userId || requestingUser?.isAdmin)) {
         const voteCounts: Record<string, number> = {};
         for (const v of updated.votes) voteCounts[v.option] = (voteCounts[v.option] ?? 0) + 1;
         const winner = poll.options.reduce((a: string, b: string) => (voteCounts[b] ?? 0) > (voteCounts[a] ?? 0) ? b : a, poll.options[0]);
@@ -3653,11 +3747,18 @@ app.post("/api/arena-judge", async (req, res) => {
       return res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId, ranked: !!row.ranked });
     }
 
-    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null; matchConfig: string | null }[]>(
-      `SELECT id, "botId", "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`,
+    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null; matchConfig: string | null; creatorId: string | null }[]>(
+      `SELECT id, "botId", "matchConfig", "creatorId" FROM "Room" WHERE name = $1 LIMIT 1`,
       roomName,
     );
     if (roomRows.length === 0) return res.status(404).json({ error: "Room not found" });
+    // Arena/bot rooms are single-participant: the creator IS the human debater.
+    // Gate on ownership so nobody can bank a match (and, when ranked, ELO) onto
+    // their own account off a room they never debated in — nor lock a victim's
+    // result via the ON CONFLICT DO NOTHING insert below by judging it first.
+    if (roomRows[0].creatorId && roomRows[0].creatorId !== userId) {
+      return res.status(403).json({ error: "Only the room's debater can complete this match" });
+    }
     const roomDbId = roomRows[0].id;
     const botId = roomRows[0].botId ?? roomName.replace("arena-", "").split("-")[0];
     if (!botId) return res.status(400).json({ error: "Bot not found for room" });
@@ -3666,7 +3767,16 @@ app.post("/api/arena-judge", async (req, res) => {
     let ranked = false;
     try { ranked = !!JSON.parse(roomRows[0].matchConfig ?? "{}").ranked; } catch { /* unranked */ }
 
-    const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit, forcedWinner);
+    // A ranked outcome must reflect the actual transcript, never a client's word.
+    // The client hands us forcedWinner:"human" when the (server-computed) bar
+    // crosses the threshold — but a no-debate POST could just assert it. For
+    // ranked matches we drop the client's forcedWinner and let judgeMatch derive
+    // the winner from the scored-claim rubric server-side: an honest win has
+    // humanAvg >= botAvg so the rubric agrees, while an empty room has no human
+    // claims and cannot resolve to a human win. A forfeit still stands (you may
+    // always concede). Unranked practice keeps forcedWinner — it moves no ELO.
+    const effectiveForcedWinner = ranked ? undefined : forcedWinner;
+    const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit, effectiveForcedWinner);
 
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact","ranked")
@@ -4125,14 +4235,19 @@ app.post("/api/bot-rooms", async (req, res) => {
 
 // POST /api/bot-kick — trigger bot's opening message when botFirst is set
 app.post("/api/bot-kick", async (req, res) => {
+  const userId = actorId(req);
   const { roomName } = req.body as { roomName: string };
   if (!roomName) { res.status(400).json({ error: "roomName required" }); return; }
   try {
-    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null; matchConfig: string | null }[]>(
-      `SELECT id, "botId", "matchConfig" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
+    const roomRows = await prisma.$queryRawUnsafe<{ id: string; botId: string | null; matchConfig: string | null; creatorId: string | null }[]>(
+      `SELECT id, "botId", "matchConfig", "creatorId" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
     );
     if (!roomRows[0]) { res.status(404).json({ error: "Room not found" }); return; }
-    const { id: roomDbId, botId, matchConfig } = roomRows[0];
+    const { id: roomDbId, botId, matchConfig, creatorId } = roomRows[0];
+    // Firing a bot's opening spends a paid LLM call, so restrict it to the room's
+    // owner. Arena/bot rooms are single-participant (creator === the human), so an
+    // outsider can no longer drive bot activity/cost in a room they're not in.
+    if (creatorId && creatorId !== userId) { res.status(403).json({ error: "Unauthorized" }); return; }
 
     // Idempotent: only send opening if no messages exist yet
     const msgCount = await prisma.message.count({ where: { roomId: roomDbId } });
@@ -4155,7 +4270,10 @@ app.post("/api/bot-kick", async (req, res) => {
 
 app.post("/api/rooms", async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
-  const creatorId = req.body?.creatorId as string | undefined;
+  // The owner is whoever is signed in — never a client-supplied id. Trusting
+  // req.body.creatorId let a caller mint a room owned by (and auto-joining) an
+  // arbitrary victim, and every later ownership check keys off this field.
+  const creatorId = actorId(req);
   const description = req.body?.description?.trim().slice(0, 200) || null;
   const proposition = req.body?.proposition?.trim().slice(0, 300) || null;
   const isPrivate: boolean = req.body?.isPrivate === true;
@@ -4169,6 +4287,7 @@ app.post("/api/rooms", async (req, res) => {
   const fishbowlSeats: number | null = req.body?.fishbowlSeats ? Math.min(20, Math.max(2, parseInt(req.body.fishbowlSeats))) : null;
 
   if (!name) return res.status(400).json({ error: "Invalid room name" });
+  if (!creatorId) return res.status(401).json({ error: "Authentication required" });
   if (containsSlur(name)) return res.status(400).json({ error: "Room name contains prohibited language." });
   if (isPrivate && !rawPassword) return res.status(400).json({ error: "Private rooms require a password." });
   if (maxMembers !== null && (maxMembers < 2 || maxMembers > 500)) return res.status(400).json({ error: "Max members must be between 2 and 500." });
@@ -4359,6 +4478,14 @@ app.post("/api/rooms/:name/sub-debates", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
+    // Branching a sub-debate is a PARTICIPANT action — any debater may do it (the
+    // client exposes it on every message), so this is intentionally not owner-only
+    // like plain channel management. Public rooms stay open; the only real abuse is
+    // an OUTSIDER injecting a channel into a PRIVATE room they were never admitted
+    // to, so gate exactly that.
+    if (room.isPrivate && !(await restUserInRoom(userId, room))) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
     const count = await (prisma as any).channel.count({ where: { roomId: room.id } });
     const channel = await (prisma as any).channel.create({
       data: {
@@ -4386,6 +4513,12 @@ app.post("/api/rooms/:name/channels/:id/sidebar", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
+    // Opening a side chat is a PARTICIPANT action ("all in regular rooms" per the
+    // client), so it is not owner-only. Public rooms stay open; only block an
+    // outsider creating a channel in a PRIVATE room they were never admitted to.
+    if (room.isPrivate && !(await restUserInRoom(userId, room))) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
     const parentChannel = await prisma.channel.findUnique({ where: { id: req.params.id } });
     if (!parentChannel || parentChannel.roomId !== room.id) return res.status(404).json({ error: "Channel not found" });
 
