@@ -707,13 +707,26 @@ io.on("connection", (socket) => {
       history.reverse();
       socket.emit("channelHistory", { channelId, messages: await loadWithReactions(history) });
 
-      // Emit channel-level positions for sub-debate channels
+      // Emit channel-level positions for sub-debate channels — rehydrate from the
+      // ChannelPosition table if the in-memory map was cleared (e.g. after a
+      // restart), so a returning debater's sub-debate stance isn't reset.
       try {
         if ((channel as any).isSubDebate) {
-          const chPos = channelPositions.get(channelId);
-          if (chPos) {
-            socket.emit("channelPositions", { channelId, positions: Array.from(chPos.values()) });
+          let chPos = channelPositions.get(channelId);
+          if (!chPos || chPos.size === 0) {
+            const rows = await prisma.$queryRawUnsafe<{ userId: string; position: string; username: string }[]>(
+              `SELECT cp."userId", cp."position", u."username"
+               FROM "ChannelPosition" cp JOIN "User" u ON u.id = cp."userId"
+               WHERE cp."channelId" = $1`, channelId,
+            ).catch(() => [] as any[]);
+            if (rows.length) {
+              const map = new Map<string, { userId: string; username: string; position: string }>();
+              for (const r of rows) map.set(r.userId, { userId: r.userId, username: r.username, position: r.position });
+              channelPositions.set(channelId, map);
+              chPos = map;
+            }
           }
+          if (chPos) socket.emit("channelPositions", { channelId, positions: Array.from(chPos.values()) });
         }
       } catch { /* ignore */ }
 
@@ -1065,29 +1078,32 @@ io.on("connection", (socket) => {
   // ── Invite another user to a room ──────────────────────────────────────────
   socket.on("sendInvite", async ({ targetUsername, roomName }: { targetUsername: string; roomName: string }) => {
     try {
+      // Every ack echoes targetUsername so the client can match it to the right
+      // pending invite — otherwise a burst of invites all resolve on the first ack.
       const target = await prisma.user.findUnique({ where: { username: targetUsername }, select: { id: true } });
-      if (!target) { socket.emit("inviteError", { message: "User not found." }); return; }
-      if (target.id === socketUser.id) { socket.emit("inviteError", { message: "You can't invite yourself." }); return; }
+      if (!target) { socket.emit("inviteError", { targetUsername, message: "User not found." }); return; }
+      if (target.id === socketUser.id) { socket.emit("inviteError", { targetUsername, message: "You can't invite yourself." }); return; }
       const room = await prisma.room.findUnique({ where: { name: roomName } });
-      if (!room) return;
+      if (!room) { socket.emit("inviteError", { targetUsername, message: "Room not found." }); return; }
       // Only someone admitted to the room may invite others to it — otherwise an
       // outsider could spam invites referencing a room (including a private one)
       // they have no part in. Public rooms stay invitable by anyone in them.
       if (!(await userMayAccessRoom(socketUser.id, socket.rooms, room as any))) {
-        socket.emit("inviteError", { message: "You don't have access to this room." });
+        socket.emit("inviteError", { targetUsername, message: "You don't have access to this room." });
         return;
       }
       const alreadyMember = await prisma.roomMember.findUnique({ where: { userId_roomId: { userId: target.id, roomId: room.id } } });
-      if (alreadyMember) { socket.emit("inviteError", { message: "That user is already in this room." }); return; }
+      if (alreadyMember) { socket.emit("inviteError", { targetUsername, message: "That user is already in this room." }); return; }
       const pending = await (prisma as any).notification.findFirst({ where: { userId: target.id, type: "invite", roomId: room.id, resolved: false } });
-      if (pending) { socket.emit("inviteError", { message: "Invite already sent." }); return; }
+      if (pending) { socket.emit("inviteError", { targetUsername, message: "Invite already sent." }); return; }
       const notif = await (prisma as any).notification.create({
         data: { userId: target.id, type: "invite", roomId: room.id, roomName: room.name, fromUserId: socketUser.id, fromUsername: socketUser.username },
       });
       deliverNotification(target.id, notif);
-      socket.emit("inviteSent", { ok: true });
+      socket.emit("inviteSent", { targetUsername, ok: true });
     } catch (err) {
       console.error("[sendInvite]", err);
+      socket.emit("inviteError", { targetUsername, message: "Couldn't send the invite." });
     }
   });
 
@@ -1412,6 +1428,15 @@ io.on("connection", (socket) => {
       if (channelId) {
         if (!channelPositions.has(channelId)) channelPositions.set(channelId, new Map());
         channelPositions.get(channelId)!.set(socketUser.id, { userId: socketUser.id, username: socketUser.username, position });
+        // Persist so the sub-debate stance survives a restart.
+        try {
+          await prisma.$executeRawUnsafe(
+            `INSERT INTO "ChannelPosition" ("id", "userId", "channelId", "position", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, NOW())
+             ON CONFLICT ("userId", "channelId") DO UPDATE SET "position" = $3, "updatedAt" = NOW()`,
+            socketUser.id, channelId, position,
+          );
+        } catch { /* table may not exist yet */ }
         io.to(`channel:${channelId}`).emit("positionUpdate", { userId: socketUser.id, username: socketUser.username, position, channelId });
       } else {
         // Look up room for cooldown check and DB upsert
@@ -5412,6 +5437,22 @@ async function start() {
     await prisma.$executeRawUnsafe(`
       CREATE UNIQUE INDEX IF NOT EXISTS "UserPosition_userId_roomId_key"
         ON "UserPosition"("userId", "roomId")
+    `);
+    // Sub-debate (channel) positions live in their own table so they survive a
+    // restart the same way room positions do.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ChannelPosition" (
+        "id"        TEXT         NOT NULL,
+        "userId"    TEXT         NOT NULL,
+        "channelId" TEXT         NOT NULL,
+        "position"  TEXT         NOT NULL,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "ChannelPosition_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "ChannelPosition_userId_channelId_key"
+        ON "ChannelPosition"("userId", "channelId")
     `);
     console.log("[DB] Debate position tables ready");
   } catch (e) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ConfirmModal from "./ConfirmModal";
 import { api } from "@/lib/api";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 interface Member { userId: string; username: string; avatarUrl?: string | null; role?: string; }
 interface RoomMeta {
@@ -92,6 +93,14 @@ export default function RoomPanel({
     finally { setSaving(false); setTimeout(() => setSaveMsg(""), 3000); }
   }
 
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const tabs = [
@@ -104,7 +113,8 @@ export default function RoomPanel({
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
-      <div className="relative flex h-full w-full md:w-72 flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-elevated"
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Room settings"
+        className="relative flex h-full w-full md:w-72 flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-800 shadow-elevated"
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}

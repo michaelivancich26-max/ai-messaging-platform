@@ -83,6 +83,7 @@ export default function RoomPage() {
   const [inviteQuery, setInviteQuery] = useState("");
   const [inviteResults, setInviteResults] = useState<{ id: string; username: string }[]>([]);
   const [inviteStatus, setInviteStatus] = useState<Record<string, "sending" | "sent" | "error">>({});
+  const [toast, setToast] = useState<string | null>(null);
   const sidebarChannelRef = useRef<{ id: string; name: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
@@ -193,9 +194,16 @@ export default function RoomPage() {
     socket.on("connect", rejoin);
     if (socket.connected) rejoin();
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
-    socket.on("error", ({ message }: { message: string }) => alert(message));
+    socket.on("error", ({ message }: { message: string }) => setToast(message));
     socket.on("roomDeleted", () => router.push("/lobby"));
-    socket.on("kicked", () => { alert("You were kicked from this room."); router.push("/lobby"); });
+    socket.on("kicked", () => router.push("/lobby"));
+    socket.on("inviteSent", ({ targetUsername }: { targetUsername?: string }) => {
+      if (targetUsername) setInviteStatus(p => ({ ...p, [targetUsername]: "sent" }));
+    });
+    socket.on("inviteError", ({ targetUsername, message }: { targetUsername?: string; message: string }) => {
+      if (targetUsername) setInviteStatus(p => ({ ...p, [targetUsername]: "error" }));
+      setToast(message);
+    });
     socket.on("channelsUpdated", () => setChannelRefresh(v => v + 1));
     socket.on("pollSuggested", (s: { question: string; options: string[] }) => setPollSuggestion(s));
     socket.on("pollCreated", (poll: Poll) => setActivePolls(prev => [poll, ...prev]));
@@ -411,6 +419,8 @@ export default function RoomPage() {
       socket.off("error");
       socket.off("roomDeleted");
       socket.off("kicked");
+      socket.off("inviteSent");
+      socket.off("inviteError");
       socket.off("pollSuggested");
       socket.off("pollCreated");
       socket.off("pollUpdated");
@@ -987,17 +997,19 @@ export default function RoomPage() {
     return () => clearTimeout(t);
   }, [inviteQuery, userId]);
 
+  // Auto-dismiss transient toasts (socket errors, invite failures).
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   function sendInvite(targetUsername: string) {
-    if (!roomId.startsWith("dm-")) {
-      setInviteStatus(p => ({ ...p, [targetUsername]: "sending" }));
-      const s = getSocket();
-      s.emit("sendInvite", { targetUsername, roomName: roomId });
-      s.once("inviteSent", () => setInviteStatus(p => ({ ...p, [targetUsername]: "sent" })));
-      s.once("inviteError", ({ message }: { message: string }) => {
-        setInviteStatus(p => ({ ...p, [targetUsername]: "error" }));
-        alert(message);
-      });
-    }
+    if (roomId.startsWith("dm-")) return;
+    setInviteStatus(p => ({ ...p, [targetUsername]: "sending" }));
+    getSocket().emit("sendInvite", { targetUsername, roomName: roomId });
+    // The ack is handled by a persistent inviteSent/inviteError listener matched on
+    // targetUsername, so overlapping invites don't cross-resolve or leak handlers.
   }
 
   function sendMessage(content: string) {
@@ -1965,6 +1977,17 @@ export default function RoomPage() {
         onMetaUpdate={(meta) => setRoomMeta(meta)}
         onDelete={(isOwner || isAdmin) ? deleteRoom : undefined}
       />
+
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[70] flex justify-center px-4">
+          <div role="status" className="pointer-events-auto flex max-w-md items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-800 shadow-elevated animate-fadeInUp dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
+            <span className="min-w-0 flex-1">{toast}</span>
+            <button onClick={() => setToast(null)} aria-label="Dismiss" className="shrink-0 rounded p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L6.94 8 5.22 9.72a.75.75 0 1 0 1.06 1.06L8 9.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L9.06 8l1.72-1.72a.75.75 0 0 0-1.06-1.06L8 6.94 6.28 5.22Z" /></svg>
+            </button>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

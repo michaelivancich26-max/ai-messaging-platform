@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -108,12 +109,13 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
 }
 
 // ─── Password Modal ─────────────────────────────────────────────────────────
-function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: string; onConfirm: (pw: string) => void; onCancel: () => void; error: string }) {
+function PasswordModal({ roomName, onConfirm, onCancel, error, submitting }: { roomName: string; onConfirm: (pw: string) => void; onCancel: () => void; error: string; submitting?: boolean }) {
   const [pw, setPw] = useState("");
   const [show, setShow] = useState(false);
+  const trapRef = useFocusTrap<HTMLDivElement>();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="pw-modal-title" className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="pw-modal-title" className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-500 dark:text-gray-400">
             <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
@@ -136,7 +138,7 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
         {error && <p className="mb-3 text-xs text-red-600 dark:text-red-400">{error}</p>}
         <div className="mt-4 flex gap-2">
           <button onClick={onCancel} className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 py-2 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">Cancel</button>
-          <button onClick={() => pw && onConfirm(pw)} disabled={!pw} className="flex-1 rounded-xl bg-orange-700 py-2 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 disabled:opacity-40 transition-colors">Join</button>
+          <button onClick={() => pw && onConfirm(pw)} disabled={!pw || submitting} className="flex-1 rounded-xl bg-orange-700 py-2 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 disabled:opacity-40 transition-colors">{submitting ? "Joining…" : "Join"}</button>
         </div>
       </div>
     </div>
@@ -178,6 +180,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
   const [fishbowlSeats, setFishbowlSeats] = useState(4);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   // Escape closes the dialog, matching the other modals.
   useEffect(() => {
@@ -212,7 +215,7 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="create-room-title" className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="create-room-title" className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-orange-700 dark:text-orange-400">
@@ -425,7 +428,9 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [authRoom, setAuthRoom] = useState<BrowseRoom | null>(null);
   const [authError, setAuthError] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [joining, setJoining] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<{ id: string; msg: string } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -441,31 +446,48 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
   async function joinRoom(room: BrowseRoom) {
     if (room.isPrivate) { setAuthRoom(room); setAuthError(""); return; }
     setJoining(room.id);
-    await api(`${SERVER}/api/rooms/${room.name}/join`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    setJoining(null);
-    load();
-    onJoined();
-    router.push(`/room/${room.name}`);
+    setJoinError(null);
+    try {
+      const res = await api(`${SERVER}/api/rooms/${room.name}/join`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setJoinError({ id: room.id, msg: d.error ?? "Couldn't join this room." });
+        return;
+      }
+      onJoined();
+      router.push(`/room/${room.name}`);
+    } catch {
+      setJoinError({ id: room.id, msg: "Couldn't reach the server." });
+    } finally {
+      setJoining(null);
+    }
   }
 
   async function joinPrivate(password: string) {
     if (!authRoom) return;
-    const res = await api(`${SERVER}/api/rooms/${authRoom.name}/auth`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password, userId }),
-    });
-    const { ok } = await res.json();
-    if (ok) {
-      sessionStorage.setItem(`room-pw:${authRoom.name}`, password);
-      setAuthRoom(null);
-      load();
-      onJoined();
-      router.push(`/room/${authRoom.name}`);
-    } else {
-      setAuthError("Incorrect password.");
+    setAuthSubmitting(true);
+    setAuthError("");
+    try {
+      const res = await api(`${SERVER}/api/rooms/${authRoom.name}/auth`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, userId }),
+      });
+      const { ok } = await res.json().catch(() => ({ ok: false }));
+      if (ok) {
+        sessionStorage.setItem(`room-pw:${authRoom.name}`, password);
+        setAuthRoom(null);
+        onJoined();
+        router.push(`/room/${authRoom.name}`);
+      } else {
+        setAuthError("Incorrect password.");
+      }
+    } catch {
+      setAuthError("Could not reach the server.");
+    } finally {
+      setAuthSubmitting(false);
     }
   }
 
@@ -661,6 +683,9 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                     ? "Watch debate"
                     : room.isPrivate ? "Join (private)" : "Join debate"}
                 </button>
+                {joinError?.id === room.id && (
+                  <p className="text-[11px] text-red-600 dark:text-red-400">{joinError.msg}</p>
+                )}
               </div>
             );
             })}
@@ -669,7 +694,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
       </div>
 
       {authRoom && (
-        <PasswordModal roomName={authRoom.name} error={authError}
+        <PasswordModal roomName={authRoom.name} error={authError} submitting={authSubmitting}
           onConfirm={joinPrivate} onCancel={() => { setAuthRoom(null); setAuthError(""); }} />
       )}
     </div>

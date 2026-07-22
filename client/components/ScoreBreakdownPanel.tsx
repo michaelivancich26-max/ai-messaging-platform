@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { ScoredClaim, ClaimStatus, CredScore, UserPositionEntry } from "@/lib/types";
 import { STANCE_PALETTE, NEUTRAL_PALETTE } from "@/lib/stances";
 import { api } from "@/lib/api";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -39,6 +40,14 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
   const [claims, setClaims] = useState<ScoredClaim[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<ClaimStatus | "ALL">("ALL");
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +75,7 @@ export default function ScoreBreakdownPanel({ open, onClose, roomName, positions
 
   return (
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
-      <div className="ml-auto flex h-full w-full max-w-md flex-col bg-gray-50 dark:bg-gray-950 shadow-2xl border-l border-gray-200 dark:border-gray-800 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label="Score breakdown" className="ml-auto flex h-full w-full max-w-md flex-col bg-gray-50 dark:bg-gray-950 shadow-2xl border-l border-gray-200 dark:border-gray-800 overflow-hidden" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3 shrink-0">

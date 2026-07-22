@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 interface Props {
   messageContent: string;
@@ -12,11 +13,13 @@ interface Props {
 export default function SubDebateModal({ messageContent, onConfirm, onClose, loading }: Props) {
   const [proposition, setProposition] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>();
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Escape") onClose();
+    // Don't let Escape abandon the modal while the create request is in flight.
+    if (e.key === "Escape" && !loading) onClose();
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit();
   }
 
@@ -29,9 +32,12 @@ export default function SubDebateModal({ messageContent, onConfirm, onClose, loa
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={() => !loading && onClose()}
     >
       <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
         className="relative w-full max-w-md mx-4 rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 shadow-elevated animate-fadeIn"
         onClick={e => e.stopPropagation()}
         onKeyDown={handleKey}

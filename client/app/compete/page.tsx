@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import TeamMatches from "@/components/TeamMatches";
 import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
 import { api } from "@/lib/api";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { Zap, X, Trophy, Medal, Check, Lock, GraduationCap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -169,6 +170,13 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
   const [threshold, setThreshold] = useState(60);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const trapRef = useFocusTrap<HTMLDivElement>();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const wc: WinCondition =
     wcType === "exchanges" ? { type: "exchanges", limit } :
@@ -201,8 +209,8 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={e => e.stopPropagation()}>
-        <h2 className="font-display text-lg font-bold tracking-tight text-gray-900 dark:text-white mb-4">Post a Challenge</h2>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="post-challenge-title" className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={e => e.stopPropagation()}>
+        <h2 id="post-challenge-title" className="font-display text-lg font-bold tracking-tight text-gray-900 dark:text-white mb-4">Post a Challenge</h2>
 
         {/* Claim */}
         <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Your claim</label>

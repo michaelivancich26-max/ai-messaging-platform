@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 interface Props {
   title: string;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = true, onConfirm, onCancel }: Props) {
+  const trapRef = useFocusTrap<HTMLDivElement>();
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -24,9 +26,9 @@ export default function ConfirmModal({ title, message, confirmLabel = "Confirm",
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={onCancel}>
-      <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp"
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp"
         onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-2 font-display text-base font-bold text-gray-900 dark:text-white">{title}</h2>
+        <h2 id="confirm-modal-title" className="mb-2 font-display text-base font-bold text-gray-900 dark:text-white">{title}</h2>
         <p className="mb-6 text-sm text-gray-600 dark:text-gray-300">{message}</p>
         <div className="flex gap-2">
           <button onClick={onCancel} autoFocus
