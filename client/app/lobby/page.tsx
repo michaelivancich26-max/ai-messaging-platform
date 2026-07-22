@@ -11,10 +11,23 @@ const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 // ─── Trending Strip ──────────────────────────────────────────────────────────
 interface TrendingTopic { headline: string; proposition: string; source: string; roomName: string; sourceUrl?: string; }
 
+const TRENDING_COLLAPSED_KEY = "cg:trending:collapsed";
+
 function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string) => void }) {
   const router = useRouter();
   const [topics, setTopics] = useState<TrendingTopic[]>([]);
   const [loading, setLoading] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Restore the collapse preference so it sticks across visits.
+  useEffect(() => {
+    try { setCollapsed(localStorage.getItem(TRENDING_COLLAPSED_KEY) === "1"); } catch { /* no storage */ }
+  }, []);
+  const toggleCollapsed = () => setCollapsed(prev => {
+    const next = !prev;
+    try { localStorage.setItem(TRENDING_COLLAPSED_KEY, next ? "1" : "0"); } catch { /* no storage */ }
+    return next;
+  });
 
   useEffect(() => {
     api(`${SERVER}/api/trending`)
@@ -27,12 +40,25 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
 
   return (
     <div className="border-b border-gray-200 dark:border-gray-800 px-4 md:px-6 py-4 shrink-0">
-      <div className="flex items-center gap-2 mb-3">
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        className={`group flex w-full items-center gap-2 ${collapsed ? "" : "mb-3"}`}
+      >
         <svg viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3 text-orange-700 dark:text-orange-400">
           <path d="M7.557 2.066A1 1 0 0 1 8.75 3v2.316l2.387-.795A1 1 0 0 1 12.369 5.8l-1.134 3.401 2.01 2.009a1 1 0 0 1-.848 1.704l-2.758-.46-.92 2.302a1 1 0 0 1-1.856-.021l-.84-2.521L4.28 13.6a1 1 0 0 1-1.273-1.273l1.366-3.415-1.948-.974A1 1 0 0 1 3 6.25h2.316l-.795-2.387A1 1 0 0 1 5.8 2.631l2.401.803-.644-1.368Z" />
         </svg>
         <span className="text-[11px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">Trending Today</span>
-      </div>
+        {!loading && topics.length > 0 && (
+          <span className="rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700 dark:bg-orange-950/60 dark:text-orange-400">{topics.length}</span>
+        )}
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"
+          className={`ml-auto h-3.5 w-3.5 text-gray-400 transition-transform group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300 ${collapsed ? "" : "rotate-90"}`}>
+          <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {!collapsed && (
       <div className="flex gap-3 overflow-x-auto pb-2 -mr-4 md:-mr-6 pr-4 md:pr-6 scrollbar-none">
         {loading ? (
           [1, 2, 3].map(i => (
@@ -76,6 +102,7 @@ function TrendingStrip({ onStartDebate }: { onStartDebate: (proposition: string)
           ))
         )}
       </div>
+      )}
     </div>
   );
 }
