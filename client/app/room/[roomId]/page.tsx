@@ -65,6 +65,7 @@ export default function RoomPage() {
   const [positions, setPositions] = useState<Record<string, UserPositionEntry>>({});
   const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
   const [debateTurn, setDebateTurn] = useState<DebateTurnState | null>(null);
+  const [passVote, setPassVote] = useState<{ side: string; voters: string[]; needed: number } | null>(null);
   const [profileModal, setProfileModal] = useState<{ userId: string; username: string } | null>(null);
   const [subDebateModal, setSubDebateModal] = useState<{ messageId: string; content: string } | null>(null);
   const [subDebateCreating, setSubDebateCreating] = useState(false);
@@ -228,7 +229,8 @@ export default function RoomPage() {
       const mine = entries.find(e => e.userId === userId);
       if (mine) setMyPosition(mine.position);
     });
-    socket.on("debateTurnUpdate", (turn: DebateTurnState) => setDebateTurn(turn));
+    socket.on("debateTurnUpdate", (turn: DebateTurnState) => { setDebateTurn(turn); setPassVote(null); });
+    socket.on("passVoteUpdate", (v: { side: string; voters: string[]; needed: number }) => setPassVote({ side: v.side, voters: v.voters, needed: v.needed }));
     socket.on("stancesUpdated", (newStances: string[]) => setStances(newStances));
     socket.on("channelPositions", ({ channelId, positions: entries }: { channelId: string; positions: UserPositionEntry[] }) => {
       const map: Record<string, UserPositionEntry> = {};
@@ -418,6 +420,7 @@ export default function RoomPage() {
       socket.off("positionUpdate");
       socket.off("debatePositions");
       socket.off("debateTurnUpdate");
+      socket.off("passVoteUpdate");
       socket.off("stancesUpdated");
       socket.off("channelPositions");
       socket.off("sidebarChannel");
@@ -1184,7 +1187,7 @@ export default function RoomPage() {
               <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
               <path fillRule="evenodd" d="M1.38 8.28a.87.87 0 0 1 0-.566 7.003 7.003 0 0 1 13.239.006.87.87 0 0 1 0 .565A7.003 7.003 0 0 1 1.379 8.28ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" clipRule="evenodd" />
             </svg>
-            Spectator chat
+            <span className="hidden sm:inline">Spectator chat</span>
           </button>
         )}
         {/* Side chat toggle — participants only in fishbowl rooms; all in regular rooms */}
@@ -1209,7 +1212,7 @@ export default function RoomPage() {
               <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v7A1.5 1.5 0 0 0 2.5 13h3.879a1.5 1.5 0 0 0 1.06-.44l4.122-4.12a1.5 1.5 0 0 0 0-2.122L7.44 2.44A1.5 1.5 0 0 0 6.378 2H2.5Zm3.75 5.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" clipRule="evenodd" />
               <path d="M10.22 4.72a.75.75 0 0 1 1.06 0l.97.97.97-.97a.75.75 0 1 1 1.06 1.06l-.97.97.97.97a.75.75 0 1 1-1.06 1.06l-.97-.97-.97.97a.75.75 0 0 1-1.06-1.06l.97-.97-.97-.97a.75.75 0 0 1 0-1.06Z" />
             </svg>
-            {sidebarChannel ? "Side chat" : "Add side chat"}
+            <span className="hidden sm:inline">{sidebarChannel ? "Side chat" : "Add side chat"}</span>
           </button>
         )}
         {/* Structure toggle — visible to owners/admins on non-DM rooms */}
@@ -1226,7 +1229,7 @@ export default function RoomPage() {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
               <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.232l-3.136 2.762a.75.75 0 0 1-1.12-.814l.853-3.576-2.79-2.39a.75.75 0 0 1 .427-1.316l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
             </svg>
-            {debateTurn?.mode === "structured" ? "Structured on" : "Structure"}
+            <span className="hidden sm:inline">{debateTurn?.mode === "structured" ? "Structured on" : "Structure"}</span>
           </button>
         )}
         {/* Invite button — only for non-DM rooms */}
@@ -1338,7 +1341,6 @@ export default function RoomPage() {
           stanceCooldown={(roomMeta as any)?.stanceCooldown ?? 0}
           myLastSwitchedAt={myLastSwitchedAt}
           onSetPosition={setDebatePosition}
-          onSetDebateMode={setDebateMode}
           onDetailsClick={() => setScorePanelOpen(true)}
         />
       )}
@@ -1874,6 +1876,7 @@ export default function RoomPage() {
           onPassTurn={passTurn}
           onEndStructured={() => setDebateMode("open")}
           stances={activeStances}
+          passVote={passVote}
         />
       )}
 

@@ -12,15 +12,22 @@ interface Props {
   onPassTurn: () => void;
   onEndStructured: () => void;
   stances?: string[];
+  // Pending pass vote for the current side, if any (majority of the side must agree).
+  passVote?: { side: string; voters: string[]; needed: number } | null;
 }
 
-export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmin, onClaimFloor, onPassTurn, onEndStructured, stances }: Props) {
+export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmin, onClaimFloor, onPassTurn, onEndStructured, stances, passVote }: Props) {
   if (turn.mode !== "structured") return null;
 
   const isMySide = myPosition === turn.currentSide;
   const isMyTurn = turn.currentSpeakerId === myUserId;
   const floorClaimed = !!turn.currentSpeakerId;
-  const canPass = isOwner || isAdmin || isMyTurn;
+  // Passing is now a side decision: any current-side member can vote to pass, and
+  // an off-side owner/admin can still force it to unstick a stall. The side needs
+  // a majority — reflected on the button and in the status line.
+  const canPass = isMySide || isOwner || isAdmin;
+  const iVoted = !!passVote && passVote.voters.includes(myUserId);
+  const votePending = !!passVote && passVote.needed > 1;
 
   const stanceList = stances ?? ["FOR", "AGAINST"];
   const sideIdx = stanceList.indexOf(turn.currentSide);
@@ -52,6 +59,11 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
           )}
         </span>
         <span className="shrink-0 text-[11px] text-gray-500 dark:text-gray-400 ml-1">Turn {turn.turnNumber}</span>
+        {votePending && (
+          <span className="shrink-0 ml-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400" title="Members of the current side agreeing to pass the turn">
+            · {passVote!.voters.length}/{passVote!.needed} to pass
+          </span>
+        )}
       </div>
 
       {/* Action buttons */}
@@ -71,9 +83,22 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
         {canPass && (
           <button
             onClick={onPassTurn}
-            className="rounded-full border border-gray-300 dark:border-gray-700 px-2.5 py-1 text-xs text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            title={!isMySide
+              ? "Force the turn to the other side (moderator)"
+              : iVoted
+                ? "You voted to pass — click to retract"
+                : "Vote to pass your side's turn — a majority of your side must agree"}
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+              isMySide && iVoted
+                ? "border-amber-400 bg-amber-100 text-amber-700 dark:border-amber-600/60 dark:bg-amber-950/40 dark:text-amber-300"
+                : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            }`}
           >
-            {isMyTurn ? "Pass" : "Skip"}
+            {!isMySide
+              ? "Force pass"
+              : votePending
+                ? `Pass ${passVote!.voters.length}/${passVote!.needed}`
+                : (iVoted ? "Voted · undo" : "Pass turn")}
           </button>
         )}
         {(isOwner || isAdmin) && (

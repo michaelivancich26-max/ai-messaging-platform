@@ -75,7 +75,8 @@ export default function RoomPanel({
         proposition: editProposition.trim() || null,
         maxMembers: editMax ? parseInt(editMax) : null,
         isPrivate: editPrivate, aiPersona: editPersona.trim() || null,
-        stances: editStances,
+        // Drop blank/whitespace rows so they don't become empty position buttons.
+        stances: editStances.map(s => s.trim()).filter(Boolean),
         isOpinionated: editOpinionated,
         stanceCooldown: editCooldown,
       };
@@ -96,7 +97,9 @@ export default function RoomPanel({
   const tabs = [
     { id: "room" as const, label: "Room" },
     ...(canEdit ? [{ id: "settings" as const, label: "Settings" }] : []),
-    { id: "ai" as const, label: "AI" },
+    // The AI tab's body is entirely owner/admin-only, so hide the tab for others
+    // rather than showing them a blank pane.
+    ...(canEdit ? [{ id: "ai" as const, label: "AI" }] : []),
   ];
 
   return (

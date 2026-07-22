@@ -209,8 +209,21 @@ interface DebateTurnState {
   turnNumber: number;
 }
 const debateTurns = new Map<string, DebateTurnState>();
+// Structured debate: which current-side members have voted to pass the turn. A
+// turn only passes once a majority of the side's present members agree, so one
+// debater can't throw away the side's turn. Cleared whenever the turn advances.
+const passTurnVotes = new Map<string, Set<string>>();
 const channelSidebars = new Map<string, string>(); // parentChannelId → sidebar channelId
 const channelPositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
+
+// Present participants currently sitting on a given side of a structured debate.
+function presentSideMembers(roomId: string, side: string): string[] {
+  const pres = presence.get(roomId);
+  const pos = debatePositions.get(roomId);
+  if (!pres || !pos) return [];
+  const present = new Set(Array.from(pres.values()).map(m => m.userId));
+  return Array.from(present).filter(uid => pos.get(uid)?.position === side);
+}
 
 function broadcastPresence(roomId: string) {
   const members = presence.get(roomId);
@@ -230,9 +243,24 @@ async function getFishbowlRole(userId: string, roomId: string): Promise<string> 
 function leavePresence(socketId: string) {
   for (const [roomId, members] of presence.entries()) {
     if (members.has(socketId)) {
+      const leavingUserId = members.get(socketId)?.userId;
       members.delete(socketId);
       broadcastPresence(roomId);
-      if (members.size === 0) presence.delete(roomId);
+      // If that was the user's last socket in this room and they held the floor in
+      // a structured debate, release the floor — otherwise the side is stuck
+      // behind a ghost speaker who can never be reclaimed or (if they were the
+      // side's only member) voted past. Also drop any stale pass-turn vote.
+      if (leavingUserId && !Array.from(members.values()).some(m => m.userId === leavingUserId)) {
+        const turn = debateTurns.get(roomId);
+        if (turn?.mode === "structured" && turn.currentSpeakerId === leavingUserId) {
+          const released: DebateTurnState = { ...turn, currentSpeakerId: null, currentSpeakerName: null };
+          debateTurns.set(roomId, released);
+          redis.set(`debate:turn:${roomId}`, JSON.stringify(released), { EX: 86400 }).catch(() => {});
+          io.to(roomId).emit("debateTurnUpdate", released);
+        }
+        passTurnVotes.get(roomId)?.delete(leavingUserId);
+      }
+      if (members.size === 0) { presence.delete(roomId); passTurnVotes.delete(roomId); }
     }
   }
 }
@@ -534,6 +562,17 @@ io.on("connection", (socket) => {
       }
       const currentTurn = debateTurns.get(roomId);
       if (currentTurn) socket.emit("debateTurnUpdate", currentTurn);
+      // Replay an in-progress pass-turn vote so a (re)joining client isn't blind to
+      // a decision that could complete on state they were never shown.
+      if (currentTurn?.mode === "structured") {
+        const votes = passTurnVotes.get(roomId);
+        if (votes && votes.size) {
+          const sideMembers = presentSideMembers(roomId, currentTurn.currentSide);
+          const sideSet = new Set(sideMembers);
+          const effective = Array.from(votes).filter(uid => sideSet.has(uid));
+          if (effective.length) socket.emit("passVoteUpdate", { roomId, side: currentTurn.currentSide, voters: effective, needed: Math.floor(sideMembers.length / 2) + 1 });
+        }
+      }
 
       // Emit current debate positions for this room
       const roomPositions = debatePositions.get(roomId);
@@ -850,10 +889,15 @@ io.on("connection", (socket) => {
         if (!isImage && !isSidebarMsg && !isSpectatorChatMsg) {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured" && turn.currentSpeakerId === user.id) {
+            passTurnVotes.delete(roomId);
             const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
             const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
             debateTurns.set(roomId, newTurn);
-            io.to(emitTarget).emit("debateTurnUpdate", newTurn);
+            // Persist + broadcast room-level, like every other turn transition —
+            // speaking is the commonest advance, so skipping the redis write here
+            // desynced the room back a turn after a restart.
+            redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
+            io.to(roomId).emit("debateTurnUpdate", newTurn);
           }
         }
 
@@ -1108,6 +1152,9 @@ io.on("connection", (socket) => {
       // the "Should this debate be structured?" vote that closePoll tallies.
       const target = await (prisma as any).poll.findUnique({ where: { id: pollId } });
       if (!target) return;
+      // A closed poll is final — otherwise its tallies keep shifting on everyone's
+      // screen (and the governance "structured?" poll appears to change post-close).
+      if (target.closedAt) { socket.emit("error", { message: "This poll is closed." }); return; }
       const room = await prisma.room.findUnique({ where: { id: target.roomId } });
       if (!room || !(await userMayAccessRoom(userId, socket.rooms, room as any))) return;
       await (prisma as any).pollVote.upsert({
@@ -1159,6 +1206,7 @@ io.on("connection", (socket) => {
           ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
           : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
         debateTurns.set(room.name, turn);
+        passTurnVotes.delete(room.name);
         redis.set(`debate:turn:${room.name}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
         io.to(room.name).emit("debateTurnUpdate", turn);
       }
@@ -1222,12 +1270,31 @@ io.on("connection", (socket) => {
       const claim = await (prisma as any).claim.findUnique({ where: { id: claimId } });
       if (!claim) return;
 
+      // You can't challenge your own claim, and a second challenge from the same
+      // user shouldn't inflate the count or burn another paid re-evaluation — the
+      // count is meant to signal how contested a claim is across DISTINCT people.
+      if (claim.claimantId === socketUser.id) {
+        socket.emit("error", { message: "You can't challenge your own claim." });
+        return;
+      }
+      const emitTarget = channelId ? `channel:${channelId}` : roomId;
+      const already = await (prisma as any).claimChallenge.findFirst({ where: { claimId, challengerId: socketUser.id } });
+      if (already) {
+        const count = await (prisma as any).claimChallenge.count({ where: { claimId } });
+        socket.emit("claimVerdict", {
+          claimId, messageId: claim.messageId, status: claim.status, reasoning: claim.verdict,
+          claimantId: claim.claimantId, challengeCount: count,
+          score: Number(claim.score ?? 0), relevance: claim.relevance,
+          evidence: claim.evidence, logic: claim.logic, impact: claim.impact,
+        });
+        return;
+      }
+
       await (prisma as any).claimChallenge.create({
         data: { claimId, challengerId: socketUser.id },
       });
 
       const challenges = await (prisma as any).claimChallenge.findMany({ where: { claimId } });
-      const emitTarget = channelId ? `channel:${channelId}` : roomId;
 
       // The first few challenges re-judge the claim "with fresh eyes"; past that
       // the verdict has stabilised and re-running the model on identical text just
@@ -1338,6 +1405,7 @@ io.on("connection", (socket) => {
         ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
         : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
       debateTurns.set(roomId, turn);
+      passTurnVotes.delete(roomId);
       redis.set(`debate:turn:${roomId}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
       io.to(roomId).emit("debateTurnUpdate", turn);
     } catch (err) {
@@ -1386,30 +1454,61 @@ io.on("connection", (socket) => {
     try {
       const turn = debateTurns.get(roomId);
       if (!turn || turn.mode !== "structured") return;
+
+      const advance = () => {
+        passTurnVotes.delete(roomId);
+        const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
+        const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
+        debateTurns.set(roomId, newTurn);
+        redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
+        io.to(roomId).emit("debateTurnUpdate", newTurn);
+      };
+
       const roomPresence = presence.get(roomId);
       const uniqueUsers = roomPresence ? new Set(Array.from(roomPresence.values()).map(m => m.userId)) : new Set();
       const multiUser = uniqueUsers.size > 1;
 
-      if (multiUser) {
-        // With multiple people present, only the current side may pass the turn
-        const roomPos = debatePositions.get(roomId);
-        const userSide = roomPos?.get(socketUser.id)?.position;
-        if (userSide !== turn.currentSide) {
-          socket.emit("error", { message: `Only a ${turn.currentSide} participant can pass the turn right now.` });
-          return;
-        }
-      } else {
-        // Solo — fall back to owner/admin/current speaker check
+      // Solo practice — owner/admin/current speaker passes immediately (no side to
+      // gather a majority from).
+      if (!multiUser) {
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
         const canPass = room?.creatorId === socketUser.id || requestingUser?.isAdmin || turn.currentSpeakerId === socketUser.id;
-        if (!canPass) return;
+        if (canPass) advance();
+        return;
       }
-      const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
-      const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
-      debateTurns.set(roomId, newTurn);
-      redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
-      io.to(roomId).emit("debateTurnUpdate", newTurn);
+
+      const roomPos = debatePositions.get(roomId);
+      const userSide = roomPos?.get(socketUser.id)?.position;
+
+      // On the current side → this is a VOTE. The side passes only by majority, so
+      // a single debater (even the room owner, when they're debating this side)
+      // can't throw away the side's turn. The pass button toggles their vote.
+      if (userSide === turn.currentSide) {
+        let votes = passTurnVotes.get(roomId);
+        if (!votes) { votes = new Set(); passTurnVotes.set(roomId, votes); }
+        if (votes.has(socketUser.id)) votes.delete(socketUser.id);
+        else votes.add(socketUser.id);
+
+        // Count only votes from members still present on the current side, and
+        // prune stale ones so the store can't leak or over-count after a leave.
+        const sideMembers = presentSideMembers(roomId, turn.currentSide);
+        const sideSet = new Set(sideMembers);
+        const effective = Array.from(votes).filter(uid => sideSet.has(uid));
+        votes.clear(); effective.forEach(uid => votes!.add(uid));
+        const needed = Math.floor(sideMembers.length / 2) + 1;
+
+        if (effective.length >= needed) advance();
+        else io.to(roomId).emit("passVoteUpdate", { roomId, side: turn.currentSide, voters: effective, needed });
+        return;
+      }
+
+      // Not on the current side: only a moderator (owner/admin) may force the turn,
+      // to unstick a debate where the side has stalled or emptied out.
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (room?.creatorId === socketUser.id || requestingUser?.isAdmin) { advance(); return; }
+      socket.emit("error", { message: `Only a ${turn.currentSide} participant can vote to pass the turn.` });
     } catch (err) {
       console.error("[passTurn]", err);
     }

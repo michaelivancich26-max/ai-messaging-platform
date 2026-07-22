@@ -118,6 +118,44 @@ const BoltIcon = (
   </svg>
 );
 
+// ── Proposition win-condition picker ─────────────────────────────────────────
+// Previews the very bar it configures, exactly as it renders mid-match: the
+// winner (emerald) has to push the proposition bar to `threshold`, the loser
+// (rose) holds the rest, and a needle marks the win line. Dragging the slider
+// moves the score just as it would move live. Kept as one component so every
+// place a proposition win condition is chosen shows the same real bar.
+function PropositionThresholdPicker({ threshold, onChange }: { threshold: number; onChange: (v: number) => void }) {
+  const loser = 100 - threshold;
+  // Winner (emerald) on the left, loser (rose) on the right — the same first-side
+  // orientation as the Live match cards. The split is the win line: raising the
+  // slider grows the winner's green rightward as their score would climb live.
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+      <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">
+        <span className="text-emerald-700 dark:text-emerald-400">Winner</span>
+        <span className="text-gray-500 dark:text-gray-400">win at {threshold}%</span>
+        <span className="text-rose-700 dark:text-rose-400">Loser</span>
+      </div>
+      <div className="relative h-3.5 overflow-hidden rounded-full bg-gray-100 shadow-inner dark:bg-gray-800">
+        <div className="absolute inset-y-0 left-0 bg-emerald-500 transition-[width] duration-150" style={{ width: `${threshold}%` }} />
+        <div className="absolute inset-y-0 right-0 bg-rose-500 transition-[width] duration-150" style={{ width: `${loser}%` }} />
+        {/* Win line — the split the winner has to push the bar past to take it. */}
+        <div className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white/90 shadow dark:bg-gray-950/80 transition-[left] duration-150" style={{ left: `${threshold}%` }} />
+      </div>
+      <div className="mt-1 flex justify-between text-[11px] font-bold tabular-nums">
+        <span className="text-emerald-700 dark:text-emerald-300">{threshold}%</span>
+        <span className="text-rose-700 dark:text-rose-300">{loser}%</span>
+      </div>
+      <input
+        type="range" min={50} max={90} step={5} value={threshold}
+        onChange={e => onChange(+e.target.value)}
+        aria-label={`Win threshold ${threshold} percent`}
+        className="mt-2 w-full accent-emerald-600"
+      />
+    </div>
+  );
+}
+
 // ── Post Challenge Modal ──────────────────────────────────────────────────────
 
 function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () => void }) {
@@ -225,10 +263,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
           </div>
         )}
         {wcType === "proposition" && (
-          <div className="flex items-center gap-3">
-            <input type="range" min={50} max={90} step={5} value={threshold} onChange={e => setThreshold(+e.target.value)} className="flex-1 accent-brand-green" />
-            <span className="w-20 text-right text-xs text-gray-700 dark:text-gray-300">≥{threshold}%</span>
-          </div>
+          <PropositionThresholdPicker threshold={threshold} onChange={setThreshold} />
         )}
 
         {/* How it resolves + what's at stake */}

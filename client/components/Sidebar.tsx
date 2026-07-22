@@ -63,12 +63,10 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
   }, [status, userId]);
 
   function handleRoomClick(room: Room) {
-    if (room.isPrivate && room.creatorId !== userId && !isAdmin) {
-      // Navigate to lobby which handles password modal
-      router.push(`/lobby`);
-    } else {
-      router.push(`/room/${room.name}`);
-    }
+    // The sidebar only lists rooms you're already a member of, so go straight in.
+    // (Bouncing private rooms to /lobby was a dead-end loop — the lobby shows them
+    // as joined and enters without ever re-collecting a password anyway.)
+    router.push(`/room/${room.name}`);
   }
 
   return (

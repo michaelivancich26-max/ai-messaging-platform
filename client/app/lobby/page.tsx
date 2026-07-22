@@ -412,6 +412,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
   const router = useRouter();
   const [rooms, setRooms] = useState<BrowseRoom[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("trending");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -421,10 +422,11 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
 
   const load = useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     api(`${SERVER}/api/rooms/browse?userId=${userId}`)
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("bad status")))
       .then(data => { setRooms(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch(() => { setLoadError(true); setLoading(false); });
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
@@ -546,6 +548,18 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
               <div key={i} className="shimmer-track h-40 rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900" />
             ))}
           </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center animate-fadeIn">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-red-100 text-red-500 dark:bg-red-950/40 dark:text-red-400">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="h-7 w-7"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.515 2.625H3.72c-1.345 0-2.188-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" /></svg>
+            </div>
+            <p className="mt-4 font-display text-base font-bold text-gray-900 dark:text-white">Couldn&rsquo;t load debates</p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Something went wrong reaching the server.</p>
+            <button onClick={() => load()}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800/50">
+              Try again
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center animate-fadeIn">
             <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gray-100 dark:bg-gray-800">
@@ -553,13 +567,21 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
                 <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clipRule="evenodd" />
               </svg>
             </div>
-            <p className="mt-4 font-display text-base font-bold text-gray-900 dark:text-white">No debates found</p>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Try a different search or filter, or start your own.</p>
-            <button onClick={() => onCreateClick()}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-orange-700 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
-              <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path d="M10 4a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 10 4Z" /></svg>
-              Start a debate
-            </button>
+            <p className="mt-4 font-display text-base font-bold text-gray-900 dark:text-white">{(search.trim() || typeFilter !== "all") ? "No debates match your filters" : "No debates found"}</p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{(search.trim() || typeFilter !== "all") ? "Try widening your search, or start your own." : "Be the first — start a debate."}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {(search.trim() || typeFilter !== "all") && (
+                <button onClick={() => { setSearch(""); setTypeFilter("all"); }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800/50">
+                  Clear filters
+                </button>
+              )}
+              <button onClick={() => onCreateClick()}
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-700 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
+                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path d="M10 4a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 10 4Z" /></svg>
+                Start a debate
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
