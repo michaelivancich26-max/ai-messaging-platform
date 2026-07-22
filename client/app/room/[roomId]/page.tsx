@@ -26,6 +26,7 @@ import ScoreBreakdownPanel from "@/components/ScoreBreakdownPanel";
 import type { RoomMeta } from "@/components/RoomPanel";
 import { getBotById } from "@/lib/bots";
 import { api } from "@/lib/api";
+import { MessageSquarePlus } from "@/lib/icons";
 
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -1234,10 +1235,7 @@ export default function RoomPage() {
             }`}
             title={sidebarChannel ? (sidebarOpen ? "Hide side chat" : "Show side chat") : "Add side chat"}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
-              <path fillRule="evenodd" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v7A1.5 1.5 0 0 0 2.5 13h3.879a1.5 1.5 0 0 0 1.06-.44l4.122-4.12a1.5 1.5 0 0 0 0-2.122L7.44 2.44A1.5 1.5 0 0 0 6.378 2H2.5Zm3.75 5.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" clipRule="evenodd" />
-              <path d="M10.22 4.72a.75.75 0 0 1 1.06 0l.97.97.97-.97a.75.75 0 1 1 1.06 1.06l-.97.97.97.97a.75.75 0 1 1-1.06 1.06l-.97-.97-.97.97a.75.75 0 0 1-1.06-1.06l.97-.97-.97-.97a.75.75 0 0 1 0-1.06Z" />
-            </svg>
+            <MessageSquarePlus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{sidebarChannel ? "Side chat" : "Add side chat"}</span>
           </button>
         )}

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { UserPositionEntry, CredScore, DebateTurnState } from "@/lib/types";
 import { STANCE_PALETTE, NEUTRAL_PALETTE } from "@/lib/stances";
+import { Info } from "@/lib/icons";
 
 interface Props {
   proposition: string;
@@ -118,10 +119,9 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
                 onClick={onDetailsClick}
                 className="shrink-0 rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-brand-green-ink dark:hover:text-brand-green transition-colors"
                 title="Score details & formula"
+                aria-label="Score details and formula"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                  <path fillRule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Zm-6 3.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM7.293 5.293a1 1 0 1 1 1.414 1.414A1 1 0 0 0 7 7.75a.75.75 0 0 0 1.5 0 2.5 2.5 0 1 0-3.5-2.293.75.75 0 1 0 1.293.836Z" clipRule="evenodd" />
-                </svg>
+                <Info className="h-3.5 w-3.5" />
               </button>
             )}
           </div>

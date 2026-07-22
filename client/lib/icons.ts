@@ -14,4 +14,6 @@ export {
   Shield,  // brand mark next to the wordmark
   Lock,    // gated / locked features
   GraduationCap, // Training Grounds
+  Info,    // details / formula affordance
+  MessageSquarePlus, // add a side chat
 } from "lucide-react";
