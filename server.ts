@@ -1440,7 +1440,13 @@ app.get("/api/lobby", async (req, res) => {
         orderBy: { username: "asc" },
       }),
     ]);
-    const rooms = (memberships as any[]).map((m: any) => m.room);
+    // Match rooms — rapid/competitive (`comp-*`, incl. team `comp-t*` and rapid
+    // `comp-q*`) and arena bot rooms (`arena-*`) — create a RoomMember per
+    // participant, but they are not Common Grounds rooms and must not surface in
+    // the lobby's joined-rooms sidebar. Mirror the /api/rooms/browse filter.
+    const rooms = (memberships as any[])
+      .map((m: any) => m.room)
+      .filter((r: any) => r && !r.name.startsWith("comp-") && !r.name.startsWith("arena-"));
     res.json({ rooms, dms, users });
   } catch {
     res.status(500).json({ error: "Failed to load lobby" });

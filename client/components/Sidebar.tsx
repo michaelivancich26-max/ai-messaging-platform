@@ -147,11 +147,15 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
             </div>
           )}
 
-          {!collapsed && roomsOpen && (
+          {!collapsed && roomsOpen && (() => {
+            // Hide match rooms — arena bot rooms (`arena-*`) and rapid/competitive
+            // rooms (`comp-*`); they're joined memberships but not Common Grounds.
+            const visibleRooms = rooms.filter(r => !r.name.startsWith("arena-") && !r.name.startsWith("comp-"));
+            return (
             <ul className="mt-0.5">
-              {rooms.filter(r => !r.name.startsWith("arena-")).length === 0 ? (
+              {visibleRooms.length === 0 ? (
                 <li className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">No rooms yet</li>
-              ) : rooms.filter(r => !r.name.startsWith("arena-")).map(room => (
+              ) : visibleRooms.map(room => (
                 <li key={room.id}>
                   <button onClick={() => handleRoomClick(room)}
                     className={`flex w-full flex-col rounded-lg px-3 py-1.5 transition-colors text-left
@@ -179,7 +183,8 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
                 </li>
               ))}
             </ul>
-          )}
+            );
+          })()}
         </div>
 
       </nav>
