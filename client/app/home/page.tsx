@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import LiveMatches from "@/components/LiveMatches";
-import type { Medal } from "@/components/MedalsPanel";
+import { MedalIcon, type Medal } from "@/components/MedalsPanel";
 import type { CredScore } from "@/lib/types";
 import { SERIES, TOTAL_LESSONS } from "@/app/learn/content";
 import { PUZZLES } from "@/app/learn/puzzles/content";
 import { api } from "@/lib/api";
-import { Flame, Scale } from "@/lib/icons";
+import { Flame, Scale, Zap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -156,7 +156,7 @@ export default function HomePage() {
             </StatChip>
             {nextMedal && (
               <StatChip onClick={() => router.push("/dashboard")} title={nextMedal.description}>
-                <span className="text-sm leading-none">{nextMedal.icon}</span>
+                <MedalIcon name={nextMedal.icon} className="h-3.5 w-3.5 shrink-0" />
                 <span className="max-w-[9rem] truncate text-xs font-semibold text-gray-900 dark:text-gray-100">{nextMedal.name}</span>
               </StatChip>
             )}
@@ -168,7 +168,7 @@ export default function HomePage() {
           <div className="relative flex flex-col gap-6 p-6 md:flex-row md:items-center md:p-8">
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">
-                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M10 1a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V1.75A.75.75 0 0 1 10 1ZM5.05 3.05a.75.75 0 0 1 1.06 0l1.062 1.06A.75.75 0 1 1 6.11 5.173L5.05 4.11a.75.75 0 0 1 0-1.06Zm9.9 0a.75.75 0 0 1 0 1.06l-1.06 1.062a.75.75 0 0 1-1.062-1.061l1.061-1.06a.75.75 0 0 1 1.06 0ZM10 6a4 4 0 0 0-3.446 6.032l.311.51a.75.75 0 0 1-1.28.782l-.312-.51A5.5 5.5 0 1 1 15.5 11.5a5.47 5.47 0 0 1-.773 2.814l-.311.51a.75.75 0 1 1-1.28-.782l.31-.51A4 4 0 0 0 10 6Zm-2 11.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" /></svg>
+                <Zap className="h-4 w-4" aria-hidden />
                 Rapid Fire
               </p>
               <h1 className="mt-3 font-display text-3xl font-bold leading-[1.05] tracking-tight text-balance text-gray-900 dark:text-white md:text-4xl">

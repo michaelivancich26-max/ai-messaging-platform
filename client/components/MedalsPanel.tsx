@@ -34,7 +34,7 @@ const MEDAL_ICONS: Record<string, LucideIcon> = {
   pen: PenLine, medal: MedalGlyph,
 };
 
-function MedalIcon({ name, className }: { name: string; className?: string }) {
+export function MedalIcon({ name, className }: { name: string; className?: string }) {
   const Ic = MEDAL_ICONS[name] ?? MedalGlyph;
   return <Ic className={className} aria-hidden />;
 }
