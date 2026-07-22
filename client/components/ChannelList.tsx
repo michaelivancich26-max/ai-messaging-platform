@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Check } from "@/lib/icons";
+import ConfirmModal from "./ConfirmModal";
 
 export interface Channel {
   id: string;
@@ -49,6 +50,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
   // The rename response was never checked, so when it started 401ing the dialog
   // just closed as though it had worked.
   const [renameError, setRenameError] = useState<string | null>(null);
+  // Destructive deletes go through a confirm dialog (they wipe messages).
+  const [confirmDelete, setConfirmDelete] = useState<{ type: "channel" | "section"; id: string; name: string } | null>(null);
 
   async function load() {
     const res = await api(`${SERVER}/api/rooms/${roomName}/channels`);
@@ -174,7 +177,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                 <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9a.75.75 0 0 1 1.5 0v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
               </svg>
             </button>
-            <button onClick={() => deleteChannel(ch.id)}
+            <button onClick={() => setConfirmDelete({ type: "channel", id: ch.id, name: ch.name })}
+              aria-label={`Delete #${ch.name}`}
               className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                 <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
@@ -227,7 +231,7 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
         return (
           <div key={sec.id} className="mb-1">
             <div className="group flex items-center px-2 py-0.5">
-              <button onClick={() => toggleSection(sec.id)} className="mr-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+              <button onClick={() => toggleSection(sec.id)} aria-expanded={isOpen} aria-label={`${sec.name} section`} className="mr-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor"
                   className={`h-3 w-3 transition-transform ${isOpen ? "rotate-90" : ""}`}>
                   <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06L7.28 11.78a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
@@ -259,7 +263,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                       <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.75 6.774a2.75 2.75 0 0 0-.596.892l-.848 2.047a.75.75 0 0 0 .98.98l2.047-.848a2.75 2.75 0 0 0 .892-.596l4.261-4.263a1.75 1.75 0 0 0 0-2.474Z" />
                     </svg>
                   </button>
-                  <button onClick={() => deleteSection(sec.id)}
+                  <button onClick={() => setConfirmDelete({ type: "section", id: sec.id, name: sec.name })}
+                    aria-label={`Delete section ${sec.name}`}
                     className="rounded p-0.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
                       <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5Z" clipRule="evenodd" />
@@ -354,7 +359,8 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
                   </button>
                   {canEdit && (
                     <button
-                      onClick={() => deleteChannel(ch.id)}
+                      onClick={() => setConfirmDelete({ type: "channel", id: ch.id, name: ch.proposition ?? ch.name })}
+                      aria-label="Delete contention"
                       className="mt-1.5 hidden rounded p-0.5 text-gray-400 dark:text-gray-700 hover:text-red-600 dark:hover:text-red-400 group-hover:block"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
@@ -388,6 +394,21 @@ export default function ChannelList({ roomName, activeChannelId, canEdit, userId
             </button>
           )}
         </div>
+      )}
+      {confirmDelete && (
+        <ConfirmModal
+          title={confirmDelete.type === "section" ? "Delete section?" : "Delete channel?"}
+          message={confirmDelete.type === "section"
+            ? `Delete "${confirmDelete.name}"? Its channels move to unsectioned and the section is removed. This can't be undone.`
+            : `Delete "${confirmDelete.name}" and all its messages? This can't be undone.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            const d = confirmDelete;
+            setConfirmDelete(null);
+            if (d.type === "section") deleteSection(d.id); else deleteChannel(d.id);
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
       )}
     </div>
   );

@@ -113,12 +113,12 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
   const [show, setShow] = useState(false);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="pw-modal-title" className="w-full max-w-sm rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center gap-2">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-gray-500 dark:text-gray-400">
             <path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Zm-5 2a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0v-3Z" clipRule="evenodd" />
           </svg>
-          <h2 className="font-display text-base font-bold text-gray-900 dark:text-white">Private room</h2>
+          <h2 id="pw-modal-title" className="font-display text-base font-bold text-gray-900 dark:text-white">Private room</h2>
         </div>
         <p className="mb-4 text-sm text-gray-600 dark:text-gray-400"><span className="font-medium text-gray-800 dark:text-gray-200">#{roomName}</span> requires a password.</p>
         <div className="relative mb-1">
@@ -127,7 +127,7 @@ function PasswordModal({ roomName, onConfirm, onCancel, error }: { roomName: str
             onKeyDown={(e) => { if (e.key === "Enter" && pw) onConfirm(pw); if (e.key === "Escape") onCancel(); }}
             placeholder="Enter password"
             className="w-full rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-2 pr-10 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green" />
-          <button type="button" onClick={() => setShow(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+          <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
               {show ? <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" /> : <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06L3.28 2.22Z" clipRule="evenodd" />}
             </svg>
@@ -179,6 +179,13 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
+  // Escape closes the dialog, matching the other modals.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -205,15 +212,15 @@ function CreateRoomModal({ userId, onClose, onCreate, initialProposition }: { us
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="create-room-title" className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-orange-700 dark:text-orange-400">
               <path fillRule="evenodd" d="M10 2a1 1 0 0 1 .894.553l2.991 5.994 6.61.961a1 1 0 0 1 .554 1.706l-4.783 4.664 1.128 6.587a1 1 0 0 1-1.451 1.054L10 20.573l-5.943 3.126a1 1 0 0 1-1.45-1.054l1.128-6.587L-.05 11.214a1 1 0 0 1 .554-1.706l6.61-.961L9.106 2.553A1 1 0 0 1 10 2Z" clipRule="evenodd" />
             </svg>
-            <h2 className="font-display text-base font-bold text-gray-900 dark:text-white">Start a Debate</h2>
+            <h2 id="create-room-title" className="font-display text-base font-bold text-gray-900 dark:text-white">Start a Debate</h2>
           </div>
-          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+          <button onClick={onClose} aria-label="Close" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
           </button>
         </div>
@@ -489,14 +496,14 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
     <div className="flex flex-1 flex-col min-w-0">
       {/* Header */}
       <div className="flex min-h-14 items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 md:px-6 pt-safe">
-        <button className="md:hidden rounded-lg p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800" onClick={onMenuClick}>
+        <button aria-label="Open menu" className="md:hidden rounded-lg p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800" onClick={onMenuClick}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
             <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" />
           </svg>
         </button>
         <h1 className="font-display text-base md:text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Common Grounds</h1>
         <div className="ml-auto flex items-center gap-2">
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search debates…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search debates…" aria-label="Search debates"
             className="w-32 sm:w-52 rounded-lg bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none ring-1 ring-gray-300 dark:ring-gray-700 focus:ring-brand-green" />
           <button onClick={() => onCreateClick()}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-orange-700 px-3 md:px-4 py-1.5 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
@@ -511,7 +518,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
         {/* Sort pills */}
         <div className="flex items-center gap-1.5">
           {([ ["trending", "Trending"], ["active", "Active"], ["members", "Members"], ["newest", "Newest"] ] as [SortKey, string][]).map(([key, label]) => (
-            <button key={key} onClick={() => setSort(key)}
+            <button key={key} onClick={() => setSort(key)} aria-pressed={sort === key}
               className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
                 sort === key
                   ? "bg-brand-green-ink text-white"
@@ -526,7 +533,7 @@ function BrowseRooms({ userId, onJoined, onCreateClick, onMenuClick }: { userId:
         {/* Type filters */}
         <div className="flex items-center gap-1.5">
           {([ ["all", "All"], ["official", "Official"], ["fishbowl", "Fishbowl"], ["private", "Private"] ] as [TypeFilter, string][]).map(([key, label]) => (
-            <button key={key} onClick={() => setTypeFilter(key)}
+            <button key={key} onClick={() => setTypeFilter(key)} aria-pressed={typeFilter === key}
               className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
                 typeFilter === key
                   ? "bg-brand-green-ink text-white"

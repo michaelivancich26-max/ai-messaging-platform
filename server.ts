@@ -203,16 +203,71 @@ const debatePositions = new Map<string, Map<string, { userId: string; username: 
 // Structured debate turn state: roomId → turn state
 interface DebateTurnState {
   mode: "open" | "structured";
-  currentSide: "FOR" | "AGAINST";
+  currentSide: string;              // a stance label — "FOR"/"AGAINST" or a room custom stance
   currentSpeakerId: string | null;
   currentSpeakerName: string | null;
   turnNumber: number;
+  stances?: string[];               // ordered stance list the turn cycles through
 }
 const debateTurns = new Map<string, DebateTurnState>();
+
+// A room's ordered stance labels (>= 2), for structured-turn cycling. Falls back
+// to the classic FOR/AGAINST when the room defines no custom stances.
+async function getRoomStances(roomName: string): Promise<string[]> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ stances: string | null }[]>(
+      `SELECT "stances" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
+    );
+    const parsed = rows[0]?.stances ? JSON.parse(rows[0].stances) : [];
+    const clean = Array.isArray(parsed) ? parsed.map((s: any) => String(s).trim()).filter(Boolean) : [];
+    return clean.length >= 2 ? clean : ["FOR", "AGAINST"];
+  } catch { return ["FOR", "AGAINST"]; }
+}
+
+// The next stance to hold the floor, wrapping around the room's stance list.
+function nextStance(current: string, stances?: string[]): string {
+  const list = (stances && stances.length >= 2) ? stances : ["FOR", "AGAINST"];
+  const i = list.indexOf(current);
+  return list[(i + 1) % list.length] ?? list[0];
+}
+
+// Keep an in-progress structured debate's turn cycle in sync when a room's stances
+// are edited mid-debate. If the side holding the floor no longer exists, hand the
+// floor to the first stance and clear the speaker so the debate can continue.
+function resyncStructuredStances(roomName: string, validStances: string[]): void {
+  const t = debateTurns.get(roomName);
+  if (t?.mode !== "structured") return;
+  const list = validStances.length >= 2 ? validStances : ["FOR", "AGAINST"];
+  const keep = list.includes(t.currentSide);
+  const nt: DebateTurnState = {
+    ...t, stances: list,
+    currentSide: keep ? t.currentSide : list[0],
+    currentSpeakerId: keep ? t.currentSpeakerId : null,
+    currentSpeakerName: keep ? t.currentSpeakerName : null,
+  };
+  debateTurns.set(roomName, nt);
+  passTurnVotes.delete(roomName);
+  redis.set(`debate:turn:${roomName}`, JSON.stringify(nt), { EX: 86400 }).catch(() => {});
+  io.to(roomName).emit("debateTurnUpdate", nt);
+}
 // Structured debate: which current-side members have voted to pass the turn. A
 // turn only passes once a majority of the side's present members agree, so one
 // debater can't throw away the side's turn. Cleared whenever the turn advances.
 const passTurnVotes = new Map<string, Set<string>>();
+
+// Recently kicked users: roomName → userId → block-expiry timestamp. A kick
+// removes their RoomMember (durable) AND blocks re-entry for a short window so the
+// boot actually sticks instead of the user rejoining the same second. In memory:
+// a stale entry is harmless and losing it on restart is fine.
+const roomKicks = new Map<string, Map<string, number>>();
+const KICK_BLOCK_MS = 10 * 60 * 1000;
+function isKickBlocked(roomName: string, userId: string): boolean {
+  const m = roomKicks.get(roomName);
+  const exp = m?.get(userId);
+  if (exp === undefined) return false;
+  if (exp < Date.now()) { m!.delete(userId); return false; }
+  return true;
+}
 const channelSidebars = new Map<string, string>(); // parentChannelId → sidebar channelId
 const channelPositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
@@ -461,6 +516,12 @@ io.on("connection", (socket) => {
           if (!valid) { socket.emit("error", { message: "Incorrect password." }); return; }
         }
       }
+      // A recently kicked user can't walk straight back in (owner/admin exempt).
+      if (isKickBlocked(roomName, socketUser.id) && room.creatorId !== socketUser.id) {
+        const ru = await prisma.user.findUnique({ where: { id: socketUser.id }, select: { isAdmin: true } });
+        if (!ru?.isAdmin) { socket.emit("kicked", { roomId }); return; }
+      }
+
       socket.data.roomDbId = room.id;
       socket.data.roomId = roomId;
 
@@ -693,20 +754,28 @@ io.on("connection", (socket) => {
         socket.emit("error", { message: "Only the room owner can kick members." });
         return;
       }
-      // Find and disconnect all sockets belonging to targetUserId in this room
+      // Actually remove them: drop their RoomMember row so it's a real removal
+      // (they leave the room and their joined list), and record a short re-entry
+      // block so they can't rejoin the same second.
+      await prisma.roomMember.deleteMany({ where: { userId: targetUserId, roomId: room.id } }).catch(() => {});
+      let km = roomKicks.get(roomId);
+      if (!km) { km = new Map(); roomKicks.set(roomId, km); }
+      km.set(targetUserId, Date.now() + KICK_BLOCK_MS);
+      // Disconnect the target's sockets in this room and notify them.
       const members = presence.get(roomId);
-      if (!members) return;
-      for (const [sid, info] of members.entries()) {
-        if (info.userId === targetUserId) {
-          const targetSocket = io.sockets.sockets.get(sid);
-          if (targetSocket) {
-            targetSocket.emit("kicked", { roomId });
-            targetSocket.leave(roomId);
+      if (members) {
+        for (const [sid, info] of members.entries()) {
+          if (info.userId === targetUserId) {
+            const targetSocket = io.sockets.sockets.get(sid);
+            if (targetSocket) {
+              targetSocket.emit("kicked", { roomId });
+              targetSocket.leave(roomId);
+            }
+            members.delete(sid);
           }
-          members.delete(sid);
         }
+        broadcastPresence(roomId);
       }
-      broadcastPresence(roomId);
     } catch (err) {
       console.error("kick error:", err);
     }
@@ -890,8 +959,7 @@ io.on("connection", (socket) => {
           const turn = debateTurns.get(roomId);
           if (turn?.mode === "structured" && turn.currentSpeakerId === user.id) {
             passTurnVotes.delete(roomId);
-            const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
-            const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
+            const newTurn: DebateTurnState = { mode: "structured", currentSide: nextStance(turn.currentSide, turn.stances), currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1, stances: turn.stances };
             debateTurns.set(roomId, newTurn);
             // Persist + broadcast room-level, like every other turn transition —
             // speaking is the commonest advance, so skipping the redis write here
@@ -1202,8 +1270,9 @@ io.on("connection", (socket) => {
         for (const v of updated.votes) voteCounts[v.option] = (voteCounts[v.option] ?? 0) + 1;
         const winner = poll.options.reduce((a: string, b: string) => (voteCounts[b] ?? 0) > (voteCounts[a] ?? 0) ? b : a, poll.options[0]);
         const mode = winner === "Structured" ? "structured" : "open";
+        const turnStances = mode === "structured" ? await getRoomStances(room.name) : undefined;
         const turn: DebateTurnState = mode === "structured"
-          ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
+          ? { mode: "structured", currentSide: turnStances![0], currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1, stances: turnStances }
           : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
         debateTurns.set(room.name, turn);
         passTurnVotes.delete(room.name);
@@ -1401,8 +1470,9 @@ io.on("connection", (socket) => {
         socket.emit("error", { message: "Only the room owner can change debate mode." });
         return;
       }
+      const stances = mode === "structured" ? await getRoomStances(roomId) : undefined;
       const turn: DebateTurnState = mode === "structured"
-        ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
+        ? { mode: "structured", currentSide: stances![0], currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1, stances }
         : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
       debateTurns.set(roomId, turn);
       passTurnVotes.delete(roomId);
@@ -1425,6 +1495,7 @@ io.on("connection", (socket) => {
         JSON.stringify(validStances), room.id
       );
       io.to(roomId).emit("stancesUpdated", validStances);
+      resyncStructuredStances(roomId, validStances);
     } catch (err) {
       console.error("[setStances]", err);
     }
@@ -1457,8 +1528,7 @@ io.on("connection", (socket) => {
 
       const advance = () => {
         passTurnVotes.delete(roomId);
-        const nextSide: "FOR" | "AGAINST" = turn.currentSide === "FOR" ? "AGAINST" : "FOR";
-        const newTurn: DebateTurnState = { mode: "structured", currentSide: nextSide, currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1 };
+        const newTurn: DebateTurnState = { mode: "structured", currentSide: nextStance(turn.currentSide, turn.stances), currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1, stances: turn.stances };
         debateTurns.set(roomId, newTurn);
         redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
         io.to(roomId).emit("debateTurnUpdate", newTurn);
@@ -4971,12 +5041,13 @@ app.patch("/api/rooms/:name", async (req, res) => {
       }
     } catch { /* stanceCooldown column may not exist yet */ }
     if (Array.isArray(stances)) {
+      const cleanStances = stances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6);
       await prisma.$executeRawUnsafe(
         `UPDATE "Room" SET "stances" = $1 WHERE "id" = $2`,
-        JSON.stringify(stances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6)),
-        updated.id
+        JSON.stringify(cleanStances), updated.id
       );
-      io.to(name).emit("stancesUpdated", stances.map((s: string) => s.trim()).filter(Boolean).slice(0, 6));
+      io.to(name).emit("stancesUpdated", cleanStances);
+      resyncStructuredStances(name, cleanStances);
     }
     // Notify everyone in the room of updated meta
     io.to(name).emit("roomMeta", { ...rest, stanceCooldown: stanceCooldownVal });

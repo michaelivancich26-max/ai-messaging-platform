@@ -818,6 +818,18 @@ export default function RoomPage() {
     getSocket().emit("stakeClaim", {
       messageId, roomId, channelId: activeChannel?.id ?? null, text: msg.content,
     });
+    // Safety net: if no verdict ever comes back (rejected stake, dropped socket, a
+    // failed evaluation), don't leave the badge stuck on "Checking…" forever —
+    // clear the still-pending claim so it can be re-staked. A verdict that arrives
+    // later re-adds the claim, so this only bites a genuine stall.
+    setTimeout(() => {
+      setClaims(prev => {
+        if (prev[messageId]?.status !== "PENDING") return prev;
+        const next = { ...prev };
+        delete next[messageId];
+        return next;
+      });
+    }, 15000);
   }
 
   function challengeClaim(claimId: string) {
@@ -842,9 +854,11 @@ export default function RoomPage() {
   }
 
   function setDebateMode(mode: "open" | "structured") {
-    // Optimistic update so the UI responds instantly
+    // Optimistic update so the UI responds instantly. Open on the room's first
+    // stance (custom or FOR); the server confirms the real cycle right after.
+    const firstStance = stances[0] ?? "FOR";
     setDebateTurn(mode === "structured"
-      ? { mode: "structured", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
+      ? { mode: "structured", currentSide: firstStance, currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
       : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 }
     );
     getSocket().emit("setDebateMode", { roomId, mode });

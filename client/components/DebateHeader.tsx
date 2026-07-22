@@ -163,6 +163,8 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
                 key={stance}
                 onClick={() => !locked && onSetPosition(stance)}
                 disabled={locked}
+                aria-pressed={isActive}
+                aria-label={`Take the ${stance} position`}
                 className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? pal.btn_active : pal.btn_inactive}`}
               >
                 {isActive && <span className={`h-1.5 w-1.5 rounded-full ${pal.dot} opacity-80`} />}
@@ -179,6 +181,8 @@ export default function DebateHeader({ proposition, stances, positions, myPositi
               <button
                 onClick={() => !locked && onSetPosition("NEUTRAL")}
                 disabled={locked}
+                aria-pressed={isActive}
+                aria-label="Take a neutral position"
                 className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? NEUTRAL_PALETTE.btn_active : NEUTRAL_PALETTE.btn_inactive}`}
               >
                 {isActive && <span className={`h-1.5 w-1.5 rounded-full ${NEUTRAL_PALETTE.dot} opacity-80`} />}

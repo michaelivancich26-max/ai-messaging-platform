@@ -1,6 +1,7 @@
 "use client";
 
 import type { DebateTurnState } from "@/lib/types";
+import { getStancePalette } from "@/lib/stances";
 
 interface Props {
   turn: DebateTurnState;
@@ -30,8 +31,9 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
   const votePending = !!passVote && passVote.needed > 1;
 
   const stanceList = stances ?? ["FOR", "AGAINST"];
-  const sideIdx = stanceList.indexOf(turn.currentSide);
-  const sideIsFirst = sideIdx === 0 || sideIdx === -1;
+  // Colour by the shared stance palette so 3+ stance debates get distinct colours
+  // rather than an emerald/everything-else-red binary.
+  const pal = getStancePalette(turn.currentSide, stanceList);
 
   return (
     <div className={`shrink-0 border-t px-4 py-2.5 flex items-center gap-3 transition-colors ${
@@ -41,9 +43,7 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
     }`}>
       {/* Pulse dot + status */}
       <div className="flex items-center gap-2 min-w-0 flex-1">
-        <span className={`h-2 w-2 rounded-full shrink-0 ${
-          sideIsFirst ? "bg-emerald-400" : "bg-red-400"
-        } ${!floorClaimed ? "animate-pulse" : ""}`} />
+        <span className={`h-2 w-2 rounded-full shrink-0 ${pal.dot} ${!floorClaimed ? "animate-pulse" : ""}`} />
         <span className="text-xs text-gray-600 dark:text-gray-400 truncate">
           {isMyTurn ? (
             <span className="font-semibold text-emerald-700 dark:text-emerald-300">You have the floor — make your argument</span>
@@ -51,9 +51,7 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
             <><span className="font-semibold text-gray-800 dark:text-gray-200">{turn.currentSpeakerName}</span> has the floor</>
           ) : (
             <>
-              <span className={`font-semibold ${sideIsFirst ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                {turn.currentSide}
-              </span>
+              <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-bold ${pal.tag}`}>{turn.currentSide}</span>
               {" "}side — waiting for someone to claim the floor
             </>
           )}
@@ -71,11 +69,7 @@ export default function TurnBanner({ turn, myPosition, myUserId, isOwner, isAdmi
         {isMySide && !floorClaimed && !isMyTurn && (
           <button
             onClick={onClaimFloor}
-            className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              sideIsFirst
-                ? "bg-emerald-700 text-white hover:bg-emerald-600"
-                : "bg-red-600 text-white hover:bg-red-500"
-            }`}
+            className={`rounded-full px-3 py-1 text-xs font-semibold transition-opacity hover:opacity-90 ${pal.self}`}
           >
             Claim floor
           </button>
