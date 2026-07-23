@@ -66,6 +66,7 @@ export default function RoomPage() {
   const [positions, setPositions] = useState<Record<string, UserPositionEntry>>({});
   const [myPosition, setMyPosition] = useState<DebatePosition | null>(null);
   const [debateTurn, setDebateTurn] = useState<DebateTurnState | null>(null);
+  const [defaultDebateMode, setDefaultDebateMode] = useState<"open" | "structured">("open"); // room default that seeds new channels
   const [passVote, setPassVote] = useState<{ side: string; voters: string[]; needed: number } | null>(null);
   const [profileModal, setProfileModal] = useState<{ userId: string; username: string } | null>(null);
   const [subDebateModal, setSubDebateModal] = useState<{ messageId: string; content: string } | null>(null);
@@ -248,8 +249,18 @@ export default function RoomPage() {
       const mine = entries.find(e => e.userId === userId);
       if (mine) setMyPosition(mine.position);
     });
-    socket.on("debateTurnUpdate", (turn: DebateTurnState) => { setDebateTurn(turn); setPassVote(null); });
-    socket.on("passVoteUpdate", (v: { side: string; voters: string[]; needed: number }) => setPassVote({ side: v.side, voters: v.voters, needed: v.needed }));
+    socket.on("debateTurnUpdate", (turn: DebateTurnState & { channelId?: string }) => {
+      // Turn state is per-channel now. Ignore any update that isn't for the channel
+      // currently open (defensive against in-flight updates during a channel switch).
+      if (turn.channelId && activeChannelRef.current && turn.channelId !== activeChannelRef.current.id) return;
+      setDebateTurn(turn);
+      setPassVote(null);
+    });
+    socket.on("passVoteUpdate", (v: { channelId?: string; side: string; voters: string[]; needed: number }) => {
+      if (v.channelId && activeChannelRef.current && v.channelId !== activeChannelRef.current.id) return;
+      setPassVote({ side: v.side, voters: v.voters, needed: v.needed });
+    });
+    socket.on("roomDefaultMode", ({ mode }: { roomId: string; mode: "open" | "structured" }) => setDefaultDebateMode(mode));
     socket.on("stancesUpdated", (newStances: string[]) => setStances(newStances));
     socket.on("channelPositions", ({ channelId, positions: entries }: { channelId: string; positions: UserPositionEntry[] }) => {
       const map: Record<string, UserPositionEntry> = {};
@@ -510,6 +521,7 @@ export default function RoomPage() {
       socket.off("positionUpdate");
       socket.off("debatePositions");
       socket.off("debateTurnUpdate");
+      socket.off("roomDefaultMode");
       socket.off("passVoteUpdate");
       socket.off("stancesUpdated");
       socket.off("channelPositions");
@@ -858,6 +870,9 @@ export default function RoomPage() {
   function selectChannel(channel: Channel) {
     activeChannelRef.current = channel;
     setActiveChannel(channel);
+    // Each channel has its own debate mode/turn — clear until this channel's arrives.
+    setDebateTurn(null);
+    setPassVote(null);
     setMessages([]);
     setActivePolls([]);
     setPollSuggestion(null);
@@ -951,6 +966,7 @@ export default function RoomPage() {
     }
   }
 
+  // Per-channel: flips the debate mode of just the channel you're viewing.
   function setDebateMode(mode: "open" | "structured") {
     // Optimistic update so the UI responds instantly. Open on the room's first
     // stance (custom or FOR); the server confirms the real cycle right after.
@@ -959,15 +975,21 @@ export default function RoomPage() {
       ? { mode: "structured", currentSide: firstStance, currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1 }
       : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 }
     );
-    getSocket().emit("setDebateMode", { roomId, mode });
+    getSocket().emit("setDebateMode", { roomId, mode, channelId: activeChannel?.id });
+  }
+
+  // Room-level: sets the default that new channels inherit (owner/moderator).
+  function setRoomDefaultMode(mode: "open" | "structured") {
+    setDefaultDebateMode(mode);
+    getSocket().emit("setRoomDefaultMode", { roomId, mode });
   }
 
   function claimFloor() {
-    getSocket().emit("claimFloor", { roomId });
+    getSocket().emit("claimFloor", { roomId, channelId: activeChannel?.id });
   }
 
   function passTurn() {
-    getSocket().emit("passTurn", { roomId });
+    getSocket().emit("passTurn", { roomId, channelId: activeChannel?.id });
   }
 
   function kickUser(targetUserId: string) {
@@ -1367,8 +1389,8 @@ export default function RoomPage() {
             <span className="hidden sm:inline">{sidebarChannel ? "Side chat" : "Add side chat"}</span>
           </button>
         )}
-        {/* Structure toggle — visible to owners/admins on non-DM rooms */}
-        {(isOwner || isAdmin) && !roomId.startsWith("dm-") && (
+        {/* Per-channel structure toggle — moderators, on a real (non-sidebar, non-sub-debate) channel */}
+        {canModerate && !roomId.startsWith("dm-") && !!activeChannel && !activeChannel.isSidebar && !activeChannel.isSubDebate && (
           <button
             onClick={() => setDebateMode(debateTurn?.mode === "structured" ? "open" : "structured")}
             className={`ml-auto flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-all ${
@@ -1376,7 +1398,7 @@ export default function RoomPage() {
                 ? "border-brand-green bg-brand-green/10 text-brand-green-ink dark:text-brand-green"
                 : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-700 dark:hover:text-gray-300"
             }`}
-            title={debateTurn?.mode === "structured" ? "Switch to free chat" : "Enable structured turn-based debate"}
+            title={debateTurn?.mode === "structured" ? "Make this channel free chat" : "Make this channel structured (turn-based)"}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-3 w-3">
               <path fillRule="evenodd" d="M8 1.75a.75.75 0 0 1 .692.462l1.41 3.393 3.664.293a.75.75 0 0 1 .428 1.317l-2.791 2.39.853 3.575a.75.75 0 0 1-1.12.814L8 11.232l-3.136 2.762a.75.75 0 0 1-1.12-.814l.853-3.576-2.79-2.39a.75.75 0 0 1 .427-1.316l3.663-.293 1.41-3.393A.75.75 0 0 1 8 1.75Z" clipRule="evenodd" />
@@ -2126,6 +2148,8 @@ export default function RoomPage() {
         onUnmute={unmuteUser}
         onSetSlowMode={setSlowMode}
         onSetLock={setRoomLock}
+        defaultDebateMode={defaultDebateMode}
+        onSetDefaultMode={setRoomDefaultMode}
       />
 
       {toast && (

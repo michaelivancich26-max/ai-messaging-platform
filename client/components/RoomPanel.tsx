@@ -40,6 +40,8 @@ interface Props {
   onUnmute?: (userId: string) => void;
   onSetSlowMode?: (seconds: number) => void;
   onSetLock?: (locked: boolean) => void;
+  defaultDebateMode?: "open" | "structured";
+  onSetDefaultMode?: (mode: "open" | "structured") => void;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -52,6 +54,7 @@ export default function RoomPanel({
   moderatorIds = [], mutedUserIds = [], canModerate = false,
   slowModeSeconds = 0, isLocked = false,
   onPromoteModerator, onDemoteModerator, onMute, onUnmute, onSetSlowMode, onSetLock,
+  defaultDebateMode = "open", onSetDefaultMode,
 }: Props) {
   const canEdit = isOwner || isAdmin;
   // `canModerate` is already scoped by the page to moderatable rooms (not DMs or
@@ -314,6 +317,27 @@ export default function RoomPanel({
           {tab === "moderation" && canMod && (
             <div className="px-4 py-3 space-y-3">
               <p className="text-[11px] text-gray-500 dark:text-gray-400">Promote, mute, or kick individual members from the <span className="font-semibold">Room</span> tab. The controls below apply to the whole room.</p>
+
+              {/* Default debate mode — seeds new channels; each channel can then diverge */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50 px-3 py-2.5">
+                <div className="mb-2">
+                  <p className="text-sm text-gray-800 dark:text-gray-200">Default debate mode</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">New channels start in this mode. Flip an individual channel any time from its header — that won&rsquo;t change the others.</p>
+                </div>
+                <div className="flex gap-1.5">
+                  {(["open", "structured"] as const).map(m => (
+                    <button key={m} onClick={() => { if (defaultDebateMode !== m) onSetDefaultMode?.(m); }}
+                      aria-pressed={defaultDebateMode === m} disabled={defaultDebateMode === m}
+                      className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                        defaultDebateMode === m
+                          ? "bg-brand-green text-white cursor-default"
+                          : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                      }`}>
+                      {m === "open" ? "Open" : "Structured"}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Slow mode */}
               <div className="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50 px-3 py-2.5">

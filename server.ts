@@ -258,7 +258,10 @@ function deliverNotification(userId: string, notif: object) {
 // Debate positions: roomId → Map<userId, { userId, username, position }>
 const debatePositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
-// Structured debate turn state: roomId → turn state
+// Structured debate turn state. Keyed by ARENA — the channelId of the channel the
+// debate is happening in (regular-room messages always carry a channelId). Each
+// channel runs its OWN structured debate (own floor, side, turn cycle), so a room
+// can have some channels structured and others open at the same time.
 interface DebateTurnState {
   mode: "open" | "structured";
   currentSide: string;              // a stance label — "FOR"/"AGAINST" or a room custom stance
@@ -266,8 +269,72 @@ interface DebateTurnState {
   currentSpeakerName: string | null;
   turnNumber: number;
   stances?: string[];               // ordered stance list the turn cycles through
+  explicit?: boolean;               // set individually per-channel — ignores room-default changes (persisted)
 }
 const debateTurns = new Map<string, DebateTurnState>();
+
+// The per-room DEFAULT debate mode (keyed by room name, persisted to redis). It
+// seeds a channel's mode the first time the channel is used, and — when a moderator
+// changes it — re-applies to the room's channels that have no explicit per-channel
+// override. This is what "if the room is structured, every channel starts this way"
+// means; individual channels then diverge independently.
+const roomDefaultMode = new Map<string, "open" | "structured">();
+// Channels a moderator set individually — they ignore later room-default changes.
+const channelExplicitMode = new Set<string>();
+// arena (channelId) → room name, so a disconnect / stance edit can find every arena
+// belonging to a room without a DB round trip.
+const arenaRoom = new Map<string, string>();
+
+function openTurn(): DebateTurnState {
+  return { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
+}
+function structuredTurn(stances: string[]): DebateTurnState {
+  return { mode: "structured", currentSide: stances[0], currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1, stances };
+}
+function persistTurn(arena: string, turn: DebateTurnState): void {
+  redis.set(`debate:turn:ch:${arena}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
+}
+function setArenaTurn(roomName: string, arena: string, turn: DebateTurnState): void {
+  debateTurns.set(arena, turn);
+  arenaRoom.set(arena, roomName);
+  passTurnVotes.delete(arena);
+  persistTurn(arena, turn);
+}
+// The live turn state for an arena, materializing it from the room default the first
+// time it's touched. Order: in-memory → persisted per-channel turn (survives restart)
+// → room default. A structured turn is stored (it carries live floor state); an unset
+// arena under an "open" default is simply open and needs no stored state. Sub-debates
+// are never structured — they use FOR/AGAINST positions, not the room's stances, so
+// running the room's structured cycle in them makes the floor unclaimable.
+async function getArenaTurn(roomName: string, arena: string, isSubDebate = false): Promise<DebateTurnState> {
+  if (isSubDebate) return openTurn();
+  const existing = debateTurns.get(arena);
+  if (existing) return existing;
+  // Restore a persisted per-channel turn (e.g. after a server restart) before falling
+  // back to the default — so enforcement never resets a mid-debate channel to turn 1.
+  try {
+    const saved = await redis.get(`debate:turn:ch:${arena}`);
+    if (saved) {
+      const t = JSON.parse(saved) as DebateTurnState;
+      debateTurns.set(arena, t);
+      arenaRoom.set(arena, roomName);
+      if (t.explicit) channelExplicitMode.add(arena);   // rehydrate the override flag
+      return t;
+    }
+  } catch { /* redis unavailable / bad json */ }
+  if (!roomDefaultMode.has(roomName)) {
+    try {
+      const m = await redis.get(`debate:default:${roomName}`);
+      if (m === "structured" || m === "open") roomDefaultMode.set(roomName, m);
+    } catch { /* redis unavailable */ }
+  }
+  if (roomDefaultMode.get(roomName) === "structured") {
+    const turn = structuredTurn(await getRoomStances(roomName));
+    setArenaTurn(roomName, arena, turn);
+    return turn;
+  }
+  return openTurn();
+}
 
 // A room's ordered stance labels (>= 2), for structured-turn cycling. Falls back
 // to the classic FOR/AGAINST when the room defines no custom stances.
@@ -289,24 +356,28 @@ function nextStance(current: string, stances?: string[]): string {
   return list[(i + 1) % list.length] ?? list[0];
 }
 
-// Keep an in-progress structured debate's turn cycle in sync when a room's stances
-// are edited mid-debate. If the side holding the floor no longer exists, hand the
-// floor to the first stance and clear the speaker so the debate can continue.
+// Keep in-progress structured debates in sync when a room's stances are edited
+// mid-debate — across every one of the room's channels. If the side holding the
+// floor in a channel no longer exists, hand that channel's floor to the first
+// stance and clear the speaker so the debate can continue.
 function resyncStructuredStances(roomName: string, validStances: string[]): void {
-  const t = debateTurns.get(roomName);
-  if (t?.mode !== "structured") return;
   const list = validStances.length >= 2 ? validStances : ["FOR", "AGAINST"];
-  const keep = list.includes(t.currentSide);
-  const nt: DebateTurnState = {
-    ...t, stances: list,
-    currentSide: keep ? t.currentSide : list[0],
-    currentSpeakerId: keep ? t.currentSpeakerId : null,
-    currentSpeakerName: keep ? t.currentSpeakerName : null,
-  };
-  debateTurns.set(roomName, nt);
-  passTurnVotes.delete(roomName);
-  redis.set(`debate:turn:${roomName}`, JSON.stringify(nt), { EX: 86400 }).catch(() => {});
-  io.to(roomName).emit("debateTurnUpdate", nt);
+  for (const [arena, r] of arenaRoom.entries()) {
+    if (r !== roomName) continue;
+    const t = debateTurns.get(arena);
+    if (t?.mode !== "structured") continue;
+    const keep = list.includes(t.currentSide);
+    const nt: DebateTurnState = {
+      ...t, stances: list,
+      currentSide: keep ? t.currentSide : list[0],
+      currentSpeakerId: keep ? t.currentSpeakerId : null,
+      currentSpeakerName: keep ? t.currentSpeakerName : null,
+    };
+    debateTurns.set(arena, nt);
+    passTurnVotes.delete(arena);
+    persistTurn(arena, nt);
+    io.to(`channel:${arena}`).emit("debateTurnUpdate", { ...nt, channelId: arena });
+  }
 }
 // Structured debate: which current-side members have voted to pass the turn. A
 // turn only passes once a majority of the side's present members agree, so one
@@ -381,12 +452,42 @@ function activeMutedIds(roomName: string): string[] {
 const channelSidebars = new Map<string, string>(); // parentChannelId → sidebar channelId
 const channelPositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
-// Present participants currently sitting on a given side of a structured debate.
-function presentSideMembers(roomId: string, side: string): string[] {
-  const pres = presence.get(roomId);
-  const pos = debatePositions.get(roomId);
-  if (!pres || !pos) return [];
-  const present = new Set(Array.from(pres.values()).map(m => m.userId));
+// The stance map that governs an arena's side checks. A sub-debate channel keeps its
+// own positions (channelPositions); a top-level channel shares the room's positions.
+// Only sub-debates ever populate channelPositions, so a non-empty channel map is the
+// signal to use it; otherwise fall back to the room-level positions.
+function arenaPositions(roomName: string, arena: string): Map<string, { userId: string; username: string; position: string }> | undefined {
+  const chPos = channelPositions.get(arena);
+  if (chPos && chPos.size > 0) return chPos;
+  return debatePositions.get(roomName);
+}
+
+// Users currently viewing a given arena (channel) — the members of its socket room.
+// Pass-vote majorities count only these, not everyone in the room: with several
+// channels structured at once, a member viewing channel B can't vote in channel A,
+// so counting them in A's denominator would deadlock A's turn.
+function channelPresentUserIds(arena: string): Set<string> {
+  const users = new Set<string>();
+  const sockets = io.sockets.adapter.rooms.get(`channel:${arena}`);
+  if (!sockets) return users;
+  for (const sid of sockets) {
+    const uid = (io.sockets.sockets.get(sid) as any)?.user?.id;
+    if (uid) users.add(uid);
+  }
+  return users;
+}
+
+// Participants present IN THIS ARENA sitting on a given side of its structured debate.
+function presentSideMembers(roomName: string, arena: string, side: string): string[] {
+  const pos = arenaPositions(roomName, arena);
+  if (!pos) return [];
+  let present = channelPresentUserIds(arena);
+  // No channel socket-room members — either a channelId-less (room-level) debate, or
+  // an empty channel. Fall back to room presence. Harmless for a truly empty channel:
+  // with nobody viewing it there are no votes to count against the denominator anyway.
+  if (present.size === 0) {
+    present = new Set(Array.from(presence.get(roomName)?.values() ?? []).map(m => m.userId));
+  }
   return Array.from(present).filter(uid => pos.get(uid)?.position === side);
 }
 
@@ -411,21 +512,27 @@ function leavePresence(socketId: string) {
       const leavingUserId = members.get(socketId)?.userId;
       members.delete(socketId);
       broadcastPresence(roomId);
-      // If that was the user's last socket in this room and they held the floor in
-      // a structured debate, release the floor — otherwise the side is stuck
-      // behind a ghost speaker who can never be reclaimed or (if they were the
-      // side's only member) voted past. Also drop any stale pass-turn vote.
+      // If that was the user's last socket in this room, release any floor they held
+      // and drop their pass votes — across EVERY one of the room's channels, since
+      // each channel runs its own structured debate. Otherwise a channel's side is
+      // stuck behind a ghost speaker who can never be reclaimed or voted past.
       if (leavingUserId && !Array.from(members.values()).some(m => m.userId === leavingUserId)) {
-        const turn = debateTurns.get(roomId);
-        if (turn?.mode === "structured" && turn.currentSpeakerId === leavingUserId) {
-          const released: DebateTurnState = { ...turn, currentSpeakerId: null, currentSpeakerName: null };
-          debateTurns.set(roomId, released);
-          redis.set(`debate:turn:${roomId}`, JSON.stringify(released), { EX: 86400 }).catch(() => {});
-          io.to(roomId).emit("debateTurnUpdate", released);
+        for (const [arena, r] of arenaRoom.entries()) {
+          if (r !== roomId) continue;
+          const turn = debateTurns.get(arena);
+          if (turn?.mode === "structured" && turn.currentSpeakerId === leavingUserId) {
+            const released: DebateTurnState = { ...turn, currentSpeakerId: null, currentSpeakerName: null };
+            debateTurns.set(arena, released);
+            persistTurn(arena, released);
+            io.to(`channel:${arena}`).emit("debateTurnUpdate", { ...released, channelId: arena });
+          }
+          passTurnVotes.get(arena)?.delete(leavingUserId);
         }
-        passTurnVotes.get(roomId)?.delete(leavingUserId);
       }
-      if (members.size === 0) { presence.delete(roomId); passTurnVotes.delete(roomId); }
+      if (members.size === 0) {
+        presence.delete(roomId);
+        for (const [arena, r] of arenaRoom.entries()) if (r === roomId) passTurnVotes.delete(arena);
+      }
     }
   }
 }
@@ -736,26 +843,16 @@ io.on("connection", (socket) => {
         } catch (e) { console.error("[BotFirst] joinRoom error", e); }
       }
 
-      // Emit current turn state — restore from Redis if not in memory (e.g. after server restart)
-      if (!debateTurns.has(roomId)) {
+      // Restore this room's DEFAULT debate mode (persisted), so new channels seed
+      // from it and the room panel reflects it. Per-channel turn state is emitted in
+      // joinChannel — each channel runs its own structured debate.
+      if (!roomDefaultMode.has(roomId)) {
         try {
-          const saved = await redis.get(`debate:turn:${roomId}`);
-          if (saved) debateTurns.set(roomId, JSON.parse(saved) as DebateTurnState);
+          const savedMode = await redis.get(`debate:default:${roomId}`);
+          if (savedMode === "structured" || savedMode === "open") roomDefaultMode.set(roomId, savedMode);
         } catch { /* redis unavailable */ }
       }
-      const currentTurn = debateTurns.get(roomId);
-      if (currentTurn) socket.emit("debateTurnUpdate", currentTurn);
-      // Replay an in-progress pass-turn vote so a (re)joining client isn't blind to
-      // a decision that could complete on state they were never shown.
-      if (currentTurn?.mode === "structured") {
-        const votes = passTurnVotes.get(roomId);
-        if (votes && votes.size) {
-          const sideMembers = presentSideMembers(roomId, currentTurn.currentSide);
-          const sideSet = new Set(sideMembers);
-          const effective = Array.from(votes).filter(uid => sideSet.has(uid));
-          if (effective.length) socket.emit("passVoteUpdate", { roomId, side: currentTurn.currentSide, voters: effective, needed: Math.floor(sideMembers.length / 2) + 1 });
-        }
-      }
+      socket.emit("roomDefaultMode", { roomId, mode: roomDefaultMode.get(roomId) ?? "open" });
 
       // Emit current debate positions for this room
       const roomPositions = debatePositions.get(roomId);
@@ -851,6 +948,26 @@ io.on("connection", (socket) => {
           if (chPos) socket.emit("channelPositions", { channelId, positions: Array.from(chPos.values()) });
         }
       } catch { /* ignore */ }
+
+      // Emit this channel's structured-debate turn state. Each channel runs its own
+      // debate, seeded from the room default; side channels and sub-debates are never
+      // structured (getArenaTurn also restores a persisted turn after a restart).
+      if (!(channel as any).isSidebar && !(channel as any).isSpectatorChat) {
+        const roomName = (channel as any).room?.name ?? channel.roomId;
+        const turn = await getArenaTurn(roomName, channelId, !!(channel as any).isSubDebate);
+        socket.emit("debateTurnUpdate", { ...turn, channelId });
+        // Replay an in-progress pass-turn vote so a (re)joining client isn't blind to
+        // a decision that could complete on state they were never shown.
+        if (turn.mode === "structured") {
+          const votes = passTurnVotes.get(channelId);
+          if (votes && votes.size) {
+            const sideMembers = presentSideMembers(roomName, channelId, turn.currentSide);
+            const sideSet = new Set(sideMembers);
+            const effective = Array.from(votes).filter(uid => sideSet.has(uid));
+            if (effective.length) socket.emit("passVoteUpdate", { roomId: roomName, channelId, side: turn.currentSide, voters: effective, needed: Math.floor(sideMembers.length / 2) + 1 });
+          }
+        }
+      }
 
       // Emit sidebar channel for this channel (null if none) — skip for sidebar channels themselves
       if (!(channel as any).isSidebar) {
@@ -1058,12 +1175,14 @@ io.on("connection", (socket) => {
         let isSidebarMsg = false;
         let isSpectatorChatMsg = false;
         let isChannelOpinionated = false;
+        let isSubDebateMsg = false;
         if (channelId) {
           try {
             const ch = await (prisma as any).channel.findUnique({ where: { id: channelId } });
             isSidebarMsg = !!(ch as any)?.isSidebar && !(ch as any)?.isSpectatorChat;
             isSpectatorChatMsg = !!(ch as any)?.isSpectatorChat;
             isChannelOpinionated = !!(ch as any)?.isOpinionated;
+            isSubDebateMsg = !!(ch as any)?.isSubDebate;
           } catch { /* ignore */ }
         }
         if ((room as any).isFishbowl) {
@@ -1081,11 +1200,13 @@ io.on("connection", (socket) => {
           }
         }
 
-        // Enforce structured debate turn order (sidebar channel is exempt)
+        // Enforce structured debate turn order for THIS channel (the arena). Each
+        // channel runs its own debate; side channels are exempt.
         const isOpinionated = isChannelOpinionated || !!(room as any).isOpinionated;
+        const arena = channelId ?? roomId;
         if (!isImage && !isSidebarMsg && !isSpectatorChatMsg) {
-          const turn = debateTurns.get(roomId);
-          if (turn?.mode === "structured") {
+          const turn = await getArenaTurn(roomId, arena, isSubDebateMsg);
+          if (turn.mode === "structured") {
             if (!turn.currentSpeakerId) {
               socket.emit("error", { message: "Claim the floor before speaking." });
               return;
@@ -1131,18 +1252,14 @@ io.on("connection", (socket) => {
         const emitTarget = channelId ? `channel:${channelId}` : roomId;
         io.to(emitTarget).emit("message", { ...message, type: "human" });
 
-        // Auto-advance structured debate turn after speaking (not for sidebar/spectator messages)
+        // Auto-advance this channel's structured debate turn after speaking (not for
+        // sidebar/spectator messages).
         if (!isImage && !isSidebarMsg && !isSpectatorChatMsg) {
-          const turn = debateTurns.get(roomId);
+          const turn = debateTurns.get(arena);
           if (turn?.mode === "structured" && turn.currentSpeakerId === user.id) {
-            passTurnVotes.delete(roomId);
-            const newTurn: DebateTurnState = { mode: "structured", currentSide: nextStance(turn.currentSide, turn.stances), currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1, stances: turn.stances };
-            debateTurns.set(roomId, newTurn);
-            // Persist + broadcast room-level, like every other turn transition —
-            // speaking is the commonest advance, so skipping the redis write here
-            // desynced the room back a turn after a restart.
-            redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
-            io.to(roomId).emit("debateTurnUpdate", newTurn);
+            const newTurn: DebateTurnState = { mode: "structured", currentSide: nextStance(turn.currentSide, turn.stances), currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1, stances: turn.stances, explicit: turn.explicit };
+            setArenaTurn(roomId, arena, newTurn);
+            io.to(emitTarget).emit("debateTurnUpdate", { ...newTurn, channelId: arena });
           }
         }
 
@@ -1455,19 +1572,27 @@ io.on("connection", (socket) => {
       // (the check above lets a poll's creator close it). Without this guard that
       // is a backdoor around `setDebateMode`'s ownership check: a non-owner could
       // flip any Common Grounds debate between structured and open at will.
-      if (room && poll.question === "Should this debate be structured?" && callerModerates) {
+      // Sub-debates are never structured (they use FOR/AGAINST positions, not the
+      // room's stances), so the governance poll doesn't apply to them.
+      let pollChannelIsSub = false;
+      if (poll.channelId) {
+        try {
+          const pc = await (prisma as any).channel.findUnique({ where: { id: poll.channelId }, select: { isSubDebate: true } });
+          pollChannelIsSub = !!(pc as any)?.isSubDebate;
+        } catch { /* ignore */ }
+      }
+      if (room && poll.question === "Should this debate be structured?" && callerModerates && !pollChannelIsSub) {
         const voteCounts: Record<string, number> = {};
         for (const v of updated.votes) voteCounts[v.option] = (voteCounts[v.option] ?? 0) + 1;
         const winner = poll.options.reduce((a: string, b: string) => (voteCounts[b] ?? 0) > (voteCounts[a] ?? 0) ? b : a, poll.options[0]);
         const mode = winner === "Structured" ? "structured" : "open";
-        const turnStances = mode === "structured" ? await getRoomStances(room.name) : undefined;
-        const turn: DebateTurnState = mode === "structured"
-          ? { mode: "structured", currentSide: turnStances![0], currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1, stances: turnStances }
-          : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
-        debateTurns.set(room.name, turn);
-        passTurnVotes.delete(room.name);
-        redis.set(`debate:turn:${room.name}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
-        io.to(room.name).emit("debateTurnUpdate", turn);
+        // The vote decides THIS channel's mode (the poll's channel), as an explicit
+        // per-channel choice that later room-default changes won't override.
+        const arena = poll.channelId ?? room.name;
+        const turn: DebateTurnState = { ...(mode === "structured" ? structuredTurn(await getRoomStances(room.name)) : openTurn()), explicit: true };
+        setArenaTurn(room.name, arena, turn);
+        channelExplicitMode.add(arena);
+        io.to(emitTarget).emit("debateTurnUpdate", { ...turn, channelId: arena });
       }
     } catch (err) {
       console.error("[closePoll]", err);
@@ -1663,7 +1788,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("setDebateMode", async ({ roomId, mode }: { roomId: string; mode: "open" | "structured" }) => {
+  // Per-CHANNEL debate mode. Sets just the given channel's turn state and pins it as
+  // an explicit override so later room-default changes leave it alone.
+  socket.on("setDebateMode", async ({ roomId, mode, channelId }: { roomId: string; mode: "open" | "structured"; channelId?: string }) => {
     try {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
@@ -1672,16 +1799,72 @@ io.on("connection", (socket) => {
         socket.emit("error", { message: "Only moderators can change debate mode." });
         return;
       }
-      const stances = mode === "structured" ? await getRoomStances(roomId) : undefined;
-      const turn: DebateTurnState = mode === "structured"
-        ? { mode: "structured", currentSide: stances![0], currentSpeakerId: null, currentSpeakerName: null, turnNumber: 1, stances }
-        : { mode: "open", currentSide: "FOR", currentSpeakerId: null, currentSpeakerName: null, turnNumber: 0 };
-      debateTurns.set(roomId, turn);
-      passTurnVotes.delete(roomId);
-      redis.set(`debate:turn:${roomId}`, JSON.stringify(turn), { EX: 86400 }).catch(() => {});
-      io.to(roomId).emit("debateTurnUpdate", turn);
+      const arena = channelId ?? roomId;
+      // Sub-debates (and side channels) are free chat only — their FOR/AGAINST
+      // positions don't match the room's structured stances. Ignore attempts to structure them.
+      if (channelId) {
+        try {
+          const ch = await (prisma as any).channel.findUnique({ where: { id: channelId }, select: { isSubDebate: true, isSidebar: true, isSpectatorChat: true } });
+          if ((ch as any)?.isSubDebate || (ch as any)?.isSidebar || (ch as any)?.isSpectatorChat) return;
+        } catch { /* ignore */ }
+      }
+      const turn: DebateTurnState = { ...(mode === "structured" ? structuredTurn(await getRoomStances(roomId)) : openTurn()), explicit: true };
+      setArenaTurn(roomId, arena, turn);
+      channelExplicitMode.add(arena);
+      const target = channelId ? `channel:${channelId}` : roomId;
+      io.to(target).emit("debateTurnUpdate", { ...turn, channelId: arena });
     } catch (err) {
       console.error("[setDebateMode]", err);
+    }
+  });
+
+  // Room-level DEFAULT debate mode. Seeds new channels and re-applies to the room's
+  // channels that have no explicit per-channel override.
+  socket.on("setRoomDefaultMode", async ({ roomId, mode }: { roomId: string; mode: "open" | "structured" }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) return;
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) {
+        socket.emit("error", { message: "Only moderators can change the default debate mode." });
+        return;
+      }
+      // Read the room's CURRENT default (hydrating from redis if not in memory) BEFORE
+      // changing it. The per-channel loop must compare each channel against its real
+      // current mode; if we set the new default first, getArenaTurn would materialize a
+      // previously-open channel to the new "structured" and the "already in target
+      // mode" skip below would suppress its broadcast — silently desyncing viewers.
+      if (!roomDefaultMode.has(roomId)) {
+        try { const m = await redis.get(`debate:default:${roomId}`); if (m === "structured" || m === "open") roomDefaultMode.set(roomId, m); } catch { /* ignore */ }
+      }
+      const oldMode = roomDefaultMode.get(roomId) ?? "open";
+      io.to(roomId).emit("roomDefaultMode", { roomId, mode });   // panel display
+      const commitDefault = () => {
+        roomDefaultMode.set(roomId, mode);
+        redis.set(`debate:default:${roomId}`, mode, { EX: 86400 * 30 }).catch(() => {});
+      };
+      if (oldMode === mode) { commitDefault(); return; }   // unchanged — don't disturb any live debate
+      // Flip every channel still following the default (no explicit override, and not
+      // already in the target mode — so live debates aren't reset needlessly). The loop
+      // runs while roomDefaultMode still holds oldMode, so getArenaTurn reports each
+      // channel's true current mode; the new default is committed after the loop.
+      const stances = mode === "structured" ? await getRoomStances(roomId) : [];
+      let channels: any[] = [];
+      try { channels = await (prisma as any).channel.findMany({ where: { roomId: room.id } }); } catch { /* ignore */ }
+      for (const ch of channels) {
+        if ((ch as any).isSidebar || (ch as any).isSpectatorChat || (ch as any).isSubDebate) continue;
+        // Restore the channel's turn first — this rehydrates its explicit-override flag
+        // after a restart, so a deliberately-diverged channel isn't clobbered.
+        const cur = await getArenaTurn(roomId, ch.id);
+        if (channelExplicitMode.has(ch.id)) continue;   // individually set — leave alone
+        if (cur.mode === mode) continue;                // already in target mode — keep live state
+        const turn: DebateTurnState = mode === "structured" ? structuredTurn(stances) : openTurn();
+        setArenaTurn(roomId, ch.id, turn);
+        io.to(`channel:${ch.id}`).emit("debateTurnUpdate", { ...turn, channelId: ch.id });
+      }
+      commitDefault();
+    } catch (err) {
+      console.error("[setRoomDefaultMode]", err);
     }
   });
 
@@ -1703,37 +1886,41 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("claimFloor", ({ roomId }: { roomId: string }) => {
+  socket.on("claimFloor", ({ roomId, channelId }: { roomId: string; channelId?: string }) => {
     try {
-      const turn = debateTurns.get(roomId);
+      const arena = channelId ?? roomId;
+      const turn = debateTurns.get(arena);
       if (!turn || turn.mode !== "structured") return;
       if (turn.currentSpeakerId) return; // already claimed
-      const roomPos = debatePositions.get(roomId);
-      const userPos = roomPos?.get(socketUser.id)?.position;
+      const pos = arenaPositions(roomId, arena);
+      const userPos = pos?.get(socketUser.id)?.position;
       if (userPos !== turn.currentSide) {
         socket.emit("error", { message: `Only a ${turn.currentSide} participant can claim the floor now.` });
         return;
       }
       const newTurn: DebateTurnState = { ...turn, currentSpeakerId: socketUser.id, currentSpeakerName: socketUser.username };
-      debateTurns.set(roomId, newTurn);
-      redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
-      io.to(roomId).emit("debateTurnUpdate", newTurn);
+      // Set directly (not setArenaTurn) so an in-progress pass vote survives a claim.
+      debateTurns.set(arena, newTurn);
+      arenaRoom.set(arena, roomId);
+      persistTurn(arena, newTurn);
+      const target = channelId ? `channel:${channelId}` : roomId;
+      io.to(target).emit("debateTurnUpdate", { ...newTurn, channelId: arena });
     } catch (err) {
       console.error("[claimFloor]", err);
     }
   });
 
-  socket.on("passTurn", async ({ roomId }: { roomId: string }) => {
+  socket.on("passTurn", async ({ roomId, channelId }: { roomId: string; channelId?: string }) => {
     try {
-      const turn = debateTurns.get(roomId);
+      const arena = channelId ?? roomId;
+      const turn = debateTurns.get(arena);
       if (!turn || turn.mode !== "structured") return;
+      const target = channelId ? `channel:${channelId}` : roomId;
 
       const advance = () => {
-        passTurnVotes.delete(roomId);
-        const newTurn: DebateTurnState = { mode: "structured", currentSide: nextStance(turn.currentSide, turn.stances), currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1, stances: turn.stances };
-        debateTurns.set(roomId, newTurn);
-        redis.set(`debate:turn:${roomId}`, JSON.stringify(newTurn), { EX: 86400 }).catch(() => {});
-        io.to(roomId).emit("debateTurnUpdate", newTurn);
+        const newTurn: DebateTurnState = { mode: "structured", currentSide: nextStance(turn.currentSide, turn.stances), currentSpeakerId: null, currentSpeakerName: null, turnNumber: turn.turnNumber + 1, stances: turn.stances, explicit: turn.explicit };
+        setArenaTurn(roomId, arena, newTurn);
+        io.to(target).emit("debateTurnUpdate", { ...newTurn, channelId: arena });
       };
 
       const roomPresence = presence.get(roomId);
@@ -1751,28 +1938,28 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const roomPos = debatePositions.get(roomId);
-      const userSide = roomPos?.get(socketUser.id)?.position;
+      const pos = arenaPositions(roomId, arena);
+      const userSide = pos?.get(socketUser.id)?.position;
 
       // On the current side → this is a VOTE. The side passes only by majority, so
       // a single debater (even the room owner, when they're debating this side)
       // can't throw away the side's turn. The pass button toggles their vote.
       if (userSide === turn.currentSide) {
-        let votes = passTurnVotes.get(roomId);
-        if (!votes) { votes = new Set(); passTurnVotes.set(roomId, votes); }
+        let votes = passTurnVotes.get(arena);
+        if (!votes) { votes = new Set(); passTurnVotes.set(arena, votes); }
         if (votes.has(socketUser.id)) votes.delete(socketUser.id);
         else votes.add(socketUser.id);
 
         // Count only votes from members still present on the current side, and
         // prune stale ones so the store can't leak or over-count after a leave.
-        const sideMembers = presentSideMembers(roomId, turn.currentSide);
+        const sideMembers = presentSideMembers(roomId, arena, turn.currentSide);
         const sideSet = new Set(sideMembers);
         const effective = Array.from(votes).filter(uid => sideSet.has(uid));
         votes.clear(); effective.forEach(uid => votes!.add(uid));
         const needed = Math.floor(sideMembers.length / 2) + 1;
 
         if (effective.length >= needed) advance();
-        else io.to(roomId).emit("passVoteUpdate", { roomId, side: turn.currentSide, voters: effective, needed });
+        else io.to(target).emit("passVoteUpdate", { roomId, channelId: arena, side: turn.currentSide, voters: effective, needed });
         return;
       }
 
