@@ -16,4 +16,9 @@ export {
   GraduationCap, // Training Grounds
   Info,    // details / formula affordance
   MessageSquarePlus, // add a side chat
+  ShieldCheck, // moderator badge / promote to moderator
+  ShieldOff,   // remove moderator
+  VolumeX,     // mute a member
+  Volume2,     // unmute a member
+  Timer,       // slow mode
 } from "lucide-react";

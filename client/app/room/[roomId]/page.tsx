@@ -85,6 +85,12 @@ export default function RoomPage() {
   const [inviteResults, setInviteResults] = useState<{ id: string; username: string }[]>([]);
   const [inviteStatus, setInviteStatus] = useState<Record<string, "sending" | "sent" | "error">>({});
   const [toast, setToast] = useState<string | null>(null);
+  // Moderation
+  const [moderatorIds, setModeratorIds] = useState<string[]>([]);
+  const [mutedUserIds, setMutedUserIds] = useState<string[]>([]);   // for roster badges
+  const [myMuteUntil, setMyMuteUntil] = useState<number | null>(null); // 0 = indefinite, ms = expiry, null = not muted
+  const [cooldownUntil, setCooldownUntil] = useState(0);   // slow-mode: ms timestamp I can next send
+  const [nowTs, setNowTs] = useState(0);                   // ticks the slow-mode / mute countdown
   const sidebarChannelRef = useRef<{ id: string; name: string } | null>(null);
   // Mobile: "channels" shows channel list, "chat" shows the chat area
   const [mobileView, setMobileView] = useState<"channels" | "chat">(
@@ -150,6 +156,10 @@ export default function RoomPage() {
   useEffect(() => { userIdRef.current = userId; }, [userId]);
   const isAdmin: boolean = (session?.user as any)?.isAdmin ?? false;
   const isOwner = roomMeta?.creatorId === userId;
+  const isModerator = moderatorIds.includes(userId);
+  // Moderation applies to regular debate rooms, not DMs or match rooms (arena/comp).
+  const isModeratableRoom = !roomId.startsWith("dm-") && !roomId.startsWith("arena-") && !roomId.startsWith("comp-");
+  const canModerate = isModeratableRoom && (isOwner || isAdmin || isModerator);
   const [dmPartner, setDmPartner] = useState<string | null>(null);
 
   const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -267,9 +277,17 @@ export default function RoomPage() {
     socket.on("seatRequest", ({ userId: reqUserId, username: reqUsername }: { userId: string; username: string }) => {
       setSeatRequests(prev => prev.some(r => r.userId === reqUserId) ? prev : [...prev, { userId: reqUserId, username: reqUsername }]);
     });
-    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[]; isFishbowl?: boolean; fishbowlSeats?: number | null; spectatorChatChannelId?: string | null }) => {
-      setRoomMeta(meta as any);
+    socket.on("roomMeta", (meta: RoomMeta & { stances?: string[]; isFishbowl?: boolean; fishbowlSeats?: number | null; spectatorChatChannelId?: string | null; moderatorIds?: string[]; mutedUserIds?: string[]; slowModeSeconds?: number; isLocked?: boolean; myMuteUntil?: number | null }) => {
+      // Merge, not replace: the room-settings PATCH re-broadcasts roomMeta WITHOUT
+      // the runtime-only moderation fields (slow mode / lock / mods / mutes aren't
+      // Prisma columns), so a full replace would silently wipe them. Preserve prior
+      // values for whatever the payload omits, and only touch moderation state when
+      // it's actually present.
+      setRoomMeta(prev => ({ ...(prev ?? {}), ...meta } as any));
       if (meta.stances && meta.stances.length > 0) setStances(meta.stances);
+      if (meta.moderatorIds !== undefined) setModeratorIds(meta.moderatorIds);
+      if (meta.mutedUserIds !== undefined) setMutedUserIds(meta.mutedUserIds);
+      if (meta.myMuteUntil !== undefined) setMyMuteUntil(meta.myMuteUntil);
       if (meta.spectatorChatChannelId && meta.spectatorChatChannelId !== spectatorChatChannelRef.current) {
         setSpectatorChatChannelId(meta.spectatorChatChannelId);
         spectatorChatChannelRef.current = meta.spectatorChatChannelId;
@@ -408,6 +426,67 @@ export default function RoomPage() {
       setMessages(prev => prev.map(m => m.id === messageId ? { ...m, type: "deleted" as const, content: "", deletedAt: new Date().toISOString() } : m));
     });
 
+    // ── Moderation events ──
+    // Roll back the last optimistic send when the server rejects a post (mute / lock
+    // / slow mode). The composer is normally disabled in these states, so this only
+    // fires on a race.
+    const dropLastOptimistic = () => {
+      setMessages(prev => {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const id = prev[i].id;
+          if (typeof id === "string" && id.startsWith("temp-")) return prev.filter((_, j) => j !== i);
+        }
+        return prev;
+      });
+    };
+    const fmtDur = (s: number) => s >= 3600 ? `${Math.round(s / 3600)}h` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`;
+
+    socket.on("moderatorsUpdated", ({ moderatorIds: ids }: { roomId: string; moderatorIds: string[] }) => {
+      setModeratorIds(prev => {
+        const me = userIdRef.current;
+        if (ids.includes(me) && !prev.includes(me)) setToast("You're now a moderator of this room.");
+        else if (!ids.includes(me) && prev.includes(me)) setToast("You're no longer a moderator of this room.");
+        return ids;
+      });
+    });
+    socket.on("mutesUpdated", ({ mutedUserIds: ids }: { roomId: string; mutedUserIds: string[] }) => {
+      setMutedUserIds(ids);
+    });
+    socket.on("slowModeUpdated", ({ seconds }: { roomId: string; seconds: number }) => {
+      setRoomMeta(prev => prev ? ({ ...prev, slowModeSeconds: seconds } as any) : prev);
+    });
+    socket.on("roomLockUpdated", ({ locked }: { roomId: string; locked: boolean }) => {
+      setRoomMeta(prev => prev ? ({ ...prev, isLocked: locked } as any) : prev);
+    });
+    socket.on("muted", ({ seconds }: { roomId: string; seconds: number }) => {
+      // Rejected a send because I'm muted — refresh my expiry so the composer locks.
+      setMyMuteUntil(seconds > 0 ? Date.now() + seconds * 1000 : 0);
+      setNowTs(Date.now());
+      setToast(seconds > 0 ? `You've been muted for ${fmtDur(seconds)}.` : "You've been muted by a moderator.");
+      dropLastOptimistic();
+    });
+    // Proactive mute/unmute notice with my expiry, so the composer locks now and
+    // auto-unlocks when a timed mute lapses (no reload needed).
+    socket.on("youMuted", ({ roomId: evtRoom, until }: { roomId: string; until: number | null }) => {
+      // youMuted targets ALL my sockets (not room-scoped), so a mute in another room
+      // would otherwise disable my composer here. Ignore events for other rooms.
+      if (evtRoom !== roomId) return;
+      setMyMuteUntil(until);
+      if (until === null) { setToast("A moderator lifted your mute."); return; }
+      setNowTs(Date.now());
+      const secs = until === 0 ? 0 : Math.max(1, Math.ceil((until - Date.now()) / 1000));
+      setToast(secs > 0 ? `You've been muted for ${fmtDur(secs)}.` : "You've been muted by a moderator.");
+    });
+    socket.on("slowModeActive", ({ seconds }: { roomId: string; seconds: number }) => {
+      setCooldownUntil(Date.now() + seconds * 1000);
+      setNowTs(Date.now());
+      dropLastOptimistic();
+    });
+    socket.on("roomLocked", () => {
+      setToast("This room is locked — only moderators can post right now.");
+      dropLastOptimistic();
+    });
+
     return () => {
       socket.off("connect", rejoin);
       socket.off("history");
@@ -450,6 +529,14 @@ export default function RoomPage() {
       socket.off("rapidMoveOnOffered");
       socket.off("rapidMoveOnWithdrawn");
       socket.off("rapidMoveOnState");
+      socket.off("moderatorsUpdated");
+      socket.off("mutesUpdated");
+      socket.off("slowModeUpdated");
+      socket.off("roomLockUpdated");
+      socket.off("muted");
+      socket.off("youMuted");
+      socket.off("slowModeActive");
+      socket.off("roomLocked");
     };
   }, [status, roomId, userId, username]);
 
@@ -901,6 +988,26 @@ export default function RoomPage() {
     getSocket().emit("requestSeat", { roomId });
   }
 
+  // ── Moderation actions ──
+  function promoteModerator(targetUserId: string) {
+    getSocket().emit("promoteModerator", { roomId, targetUserId });
+  }
+  function demoteModerator(targetUserId: string) {
+    getSocket().emit("demoteModerator", { roomId, targetUserId });
+  }
+  function muteUser(targetUserId: string, minutes: number) {
+    getSocket().emit("muteUser", { roomId, targetUserId, minutes });
+  }
+  function unmuteUser(targetUserId: string) {
+    getSocket().emit("unmuteUser", { roomId, targetUserId });
+  }
+  function setSlowMode(seconds: number) {
+    getSocket().emit("setSlowMode", { roomId, seconds });
+  }
+  function setRoomLock(locked: boolean) {
+    getSocket().emit("setRoomLock", { roomId, locked });
+  }
+
   async function deleteRoom() {
     const res = await api(`${SERVER}/api/rooms/${roomId}`, {
       method: "DELETE", headers: { "Content-Type": "application/json" },
@@ -1005,6 +1112,22 @@ export default function RoomPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Tick the composer countdown while a slow-mode cooldown OR a timed mute is
+  // running, so both auto-clear without a reload. A mute expiry of 0 = indefinite
+  // (no timer needed); null = not muted.
+  const muteTickTarget = (typeof myMuteUntil === "number" && myMuteUntil > 0) ? myMuteUntil : 0;
+  const tickTarget = Math.max(cooldownUntil, muteTickTarget);
+  useEffect(() => {
+    if (tickTarget <= Date.now()) return;
+    setNowTs(Date.now());
+    const iv = setInterval(() => {
+      const t = Date.now();
+      setNowTs(t);
+      if (t >= tickTarget) clearInterval(iv);
+    }, 500);
+    return () => clearInterval(iv);
+  }, [tickTarget]);
+
   function sendInvite(targetUsername: string) {
     if (roomId.startsWith("dm-")) return;
     setInviteStatus(p => ({ ...p, [targetUsername]: "sending" }));
@@ -1030,6 +1153,11 @@ export default function RoomPage() {
 
     const s = getSocket();
     s.emit("sendMessage", { roomId, userId, username, content, channelId: activeChannel?.id });
+
+    // Start the local slow-mode countdown so the composer locks immediately. Only
+    // when slow mode is on and I'm not exempt; the server is still the authority.
+    const slow = (roomMeta as any)?.slowModeSeconds ?? 0;
+    if (slow > 0 && !canModerate) { setCooldownUntil(Date.now() + slow * 1000); setNowTs(Date.now()); }
   }
 
   function handleReact(messageId: string, emoji: string) {
@@ -1912,8 +2040,21 @@ export default function RoomPage() {
         const floorClaimed = !!debateTurn?.currentSpeakerId;
         const isMySide = myPosition === debateTurn?.currentSide;
         const arenaLocked = (isBotRoom || isCompetitiveRoom) && matchState !== "active";
-        const locked = isSpectator || isSpectating || (isStructured && !isMyTurn) || arenaLocked;
-        const reason = isSpectator
+        // Moderation gates (mods are exempt from lock + slow mode; mute applies to all).
+        // Driven by my own expiry so a timed mute auto-unlocks the composer when it lapses.
+        const iAmMuted = myMuteUntil === 0 || (typeof myMuteUntil === "number" && myMuteUntil > 0 && myMuteUntil > nowTs);
+        const roomLockedForMe = !!(roomMeta as any)?.isLocked && !canModerate;
+        const slowSecs = (roomMeta as any)?.slowModeSeconds ?? 0;
+        const cooldownLeft = (!canModerate && slowSecs > 0 && cooldownUntil > nowTs)
+          ? Math.max(0, Math.ceil((cooldownUntil - nowTs) / 1000)) : 0;
+        const locked = iAmMuted || roomLockedForMe || cooldownLeft > 0 || isSpectator || isSpectating || (isStructured && !isMyTurn) || arenaLocked;
+        const reason = iAmMuted
+          ? "You've been muted by a moderator"
+          : roomLockedForMe
+          ? "This room is locked — only moderators can post"
+          : cooldownLeft > 0
+          ? `Slow mode — wait ${cooldownLeft}s before sending again`
+          : isSpectator
           ? "You're spectating this match — watching only"
           : arenaLocked
           ? matchState === "judging"
@@ -1972,8 +2113,19 @@ export default function RoomPage() {
         onKick={kickUser}
         onGrantSeat={grantSeat}
         onRevokeSeat={revokeSeat}
-        onMetaUpdate={(meta) => setRoomMeta(meta)}
+        onMetaUpdate={(meta) => setRoomMeta(prev => ({ ...(prev ?? {}), ...meta } as any))}
         onDelete={(isOwner || isAdmin) ? deleteRoom : undefined}
+        moderatorIds={moderatorIds}
+        mutedUserIds={mutedUserIds}
+        canModerate={canModerate}
+        slowModeSeconds={(roomMeta as any)?.slowModeSeconds ?? 0}
+        isLocked={!!(roomMeta as any)?.isLocked}
+        onPromoteModerator={promoteModerator}
+        onDemoteModerator={demoteModerator}
+        onMute={muteUser}
+        onUnmute={unmuteUser}
+        onSetSlowMode={setSlowMode}
+        onSetLock={setRoomLock}
       />
 
       {toast && (

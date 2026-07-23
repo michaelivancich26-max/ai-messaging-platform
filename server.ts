@@ -114,6 +114,64 @@ async function restUserInRoom(
   return !!u?.isAdmin || !!member;
 }
 
+// Per-room moderators. These live in their own table (RoomModerator) rather than a
+// RoomMember role, because public rooms — where most debates happen — have no
+// RoomMember row to hang a role off. A moderator wields the room's moderation
+// powers (kick, mute, slow mode, room lock, remove any message, structured-debate
+// control) but NOT owner-only powers: editing/deleting the room, or appointing and
+// removing other moderators. Only the creator and global admins do those.
+async function isRoomModerator(userId: string, roomDbId: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT 1 FROM "RoomModerator" WHERE "roomId" = $1 AND "userId" = $2 LIMIT 1`, roomDbId, userId,
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  } catch { return false; }
+}
+
+// May this user exercise moderation powers here? Creator, global admin, or an
+// appointed room moderator. The moderator lookup only runs when the cheap creator/
+// admin checks fail, so the common owner path costs no extra query. Pass a known
+// isAdmin to skip re-loading it.
+async function canModerateRoom(
+  userId: string,
+  room: { id: string; creatorId?: string | null },
+  isAdmin?: boolean,
+): Promise<boolean> {
+  if (room.creatorId === userId) return true;
+  if (isAdmin === undefined) {
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } });
+    isAdmin = !!u?.isAdmin;
+  }
+  if (isAdmin) return true;
+  return isRoomModerator(userId, room.id);
+}
+
+async function getRoomModeratorIds(roomDbId: string): Promise<string[]> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ userId: string }[]>(
+      `SELECT "userId" FROM "RoomModerator" WHERE "roomId" = $1`, roomDbId,
+    );
+    return rows.map((r) => r.userId);
+  } catch { return []; }
+}
+
+// Shared content-emission gate for the non-sendMessage paths that also broadcast
+// fresh content (editMessage, stakeClaim). Returns true if the action must be
+// BLOCKED: a muted user, or a non-moderator while the room is locked, in a
+// moderatable room. sendMessage has its own inline copy (with slow mode).
+async function moderationBlocksContent(
+  roomName: string,
+  room: { id: string; creatorId?: string | null; isDM?: boolean | null },
+  userId: string,
+): Promise<boolean> {
+  if (room.isDM || roomName.startsWith("comp-") || roomName.startsWith("arena-")) return false;
+  if (isMuted(roomName, userId)) return true;
+  const cfg = await getRoomModConfig(roomName);   // hydrates from DB on a cold cache
+  if (cfg.isLocked && !(await canModerateRoom(userId, room))) return true;
+  return false;
+}
+
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: ALLOWED_ORIGINS, credentials: true },
@@ -268,6 +326,58 @@ function isKickBlocked(roomName: string, userId: string): boolean {
   if (exp < Date.now()) { m!.delete(userId); return false; }
   return true;
 }
+// Per-room moderation config (slow mode + lock), cached from the runtime Room
+// columns so the hot sendMessage path is a Map read, not a query. Updated in place
+// whenever a moderator changes a setting. Keyed by room NAME (as handlers see it).
+// In memory, like presence — a stale entry after an unclean restart re-hydrates
+// lazily from the DB, and single-instance is the same assumption presence makes.
+const roomModConfig = new Map<string, { slowModeSeconds: number; isLocked: boolean }>();
+async function getRoomModConfig(roomName: string): Promise<{ slowModeSeconds: number; isLocked: boolean }> {
+  const cached = roomModConfig.get(roomName);
+  if (cached) return cached;
+  let cfg = { slowModeSeconds: 0, isLocked: false };
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ slowModeSeconds: number | null; isLocked: boolean | null }[]>(
+      `SELECT "slowModeSeconds", "isLocked" FROM "Room" WHERE name = $1 LIMIT 1`, roomName,
+    );
+    cfg = { slowModeSeconds: Number(rows[0]?.slowModeSeconds ?? 0), isLocked: !!rows[0]?.isLocked };
+  } catch { /* columns may not exist yet */ }
+  roomModConfig.set(roomName, cfg);
+  return cfg;
+}
+
+// Slow mode: last accepted human send per room+user (`roomName:userId` → ms). Only
+// read when a room actually has slow mode on, so the map only grows in slow rooms.
+const lastSendAt = new Map<string, number>();
+
+// Temporary mutes: roomName → userId → expiry ms. An expiry of 0 means "until a
+// moderator lifts it". In memory, like kicks: losing them on restart is acceptable.
+const roomMutes = new Map<string, Map<string, number>>();
+function isMuted(roomName: string, userId: string): boolean {
+  const m = roomMutes.get(roomName);
+  const exp = m?.get(userId);
+  if (exp === undefined) return false;
+  if (exp !== 0 && exp < Date.now()) { m!.delete(userId); return false; }
+  return true;
+}
+function muteRemainingSec(roomName: string, userId: string): number {
+  const exp = roomMutes.get(roomName)?.get(userId);
+  if (exp === undefined || exp === 0) return 0;   // 0 = indefinite
+  return Math.max(0, Math.ceil((exp - Date.now()) / 1000));
+}
+// Ids currently muted in a room, pruning any that have lapsed.
+function activeMutedIds(roomName: string): string[] {
+  const m = roomMutes.get(roomName);
+  if (!m) return [];
+  const now = Date.now();
+  const out: string[] = [];
+  for (const [uid, exp] of m.entries()) {
+    if (exp !== 0 && exp < now) m.delete(uid);
+    else out.push(uid);
+  }
+  return out;
+}
+
 const channelSidebars = new Map<string, string>(); // parentChannelId → sidebar channelId
 const channelPositions = new Map<string, Map<string, { userId: string; username: string; position: string }>>();
 
@@ -559,13 +669,16 @@ io.on("connection", (socket) => {
       let metaMatchConfig: string | null = null;
       let metaIsBotRoom = false;
       let metaBotId: string | null = null;
+      let metaSlowMode = 0;
+      let metaIsLocked = false;
       try {
         const stRow = await prisma.$queryRawUnsafe<{
           stances: string | null; stanceCooldown: number | null;
           isFishbowl: boolean; fishbowlSeats: number | null;
           matchConfig: string | null; isBotRoom: boolean; botId: string | null;
+          slowModeSeconds: number | null; isLocked: boolean | null;
         }[]>(
-          `SELECT "stances", "stanceCooldown", "isFishbowl", "fishbowlSeats", "matchConfig", "isBotRoom", "botId" FROM "Room" WHERE "id" = $1`, room.id
+          `SELECT "stances", "stanceCooldown", "isFishbowl", "fishbowlSeats", "matchConfig", "isBotRoom", "botId", "slowModeSeconds", "isLocked" FROM "Room" WHERE "id" = $1`, room.id
         );
         if (stRow[0]?.stances) stances = JSON.parse(stRow[0].stances);
         if (stRow[0]?.stanceCooldown) stanceCooldown = stRow[0].stanceCooldown;
@@ -574,7 +687,16 @@ io.on("connection", (socket) => {
         metaMatchConfig = stRow[0]?.matchConfig ?? null;
         metaIsBotRoom = stRow[0]?.isBotRoom ?? false;
         metaBotId = stRow[0]?.botId ?? null;
+        metaSlowMode = Number(stRow[0]?.slowModeSeconds ?? 0);
+        metaIsLocked = !!stRow[0]?.isLocked;
       } catch { /* columns may not exist yet */ }
+      // Prime the moderation-config cache so the first send in this room is a Map read.
+      roomModConfig.set(roomId, { slowModeSeconds: metaSlowMode, isLocked: metaIsLocked });
+      const metaModeratorIds = await getRoomModeratorIds(room.id);
+      const metaMutedIds = activeMutedIds(roomId);
+      // The joining user's own mute expiry (0 = indefinite, null = not muted), so
+      // their composer knows when to auto-unlock without waiting for another event.
+      const metaMyMuteUntil = isMuted(roomId, socketUser.id) ? (roomMutes.get(roomId)?.get(socketUser.id) ?? null) : null;
       if (metaIsFishbowl) {
         try {
           const scRows = await prisma.$queryRawUnsafe<{ id: string }[]>(
@@ -584,7 +706,7 @@ io.on("connection", (socket) => {
           if (spectatorChatChannelId) socket.join(`channel:${spectatorChatChannelId}`);
         } catch { /* ignore */ }
       }
-      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats, spectatorChatChannelId, matchConfig: metaMatchConfig, isBotRoom: metaIsBotRoom, botId: metaBotId });
+      socket.emit("roomMeta", { ...roomMeta, stances, stanceCooldown, isFishbowl: metaIsFishbowl, fishbowlSeats: metaFishbowlSeats, spectatorChatChannelId, matchConfig: metaMatchConfig, isBotRoom: metaIsBotRoom, botId: metaBotId, slowModeSeconds: metaSlowMode, isLocked: metaIsLocked, moderatorIds: metaModeratorIds, mutedUserIds: metaMutedIds, myMuteUntil: metaMyMuteUntil });
 
       // Bot rooms: emit history (no channels, so this is the only delivery path)
       // and trigger bot opening if botFirst is set
@@ -763,14 +885,24 @@ io.on("connection", (socket) => {
       if (!room) return;
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
       const isAdmin = requestingUser?.isAdmin ?? false;
-      if (room.creatorId !== socketUser.id && !isAdmin) {
-        socket.emit("error", { message: "Only the room owner can kick members." });
+      const isOwnerAdmin = room.creatorId === socketUser.id || isAdmin;
+      if (!isOwnerAdmin && !(await isRoomModerator(socketUser.id, room.id))) {
+        socket.emit("error", { message: "Only moderators can kick members." });
+        return;
+      }
+      // A moderator can't kick the owner or a fellow moderator — only the owner/admin can.
+      if (!isOwnerAdmin && (targetUserId === room.creatorId || await isRoomModerator(targetUserId, room.id))) {
+        socket.emit("error", { message: "You can't kick another moderator." });
         return;
       }
       // Actually remove them: drop their RoomMember row so it's a real removal
       // (they leave the room and their joined list), and record a short re-entry
       // block so they can't rejoin the same second.
       await prisma.roomMember.deleteMany({ where: { userId: targetUserId, roomId: room.id } }).catch(() => {});
+      // A kick also strips any moderator standing so re-entry after the block isn't
+      // a silent return to power. Only meaningful when the owner/admin kicks a mod.
+      await prisma.$executeRawUnsafe(`DELETE FROM "RoomModerator" WHERE "roomId" = $1 AND "userId" = $2`, room.id, targetUserId).catch(() => {});
+      io.to(roomId).emit("moderatorsUpdated", { roomId, moderatorIds: await getRoomModeratorIds(room.id) });
       let km = roomKicks.get(roomId);
       if (!km) { km = new Map(); roomKicks.set(roomId, km); }
       km.set(targetUserId, Date.now() + KICK_BLOCK_MS);
@@ -812,8 +944,8 @@ io.on("connection", (socket) => {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
-        socket.emit("error", { message: "Only the room owner can grant seats." }); return;
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) {
+        socket.emit("error", { message: "Only moderators can grant seats." }); return;
       }
       const fishbowlSeats = (room as any).fishbowlSeats ?? 4;
       const countRows = await prisma.$queryRawUnsafe<{ count: string }[]>(
@@ -845,8 +977,14 @@ io.on("connection", (socket) => {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
-        socket.emit("error", { message: "Only the room owner can revoke seats." }); return;
+      const revokeIsOwnerAdmin = room.creatorId === socketUser.id || !!requestingUser?.isAdmin;
+      if (!revokeIsOwnerAdmin && !(await isRoomModerator(socketUser.id, room.id))) {
+        socket.emit("error", { message: "Only moderators can revoke seats." }); return;
+      }
+      // A moderator can't demote the owner or a fellow moderator (which in a fishbowl
+      // would silence them) — only the owner/admin can. Mirrors kick/mute protection.
+      if (!revokeIsOwnerAdmin && (targetUserId === room.creatorId || await isRoomModerator(targetUserId, room.id))) {
+        socket.emit("error", { message: "You can't change another moderator's seat." }); return;
       }
       await prisma.$executeRawUnsafe(
         `UPDATE "RoomMember" SET "role" = 'SPECTATOR' WHERE "userId" = $1 AND "roomId" = $2`,
@@ -955,6 +1093,32 @@ io.on("connection", (socket) => {
             if (turn.currentSpeakerId !== user.id) {
               socket.emit("error", { message: "It's not your turn to speak." });
               return;
+            }
+          }
+        }
+
+        // ── Moderation gates: mute, room lock, slow mode ──────────────────────
+        // Only for the main debate channel of a moderatable room — not DMs, match
+        // rooms (comp/arena), or the side chats (sidebar / spectator), whose composers
+        // the client leaves ungated. Reads the primed config cache (no await) and
+        // reserves the slow-mode slot synchronously, so a burst of sends can't all
+        // slip through before the first records its timestamp.
+        const moderatable = !(room as any).isDM && !roomId.startsWith("comp-") && !roomId.startsWith("arena-");
+        if (moderatable && !isSidebarMsg && !isSpectatorChatMsg) {
+          if (isMuted(roomId, user.id)) {
+            socket.emit("muted", { roomId, seconds: muteRemainingSec(roomId, user.id) });
+            return;
+          }
+          const modCfg = await getRoomModConfig(roomId);   // hydrates from DB on a cold cache
+          if (modCfg.isLocked || modCfg.slowModeSeconds > 0) {
+            // Owner, global admin, and room moderators are exempt from lock + slow mode.
+            const exempt = room.creatorId === user.id || user.isAdmin || (await isRoomModerator(user.id, room.id));
+            if (modCfg.isLocked && !exempt) { socket.emit("roomLocked", { roomId }); return; }
+            if (modCfg.slowModeSeconds > 0 && !exempt) {
+              const key = `${roomId}:${user.id}`;
+              const waitMs = (lastSendAt.get(key) ?? 0) + modCfg.slowModeSeconds * 1000 - Date.now();
+              if (waitMs > 0) { socket.emit("slowModeActive", { roomId, seconds: Math.ceil(waitMs / 1000) }); return; }
+              lastSendAt.set(key, Date.now());   // reserve before the create await, closing the burst race
             }
           }
         }
@@ -1167,6 +1331,10 @@ io.on("connection", (socket) => {
       const msg = await prisma.message.findUnique({ where: { id: messageId } });
       if (!msg || msg.userId !== socketUser.id) return;
       if ((msg as any).deletedAt) return;
+      // A muted user (or a non-moderator while the room is locked) can't broadcast
+      // fresh content by editing an existing message either.
+      const emRoom = await prisma.room.findUnique({ where: { id: msg.roomId }, select: { id: true, name: true, creatorId: true, isDM: true } });
+      if (emRoom && await moderationBlocksContent(emRoom.name, emRoom, socketUser.id)) return;
       await prisma.$executeRawUnsafe(
         `UPDATE "Message" SET "content" = $1, "editedAt" = NOW() WHERE "id" = $2`,
         trimmed, messageId
@@ -1185,7 +1353,12 @@ io.on("connection", (socket) => {
       if (!msg) return;
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
       const isAdmin = requestingUser?.isAdmin ?? false;
-      if (msg.userId !== socketUser.id && !isAdmin) return;
+      if (msg.userId !== socketUser.id && !isAdmin) {
+        // Not the author and not a global admin — allow only if the caller can
+        // moderate this room, so owners and moderators can remove others' messages.
+        const room = await prisma.room.findUnique({ where: { id: msg.roomId }, select: { id: true, creatorId: true } });
+        if (!room || !(await canModerateRoom(socketUser.id, room, isAdmin))) return;
+      }
       await prisma.$executeRawUnsafe(`UPDATE "Message" SET "deletedAt" = NOW() WHERE "id" = $1`, messageId);
       const target = channelId ? `channel:${channelId}` : roomName;
       io.to(target).emit("messageDeleted", { messageId });
@@ -1265,7 +1438,9 @@ io.on("connection", (socket) => {
       if (!poll) return;
       const room = await prisma.room.findUnique({ where: { id: poll.roomId } });
       const requestingUser = await prisma.user.findUnique({ where: { id: userId } });
-      if (poll.createdBy !== userId && room?.creatorId !== userId && !requestingUser?.isAdmin) return;
+      // Poll creator, or anyone who can moderate the room (creator / admin / moderator).
+      const callerModerates = !!room && await canModerateRoom(userId, room, requestingUser?.isAdmin ?? false);
+      if (poll.createdBy !== userId && !callerModerates) return;
       const updated = await (prisma as any).poll.update({
         where: { id: pollId },
         data: { closedAt: new Date() },
@@ -1280,8 +1455,7 @@ io.on("connection", (socket) => {
       // (the check above lets a poll's creator close it). Without this guard that
       // is a backdoor around `setDebateMode`'s ownership check: a non-owner could
       // flip any Common Grounds debate between structured and open at will.
-      if (room && poll.question === "Should this debate be structured?"
-          && (room.creatorId === userId || requestingUser?.isAdmin)) {
+      if (room && poll.question === "Should this debate be structured?" && callerModerates) {
         const voteCounts: Record<string, number> = {};
         for (const v of updated.votes) voteCounts[v.option] = (voteCounts[v.option] ?? 0) + 1;
         const winner = poll.options.reduce((a: string, b: string) => (voteCounts[b] ?? 0) > (voteCounts[a] ?? 0) ? b : a, poll.options[0]);
@@ -1306,6 +1480,9 @@ io.on("connection", (socket) => {
     try {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
+      // A muted user, or a non-moderator in a locked room, can't stake a claim —
+      // it broadcasts their text and triggers a paid evaluation.
+      if (await moderationBlocksContent(roomId, room as any, socketUser.id)) return;
       let isClaimOpinionated = !!(room as any).isOpinionated;
       if (!isClaimOpinionated && channelId) {
         try {
@@ -1491,8 +1668,8 @@ io.on("connection", (socket) => {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
-        socket.emit("error", { message: "Only the room owner can change debate mode." });
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) {
+        socket.emit("error", { message: "Only moderators can change debate mode." });
         return;
       }
       const stances = mode === "structured" ? await getRoomStances(roomId) : undefined;
@@ -1513,7 +1690,7 @@ io.on("connection", (socket) => {
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       if (!room) return;
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) return;
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) return;
       const validStances = stances.map(s => s.trim()).filter(Boolean).slice(0, 6);
       await prisma.$executeRawUnsafe(
         `UPDATE "Room" SET "stances" = $1 WHERE "id" = $2`,
@@ -1568,7 +1745,8 @@ io.on("connection", (socket) => {
       if (!multiUser) {
         const room = await prisma.room.findUnique({ where: { name: roomId } });
         const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-        const canPass = room?.creatorId === socketUser.id || requestingUser?.isAdmin || turn.currentSpeakerId === socketUser.id;
+        const canPass = turn.currentSpeakerId === socketUser.id
+          || (!!room && await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false));
         if (canPass) advance();
         return;
       }
@@ -1602,11 +1780,129 @@ io.on("connection", (socket) => {
       // to unstick a debate where the side has stalled or emptied out.
       const room = await prisma.room.findUnique({ where: { name: roomId } });
       const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
-      if (room?.creatorId === socketUser.id || requestingUser?.isAdmin) { advance(); return; }
+      if (room && await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false)) { advance(); return; }
       socket.emit("error", { message: `Only a ${turn.currentSide} participant can vote to pass the turn.` });
     } catch (err) {
       console.error("[passTurn]", err);
     }
+  });
+
+  // ── Moderation: appoint / remove moderators (owner or admin only) ────────────
+  socket.on("promoteModerator", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room || room.isDM || roomId.startsWith("comp-") || roomId.startsWith("arena-")) return;   // moderation is for group debate rooms only
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      // Appointing moderators is an owner-level power, deliberately NOT granted to
+      // moderators themselves — otherwise a mod could stack the room with allies.
+      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
+        socket.emit("error", { message: "Only the room owner can add moderators." });
+        return;
+      }
+      if (targetUserId === room.creatorId) return; // the owner already outranks any moderator
+      const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true } });
+      if (!target) return;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "RoomModerator" ("id","roomId","userId","createdAt") VALUES (gen_random_uuid()::text,$1,$2,NOW()) ON CONFLICT ("roomId","userId") DO NOTHING`,
+        room.id, targetUserId,
+      );
+      io.to(roomId).emit("moderatorsUpdated", { roomId, moderatorIds: await getRoomModeratorIds(room.id) });
+    } catch (err) { console.error("[promoteModerator]", err); }
+  });
+
+  socket.on("demoteModerator", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room || room.isDM || roomId.startsWith("comp-") || roomId.startsWith("arena-")) return;   // moderation is for group debate rooms only
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (room.creatorId !== socketUser.id && !requestingUser?.isAdmin) {
+        socket.emit("error", { message: "Only the room owner can remove moderators." });
+        return;
+      }
+      await prisma.$executeRawUnsafe(`DELETE FROM "RoomModerator" WHERE "roomId" = $1 AND "userId" = $2`, room.id, targetUserId);
+      io.to(roomId).emit("moderatorsUpdated", { roomId, moderatorIds: await getRoomModeratorIds(room.id) });
+    } catch (err) { console.error("[demoteModerator]", err); }
+  });
+
+  // ── Moderation: slow mode (per-user post cooldown) ───────────────────────────
+  socket.on("setSlowMode", async ({ roomId, seconds }: { roomId: string; seconds: number }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room || room.isDM || roomId.startsWith("comp-") || roomId.startsWith("arena-")) return;   // moderation is for group debate rooms only
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) {
+        socket.emit("error", { message: "Only moderators can set slow mode." });
+        return;
+      }
+      const secs = Math.max(0, Math.min(300, Math.round(Number(seconds) || 0)));
+      await prisma.$executeRawUnsafe(`UPDATE "Room" SET "slowModeSeconds" = $1 WHERE "id" = $2`, secs, room.id);
+      const cfg = await getRoomModConfig(roomId);
+      roomModConfig.set(roomId, { ...cfg, slowModeSeconds: secs });
+      io.to(roomId).emit("slowModeUpdated", { roomId, seconds: secs });
+    } catch (err) { console.error("[setSlowMode]", err); }
+  });
+
+  // ── Moderation: room lock (only moderators may post) ─────────────────────────
+  socket.on("setRoomLock", async ({ roomId, locked }: { roomId: string; locked: boolean }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room || room.isDM || roomId.startsWith("comp-") || roomId.startsWith("arena-")) return;   // moderation is for group debate rooms only
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) {
+        socket.emit("error", { message: "Only moderators can lock the room." });
+        return;
+      }
+      const isLocked = !!locked;
+      await prisma.$executeRawUnsafe(`UPDATE "Room" SET "isLocked" = $1 WHERE "id" = $2`, isLocked, room.id);
+      const cfg = await getRoomModConfig(roomId);
+      roomModConfig.set(roomId, { ...cfg, isLocked });
+      io.to(roomId).emit("roomLockUpdated", { roomId, locked: isLocked });
+    } catch (err) { console.error("[setRoomLock]", err); }
+  });
+
+  // ── Moderation: temporary mute / timeout ─────────────────────────────────────
+  socket.on("muteUser", async ({ roomId, targetUserId, minutes }: { roomId: string; targetUserId: string; minutes: number }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room || room.isDM || roomId.startsWith("comp-") || roomId.startsWith("arena-")) return;   // moderation is for group debate rooms only
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      const isOwnerAdmin = room.creatorId === socketUser.id || !!requestingUser?.isAdmin;
+      if (!isOwnerAdmin && !(await isRoomModerator(socketUser.id, room.id))) {
+        socket.emit("error", { message: "Only moderators can mute members." });
+        return;
+      }
+      if (targetUserId === socketUser.id) return;
+      // A moderator can't mute the owner or a fellow moderator — only the owner/admin can.
+      if (!isOwnerAdmin && (targetUserId === room.creatorId || await isRoomModerator(targetUserId, room.id))) {
+        socket.emit("error", { message: "You can't mute another moderator." });
+        return;
+      }
+      // minutes <= 0 → indefinite (expiry stored as 0); otherwise a bounded window (max 7 days).
+      const mins = Math.min(60 * 24 * 7, Math.round(Number(minutes) || 0));
+      const expiry = mins > 0 ? Date.now() + mins * 60 * 1000 : 0;
+      let mm = roomMutes.get(roomId);
+      if (!mm) { mm = new Map(); roomMutes.set(roomId, mm); }
+      mm.set(targetUserId, expiry);
+      io.to(roomId).emit("mutesUpdated", { roomId, mutedUserIds: activeMutedIds(roomId) });
+      // Tell the muted user their own expiry (0 = indefinite) so their composer can
+      // auto-unlock when it lapses — the room-wide mutesUpdated carries only ids.
+      for (const sid of userSockets.get(targetUserId) ?? []) io.to(sid).emit("youMuted", { roomId, until: expiry });
+    } catch (err) { console.error("[muteUser]", err); }
+  });
+
+  socket.on("unmuteUser", async ({ roomId, targetUserId }: { roomId: string; targetUserId: string }) => {
+    try {
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room || room.isDM || roomId.startsWith("comp-") || roomId.startsWith("arena-")) return;   // moderation is for group debate rooms only
+      const requestingUser = await prisma.user.findUnique({ where: { id: socketUser.id } });
+      if (!(await canModerateRoom(socketUser.id, room, requestingUser?.isAdmin ?? false))) {
+        socket.emit("error", { message: "Only moderators can unmute members." });
+        return;
+      }
+      roomMutes.get(roomId)?.delete(targetUserId);
+      io.to(roomId).emit("mutesUpdated", { roomId, mutedUserIds: activeMutedIds(roomId) });
+      for (const sid of userSockets.get(targetUserId) ?? []) io.to(sid).emit("youMuted", { roomId, until: null });
+    } catch (err) { console.error("[unmuteUser]", err); }
   });
 });
 
@@ -5521,6 +5817,27 @@ async function start() {
     console.log("[DB] Room stanceCooldown column ready");
   } catch (e) {
     console.error("[DB] Room stanceCooldown column setup failed:", e);
+  }
+
+  // Moderation: per-room moderators + slow mode + room lock. RoomModerator is its
+  // own table because public rooms have no RoomMember row to carry a role.
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "RoomModerator" (
+        "id"        TEXT         NOT NULL,
+        "roomId"    TEXT         NOT NULL,
+        "userId"    TEXT         NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "RoomModerator_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RoomModerator_roomId_userId_key" ON "RoomModerator"("roomId", "userId")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "RoomModerator_roomId_idx" ON "RoomModerator"("roomId")`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "slowModeSeconds" INTEGER NOT NULL DEFAULT 0`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "isLocked" BOOLEAN NOT NULL DEFAULT false`);
+    console.log("[DB] Moderation (moderators, slow mode, lock) ready");
+  } catch (e) {
+    console.error("[DB] Moderation setup failed:", e);
   }
 
   try {

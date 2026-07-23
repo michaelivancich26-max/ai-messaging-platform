@@ -4,17 +4,19 @@ import { useState, useEffect } from "react";
 import ConfirmModal from "./ConfirmModal";
 import { api } from "@/lib/api";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { ShieldCheck, ShieldOff, VolumeX, Volume2, Timer, Lock } from "@/lib/icons";
 
 interface Member { userId: string; username: string; avatarUrl?: string | null; role?: string; }
 interface RoomMeta {
   id: string; name: string; description: string | null; proposition: string | null; isPrivate: boolean;
   maxMembers: number | null; creatorId: string | null; aiPersona: string | null; stances?: string[] | null;
   isOpinionated?: boolean; stanceCooldown?: number; isFishbowl?: boolean; fishbowlSeats?: number | null;
+  slowModeSeconds?: number; isLocked?: boolean; moderatorIds?: string[];
 }
 interface Props {
   open: boolean;
   onClose: () => void;
-  tab?: "room" | "settings" | "ai";
+  tab?: "room" | "settings" | "ai" | "moderation";
   roomId: string;
   meta: RoomMeta | null;
   onlineMembers: Member[];
@@ -26,6 +28,18 @@ interface Props {
   onDelete?: () => void;
   onGrantSeat?: (userId: string) => void;
   onRevokeSeat?: (userId: string) => void;
+  // Moderation
+  moderatorIds?: string[];
+  mutedUserIds?: string[];
+  canModerate?: boolean;
+  slowModeSeconds?: number;
+  isLocked?: boolean;
+  onPromoteModerator?: (userId: string) => void;
+  onDemoteModerator?: (userId: string) => void;
+  onMute?: (userId: string, minutes: number) => void;
+  onUnmute?: (userId: string) => void;
+  onSetSlowMode?: (seconds: number) => void;
+  onSetLock?: (locked: boolean) => void;
 }
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -35,9 +49,17 @@ export default function RoomPanel({
   open, onClose, tab: initialTab = "room",
   roomId, meta, onlineMembers, currentUserId, isOwner, isAdmin,
   onKick, onMetaUpdate, onDelete, onGrantSeat, onRevokeSeat,
+  moderatorIds = [], mutedUserIds = [], canModerate = false,
+  slowModeSeconds = 0, isLocked = false,
+  onPromoteModerator, onDemoteModerator, onMute, onUnmute, onSetSlowMode, onSetLock,
 }: Props) {
   const canEdit = isOwner || isAdmin;
-  const [tab, setTab] = useState<"room" | "settings" | "ai">(initialTab);
+  // `canModerate` is already scoped by the page to moderatable rooms (not DMs or
+  // match rooms) and to owner/admin/moderator. Trust it — don't widen it here.
+  const canMod = canModerate;                           // may wield moderation powers
+  const canAppoint = canMod && (isOwner || isAdmin);    // may appoint/remove moderators (owner/admin only)
+  const [tab, setTab] = useState<"room" | "settings" | "ai" | "moderation">(initialTab);
+  const [muteTarget, setMuteTarget] = useState<Member | null>(null);
 
   const [editDesc, setEditDesc] = useState(meta?.description ?? "");
   const [editProposition, setEditProposition] = useState(meta?.proposition ?? "");
@@ -105,6 +127,8 @@ export default function RoomPanel({
 
   const tabs = [
     { id: "room" as const, label: "Room" },
+    // Moderation controls (slow mode, lock) are open to moderators, not just the owner.
+    ...(canMod ? [{ id: "moderation" as const, label: "Moderation" }] : []),
     ...(canEdit ? [{ id: "settings" as const, label: "Settings" }] : []),
     // The AI tab's body is entirely owner/admin-only, so hide the tab for others
     // rather than showing them a blank pane.
@@ -176,7 +200,14 @@ export default function RoomPanel({
                 const isFishbowl = meta?.isFishbowl;
                 const participants = isFishbowl ? onlineMembers.filter(m => m.role !== "SPECTATOR") : onlineMembers;
                 const spectators = isFishbowl ? onlineMembers.filter(m => m.role === "SPECTATOR") : [];
-                const MemberRow = ({ m }: { m: Member }) => (
+                const MemberRow = ({ m }: { m: Member }) => {
+                  const targetIsOwner = m.userId === meta?.creatorId;
+                  const targetIsMod = moderatorIds.includes(m.userId);
+                  const targetMuted = mutedUserIds.includes(m.userId);
+                  // Moderators may act on ordinary members; only the owner/admin may act
+                  // on the owner or on a fellow moderator. Mirrors the server's guard.
+                  const mayActOnTarget = canMod && m.userId !== currentUserId && !targetIsOwner && (canAppoint || !targetIsMod);
+                  return (
                   <li key={m.userId} className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="h-1.5 w-1.5 rounded-full bg-brand-green shrink-0" />
@@ -186,30 +217,69 @@ export default function RoomPanel({
                       }
                       <span className="text-xs text-gray-800 dark:text-gray-200 truncate">{m.username}</span>
                       {m.userId === currentUserId && <span className="text-[11px] text-gray-500 dark:text-gray-400 shrink-0">(you)</span>}
+                      {targetIsOwner ? (
+                        <span className="shrink-0 rounded-full bg-gray-100 dark:bg-gray-800 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">owner</span>
+                      ) : targetIsMod ? (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-brand-green/15 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider text-brand-green-ink dark:text-brand-green">
+                          <ShieldCheck className="h-2.5 w-2.5" /> mod
+                        </span>
+                      ) : null}
+                      {targetMuted && (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                          <VolumeX className="h-2.5 w-2.5" /> muted
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 shrink-0 ml-2">
-                      {isFishbowl && canEdit && m.userId !== currentUserId && (
+                    <div className="flex items-center gap-0.5 shrink-0 ml-2">
+                      {isFishbowl && canMod && m.userId !== currentUserId && (
                         m.role === "SPECTATOR" ? (
-                          <button onClick={() => onGrantSeat?.(m.userId)}
+                          <button onClick={() => onGrantSeat?.(m.userId)} title="Grant seat" aria-label={`Grant seat to ${m.username}`}
                             className="rounded px-1.5 py-0.5 text-[11px] font-medium text-brand-green-ink dark:text-brand-green hover:bg-brand-green/10 transition-colors">
                             grant seat
                           </button>
-                        ) : (
-                          <button onClick={() => onRevokeSeat?.(m.userId)}
+                        ) : mayActOnTarget ? (
+                          <button onClick={() => onRevokeSeat?.(m.userId)} title="Move to spectators" aria-label={`Move ${m.username} to spectators`}
                             className="rounded px-1.5 py-0.5 text-[11px] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
                             spectate
                           </button>
+                        ) : null
+                      )}
+                      {canAppoint && m.userId !== currentUserId && !targetIsOwner && (
+                        targetIsMod ? (
+                          <button onClick={() => onDemoteModerator?.(m.userId)} title="Remove moderator" aria-label={`Remove ${m.username} as moderator`}
+                            className="rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
+                            <ShieldOff className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button onClick={() => onPromoteModerator?.(m.userId)} title="Make moderator" aria-label={`Make ${m.username} a moderator`}
+                            className="rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-brand-green/10 hover:text-brand-green-ink dark:hover:text-brand-green transition-colors">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                          </button>
                         )
                       )}
-                      {canEdit && m.userId !== currentUserId && (
-                        <button onClick={() => setConfirmKick(m)}
+                      {mayActOnTarget && (
+                        targetMuted ? (
+                          <button onClick={() => onUnmute?.(m.userId)} title="Unmute" aria-label={`Unmute ${m.username}`}
+                            className="rounded p-1 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors">
+                            <Volume2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button onClick={() => setMuteTarget(m)} title="Mute" aria-label={`Mute ${m.username}`}
+                            className="rounded p-1 text-gray-500 dark:text-gray-400 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+                            <VolumeX className="h-3.5 w-3.5" />
+                          </button>
+                        )
+                      )}
+                      {mayActOnTarget && (
+                        <button onClick={() => setConfirmKick(m)} title="Kick" aria-label={`Kick ${m.username}`}
                           className="rounded px-1.5 py-0.5 text-[11px] text-gray-500 dark:text-gray-400 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                           kick
                         </button>
                       )}
                     </div>
                   </li>
-                );
+                  );
+                };
                 return (
                   <div className="space-y-3">
                     <div>
@@ -237,6 +307,51 @@ export default function RoomPanel({
                   </div>
                 );
               })()}
+            </div>
+          )}
+
+          {/* ── Moderation tab ── */}
+          {tab === "moderation" && canMod && (
+            <div className="px-4 py-3 space-y-3">
+              <p className="text-[11px] text-gray-500 dark:text-gray-400">Promote, mute, or kick individual members from the <span className="font-semibold">Room</span> tab. The controls below apply to the whole room.</p>
+
+              {/* Slow mode */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50 px-3 py-2.5">
+                <div className="mb-2 flex items-center gap-2">
+                  <Timer className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-800 dark:text-gray-200">Slow mode</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Minimum time between each member&rsquo;s messages</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[0, 5, 10, 30, 60, 300].map(s => (
+                    <button key={s} onClick={() => onSetSlowMode?.(s)} aria-pressed={slowModeSeconds === s}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
+                        slowModeSeconds === s
+                          ? "bg-brand-green text-white"
+                          : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                      }`}>
+                      {s === 0 ? "Off" : s < 60 ? `${s}s` : `${s / 60}m`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Room lock */}
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50 px-3 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Lock className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-800 dark:text-gray-200">Lock room</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">Only moderators can post while locked</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => onSetLock?.(!isLocked)} aria-pressed={isLocked} aria-label="Lock room"
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${isLocked ? "bg-brand-green" : "bg-gray-200 dark:bg-gray-700"}`}>
+                  <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${isLocked ? "translate-x-4" : "translate-x-0"}`} />
+                </button>
+              </div>
             </div>
           )}
 
@@ -414,6 +529,26 @@ export default function RoomPanel({
           confirmLabel="Delete room"
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)} />
+      )}
+
+      {muteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setMuteTarget(null)}>
+          <div role="dialog" aria-modal="true" aria-label={`Mute ${muteTarget.username}`}
+            className="relative w-full max-w-xs mx-4 rounded-2xl bg-white dark:bg-gray-900 ring-1 ring-gray-200 dark:ring-gray-800 shadow-elevated p-5 animate-fadeIn"
+            onClick={e => e.stopPropagation()}>
+            <p className="font-display text-sm font-bold text-gray-900 dark:text-gray-100 mb-1">Mute {muteTarget.username}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">They won&rsquo;t be able to send messages until the timeout ends or a moderator unmutes them.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[{ label: "5 minutes", m: 5 }, { label: "1 hour", m: 60 }, { label: "24 hours", m: 1440 }, { label: "Until unmuted", m: 0 }].map(opt => (
+                <button key={opt.m} onClick={() => { onMute?.(muteTarget.userId, opt.m); setMuteTarget(null); }}
+                  className="rounded-xl border border-gray-300 dark:border-gray-700 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-amber-500/10 hover:border-amber-400 transition-colors">
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setMuteTarget(null)} className="mt-3 w-full rounded-xl py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+          </div>
+        </div>
       )}
     </div>
   );
