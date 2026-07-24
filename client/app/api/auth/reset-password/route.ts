@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { checkLimits, clientIp } from "@/lib/rateLimit";
 
 const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
+  // Throttle reset-token guessing (each valid-length try runs a bcrypt-12 hash).
+  const limited = checkLimits([[`reset:${clientIp(req)}`, 10, 60_000]], "Too many attempts. Please wait a minute.");
+  if (limited) return limited;
+
   const { token, password } = await req.json();
 
   if (!token || !password || password.length < 8) {

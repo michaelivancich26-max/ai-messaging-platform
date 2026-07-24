@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { rateLimit, clientIp } from "@/lib/rateLimit";
 
 const prisma = new PrismaClient();
 
@@ -9,6 +10,10 @@ export async function GET(req: Request) {
 
   if (!token) {
     return NextResponse.redirect(`${origin}/verify-email?status=invalid`);
+  }
+  // Throttle token guessing over the query string (each try is a DB lookup + write).
+  if (!rateLimit(`verify:${clientIp(req)}`, 20, 60_000).ok) {
+    return NextResponse.redirect(`${origin}/verify-email?status=expired`);
   }
 
   const record = await prisma.emailVerificationToken.findUnique({ where: { token } });

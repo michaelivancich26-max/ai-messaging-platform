@@ -24,6 +24,7 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);   // transient (rate-limit) banner
   const bottomRef = useRef<HTMLDivElement>(null);
   const roomNameRef = useRef<string | null>(null);
 
@@ -89,15 +90,30 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
       if (msg.userId !== userId) markRead();
     };
     const onError = (e: { message: string }) => setError(e.message);
+    // The server dropped an over-limit event and will send no echo. For a dropped
+    // send, roll back the optimistic bubble so it doesn't look delivered, and show a
+    // transient notice (not the full-screen error).
+    const onRateLimited = ({ event }: { event: string }) => {
+      if (event === "sendMessage") {
+        setMessages((prev) => {
+          for (let i = prev.length - 1; i >= 0; i--) if (prev[i].id.startsWith("temp-")) return prev.filter((_, j) => j !== i);
+          return prev;
+        });
+      }
+      setNotice("You're sending too fast — that message wasn't sent.");
+      setTimeout(() => setNotice(null), 4000);
+    };
 
     socket.on("history", onHistory);
     socket.on("message", onMessage);
     socket.on("error", onError);
+    socket.on("rateLimited", onRateLimited);
     return () => {
       socket.off("connect", join);
       socket.off("history", onHistory);
       socket.off("message", onMessage);
       socket.off("error", onError);
+      socket.off("rateLimited", onRateLimited);
     };
   }, [roomName, roomDbId, userId, username, markRead]);
 
@@ -178,6 +194,9 @@ export default function DMThread({ userId, username, partnerUsername }: { userId
 
       {/* Composer */}
       <div className="shrink-0 border-t border-gray-200 dark:border-gray-800 p-3 pb-safe">
+        {notice && (
+          <p role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">{notice}</p>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             value={draft}

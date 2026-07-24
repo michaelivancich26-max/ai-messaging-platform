@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import { PrismaClient } from "@prisma/client";
 import { generateToken, expiresAt } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
+import { checkLimits } from "@/lib/rateLimit";
 
 const prisma = new PrismaClient();
 
@@ -13,6 +14,11 @@ export async function PATCH(req: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // A verification email is sent to the new (attacker-controlled) address, so cap
+  // email changes per account to prevent using it as an email-bomb.
+  const limited = checkLimits([[`emailchange:${session.user.email}`, 3, 3_600_000]],
+    "Too many email changes — please try again later.");
+  if (limited) return limited;
 
   const { email } = await req.json();
   if (!email || typeof email !== "string") {

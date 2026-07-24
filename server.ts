@@ -42,6 +42,20 @@ app.use(rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHea
 const writeLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
 app.use((req, _res, next) => { if (req.method !== "GET") return writeLimiter(req, _res, next); next(); });
 
+// Per-USER limiters for specific expensive/abusable routes, layered on top of the
+// global backstops above. Keyed by the verified caller id (these routes are all
+// behind the /api auth guard, so req.actor is set by the time they run); IP is only
+// a defensive fallback. `validate: false` since we supply our own key.
+const byUser = (req: Request): string => (req.actor?.id ?? req.ip ?? "anon");
+const mkLimiter = (windowMs: number, max: number, msg: string) =>
+  rateLimit({ windowMs, max, keyGenerator: byUser, validate: false, standardHeaders: true, legacyHeaders: false, message: { error: msg } });
+const aiRouteLimiter = mkLimiter(60_000, 12, "You're doing that too fast — wait a moment.");   // paid-AI judge/kick routes
+const trendingLimiter = mkLimiter(60_000, 30, "You're refreshing too fast — wait a moment.");  // its own bucket: a cached lobby fetch must not drain match-completion budget
+const passwordLimiter = mkLimiter(60_000, 8, "Too many attempts. Wait a minute and try again.");
+const createLimiter = mkLimiter(60_000, 12, "You're creating things too fast. Slow down.");
+const heavyReadLimiter = mkLimiter(60_000, 60, "Slow down — too many requests.");
+const exportLimiter = mkLimiter(15 * 60_000, 5, "Data export is limited to a few times per 15 minutes.");
+
 // Open the caller's session token, if they sent one, and hang the result off
 // the request. This only ESTABLISHES identity — it doesn't require it, because
 // a handful of routes (login, register, public profiles) are legitimately
@@ -605,8 +619,98 @@ async function userMayAccessRoom(
   return true;
 }
 
+// ── Socket rate limiting ─────────────────────────────────────────────────────
+// Socket.IO bypasses express-rate-limit (io is on the raw httpServer), so every
+// realtime event was unthrottled — including the paid-AI paths. A per-USER token
+// bucket (keyed by verified socketUser.id, so extra sockets/reconnects don't
+// multiply the allowance) caps each event class. In memory, like presence: the
+// server is single-instance. Buckets replenish over time; an idle sweep prunes them.
+interface TokenBucket { tokens: number; last: number; }
+const socketBuckets = new Map<string, TokenBucket>();
+function bucketAllow(key: string, capacity: number, refillPerSec: number): boolean {
+  const now = Date.now();
+  let b = socketBuckets.get(key);
+  if (!b) { b = { tokens: capacity, last: now }; socketBuckets.set(key, b); }
+  b.tokens = Math.min(capacity, b.tokens + ((now - b.last) / 1000) * refillPerSec);
+  b.last = now;
+  if (b.tokens >= 1) { b.tokens -= 1; return true; }
+  return false;
+}
+// Per-tier { capacity = burst, refill = tokens/sec (≈ sustained rate) }.
+const SOCKET_TIERS: Record<string, { cap: number; refill: number }> = {
+  ai:    { cap: 5,  refill: 6 / 60 },    // stakeClaim / challengeClaim / summarize — paid AI, ~6/min
+  msg:   { cap: 12, refill: 30 / 60 },   // sendMessage — fires a paid claim-eval per message; burst 12 then ~30/min
+  write: { cap: 20, refill: 30 / 60 },   // polls, reactions, edits, positions, invites, mod actions, joins — ~30/min
+  light: { cap: 30, refill: 3 },         // typing, join*, floor/pass, rapid toggles — ~180/min
+};
+const SOCKET_GLOBAL = { cap: 40, refill: 15 };   // overall backstop across all events, ~900/min
+const EVENT_TIER: Record<string, keyof typeof SOCKET_TIERS> = {
+  sendMessage: "msg",
+  stakeClaim: "ai", challengeClaim: "ai", summarize: "ai",
+  createPoll: "write", votePoll: "write", closePoll: "write",
+  addReaction: "write", editMessage: "write", deleteMessage: "write",
+  setPosition: "write", setDebateMode: "write", setRoomDefaultMode: "write", setStances: "write",
+  setSlowMode: "write", setRoomLock: "write", muteUser: "write", unmuteUser: "write",
+  promoteModerator: "write", demoteModerator: "write",
+  kick: "write", grantSeat: "write", revokeSeat: "write", requestSeat: "write",
+  sendInvite: "write", respondInvite: "write",
+  rapidQueueJoin: "write",
+  typing: "light", stopTyping: "light", claimFloor: "light", passTurn: "light",
+  rapidMoveOn: "light", rapidMoveOnCancel: "light", rapidQueueLeave: "light",
+};
+// Connection-critical: a client re-emits these on every (re)connect to re-attach to
+// its room/channel, and a dropped one silently detaches the user (they stop getting
+// messages until refresh). So they skip the per-tier limit and ride only the global
+// backstop — a legit reconnect emits ~3 of them and never trips it, while a genuine
+// flood still hits the global ceiling. Password brute-force is braked separately.
+const JOIN_EVENTS = new Set(["joinRoom", "joinChannel", "joinSidebar"]);
+// Sweep buckets untouched for 15 min (fully replenished, so dropping them can't
+// grant a burst) to bound memory.
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60_000;
+  for (const [k, b] of socketBuckets.entries()) if (b.last < cutoff) socketBuckets.delete(k);
+}, 5 * 60_000).unref?.();
+
+// Private-room password brute-force brake: after N wrong guesses per (user, room)
+// in a window, refuse further attempts (and skip the CPU-costly bcrypt.compare)
+// until it lapses. Shared by socket joinRoom and REST /api/rooms/:name/auth.
+const pwFails = new Map<string, { count: number; last: number }>();
+const PW_WINDOW_MS = 60_000;
+const PW_MAX_FAILS = 6;
+function pwBlocked(userId: string, roomName: string): boolean {
+  const e = pwFails.get(`${userId}:${roomName}`);
+  if (!e) return false;
+  if (Date.now() - e.last > PW_WINDOW_MS) { pwFails.delete(`${userId}:${roomName}`); return false; }
+  return e.count >= PW_MAX_FAILS;
+}
+function pwRecordFail(userId: string, roomName: string): void {
+  const key = `${userId}:${roomName}`;
+  const e = pwFails.get(key);
+  const now = Date.now();
+  if (!e || now - e.last > PW_WINDOW_MS) pwFails.set(key, { count: 1, last: now });
+  else { e.count++; e.last = now; }
+}
+function pwClear(userId: string, roomName: string): void { pwFails.delete(`${userId}:${roomName}`); }
+
 io.on("connection", (socket) => {
   const socketUser = (socket as any).user as { id: string; username: string };
+
+  // Rate-limit every inbound event before it reaches a handler. Global backstop
+  // first, then the per-event-class bucket. On exceed, drop the event (don't call
+  // next) and tell the client so it can back off / clear any pending spinner.
+  socket.use(([event, ..._args]: [string, ...any[]], next: (err?: Error) => void) => {
+    const uid = socketUser.id;
+    if (!bucketAllow(`g:${uid}`, SOCKET_GLOBAL.cap, SOCKET_GLOBAL.refill)) {
+      socket.emit("rateLimited", { event, scope: "global" }); return;
+    }
+    if (JOIN_EVENTS.has(event)) return next();   // connection-critical — global backstop only
+    const tierName = EVENT_TIER[event] ?? "write";
+    const tier = SOCKET_TIERS[tierName];
+    if (!bucketAllow(`${tierName}:${uid}`, tier.cap, tier.refill)) {
+      socket.emit("rateLimited", { event, scope: tierName }); return;
+    }
+    next();
+  });
 
   // Register socket for notification delivery
   if (!userSockets.has(socketUser.id)) userSockets.set(socketUser.id, new Set());
@@ -729,8 +833,10 @@ io.on("connection", (socket) => {
         const isCreator = room.creatorId === socketUser.id;
         if (!isAdmin && !isCreator) {
           if (!password) { socket.emit("error", { message: "Password required." }); return; }
+          if (pwBlocked(socketUser.id, roomName)) { socket.emit("error", { message: "Too many attempts. Wait a minute and try again." }); return; }
           const valid = await bcrypt.compare(password, room.password);
-          if (!valid) { socket.emit("error", { message: "Incorrect password." }); return; }
+          if (!valid) { pwRecordFail(socketUser.id, roomName); socket.emit("error", { message: "Incorrect password." }); return; }
+          pwClear(socketUser.id, roomName);
         }
       }
       // A recently kicked user can't walk straight back in (owner/admin exempt).
@@ -1486,6 +1592,15 @@ io.on("connection", (socket) => {
 
   socket.on("summarize", async ({ roomId, since, channelId }: { roomId: string; since: string | null; channelId: string | null }) => {
     try {
+      // Membership gate: summarize takes roomId straight from the payload and runs a
+      // paid AI summarization, so without this any socket could summarize any room.
+      const room = await prisma.room.findUnique({ where: { name: roomId } });
+      if (!room) { socket.emit("summarizeDone"); return; }
+      if (!(await userMayAccessRoom(socketUser.id, socket.rooms, room as any))) {
+        socket.emit("error", { message: "You don't have access to this room." });
+        socket.emit("summarizeDone");
+        return;
+      }
       await summarizeConversation({ roomId, redis, io, prisma, since, channelId: channelId ?? null, socketId: socket.id });
     } catch (err) {
       console.error("[summarize]", err);
@@ -2236,9 +2351,9 @@ app.get("/api/rooms", async (_req, res) => {
 });
 
 // Lazy-load full image data for a specific message (history sends stubs)
-app.get("/api/messages/:id/image", async (req, res) => {
+app.get("/api/messages/:id/image", heavyReadLimiter, async (req, res) => {
   try {
-    const msg = await prisma.message.findUnique({ where: { id: req.params.id } });
+    const msg = await prisma.message.findUnique({ where: { id: req.params.id as string } });
     if (!msg || !msg.content.startsWith('{"type":"image"')) return res.status(404).json({ error: "Not found" });
     const parsed = JSON.parse(msg.content);
     res.json({ src: parsed.src, filename: parsed.filename });
@@ -2948,7 +3063,7 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
 // The internal Rapid paths (forfeitRapidRound, settleRapidOnBar) call
 // completeCompetitiveMatch directly rather than coming back through HTTP, so the
 // server can still settle a round nobody is left to settle.
-app.post("/api/competitive/complete", async (req, res) => {
+app.post("/api/competitive/complete", aiRouteLimiter, async (req, res) => {
   try {
     const { roomName, forcedWinner } = req.body as { roomName: string; forcedWinner?: string };
     if (!roomName) return res.status(400).json({ error: "roomName required" });
@@ -4011,7 +4126,7 @@ app.get("/api/team/challenges/:id", async (req, res) => {
 });
 
 // POST /api/team/complete — team-aware AI judge + ELO (idempotent)
-app.post("/api/team/complete", async (req, res) => {
+app.post("/api/team/complete", aiRouteLimiter, async (req, res) => {
   try {
     const { roomName, forfeitUserId } = req.body as { roomName: string; forfeitUserId?: string };
     if (!roomName) return res.status(400).json({ error: "roomName required" });
@@ -4356,7 +4471,7 @@ Headlines:\n${list}`;
   } catch { return []; }
 }
 
-app.get("/api/trending", async (_req, res) => {
+app.get("/api/trending", trendingLimiter, async (_req, res) => {
   try {
     if (trendingCache && Date.now() - trendingCache.at < TRENDING_TTL) {
       return res.json({ topics: trendingCache.topics });
@@ -4562,7 +4677,7 @@ app.get("/api/arena-result/:roomName", async (req, res) => {
 });
 
 // POST /api/arena-judge — idempotent: returns existing result if already judged
-app.post("/api/arena-judge", async (req, res) => {
+app.post("/api/arena-judge", aiRouteLimiter, async (req, res) => {
   try {
     const userId = actorId(req)!;
     const { roomName, forfeit = false, forcedWinner } = req.body as {
@@ -4776,10 +4891,10 @@ async function buildProfilePayload(
 // owner, it's to stop handing a stranger the account fields. This used to pass
 // includePrivate: true unconditionally, which returned email and emailVerified
 // for any id an authenticated caller cared to enumerate.
-app.get("/api/users/:id/profile", async (req, res) => {
+app.get("/api/users/:id/profile", heavyReadLimiter, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.params.id },
+      where: { id: req.params.id as string },
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -4791,10 +4906,10 @@ app.get("/api/users/:id/profile", async (req, res) => {
 });
 
 // GET /api/users/by-name/:username/profile — public profile (no account fields)
-app.get("/api/users/by-name/:username/profile", async (req, res) => {
+app.get("/api/users/by-name/:username/profile", heavyReadLimiter, async (req, res) => {
   try {
     const user = await prisma.user.findFirst({
-      where: { username: { equals: req.params.username, mode: "insensitive" } },
+      where: { username: { equals: req.params.username as string, mode: "insensitive" } },
       select: { id: true, username: true, email: true, emailVerified: true, bio: true, avatarUrl: true, createdAt: true },
     });
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -4880,7 +4995,7 @@ app.patch("/api/users/:id/profile", async (req, res) => {
   }
 });
 
-app.get("/api/users", async (req, res) => {
+app.get("/api/users", heavyReadLimiter, async (req, res) => {
   const excludeId = req.query.excludeId as string | undefined;
   const users = await prisma.user.findMany({
     where: excludeId ? { id: { not: excludeId } } : {},
@@ -5008,7 +5123,7 @@ app.post("/api/dm/read", async (req, res) => {
 });
 
 // POST /api/bot-rooms — create a private 1v1 debate room against a bot
-app.post("/api/bot-rooms", async (req, res) => {
+app.post("/api/bot-rooms", createLimiter, async (req, res) => {
   const userId = actorId(req)!;
   const { botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {
     botId: string; winCondition?: { topic?: string; propositionId?: string; [k: string]: unknown };
@@ -5066,7 +5181,7 @@ app.post("/api/bot-rooms", async (req, res) => {
 });
 
 // POST /api/bot-kick — trigger bot's opening message when botFirst is set
-app.post("/api/bot-kick", async (req, res) => {
+app.post("/api/bot-kick", aiRouteLimiter, async (req, res) => {
   const userId = actorId(req);
   const { roomName } = req.body as { roomName: string };
   if (!roomName) { res.status(400).json({ error: "roomName required" }); return; }
@@ -5100,7 +5215,7 @@ app.post("/api/bot-kick", async (req, res) => {
   }
 });
 
-app.post("/api/rooms", async (req, res) => {
+app.post("/api/rooms", createLimiter, async (req, res) => {
   const name = req.body?.name?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40);
   // The owner is whoever is signed in — never a client-supplied id. Trusting
   // req.body.creatorId let a caller mint a room owned by (and auto-joining) an
@@ -5437,8 +5552,8 @@ app.delete("/api/rooms/:name/channels/:id", async (req, res) => {
   }
 });
 
-app.post("/api/rooms/:name/auth", async (req, res) => {
-  const { name } = req.params;
+app.post("/api/rooms/:name/auth", passwordLimiter, async (req, res) => {
+  const name = req.params.name as string;
   const userId = actorId(req);
   const { password } = req.body as { password: string };
   if (!password) return res.status(400).json({ error: "Password required" });
@@ -5449,9 +5564,14 @@ app.post("/api/rooms/:name/auth", async (req, res) => {
       if (userId) await prisma.roomMember.upsert({ where: { userId_roomId: { userId, roomId: room.id } }, update: {}, create: { userId, roomId: room.id } });
       return res.json({ ok: true });
     }
+    // Per-(user,room) brute-force brake, on top of the per-user passwordLimiter.
+    if (userId && pwBlocked(userId, name)) return res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
     const valid = await bcrypt.compare(password, room.password);
     if (valid && userId) {
+      pwClear(userId, name);
       await prisma.roomMember.upsert({ where: { userId_roomId: { userId, roomId: room.id } }, update: {}, create: { userId, roomId: room.id } });
+    } else if (!valid && userId) {
+      pwRecordFail(userId, name);
     }
     res.json({ ok: valid });
   } catch {
@@ -5608,7 +5728,7 @@ app.get("/api/channels/:id/polls", async (req, res) => {
 });
 
 // GET /api/channels/:id/claims — all claims for a channel with credibility scores
-app.get("/api/channels/:id/claims", async (req, res) => {
+app.get("/api/channels/:id/claims", heavyReadLimiter, async (req, res) => {
   try {
     const claims = await (prisma as any).claim.findMany({
       where: { channelId: req.params.id },
@@ -5718,7 +5838,7 @@ app.post("/api/legal/accept", async (req, res) => {
 
 // ── Data rights (GDPR/CCPA-style access & erasure) ──────────────────────────
 // Download a machine-readable copy of the signed-in user's data.
-app.get("/api/me/export", async (req, res) => {
+app.get("/api/me/export", exportLimiter, async (req, res) => {
   const userId = actorId(req);
   if (!userId) return res.status(401).json({ error: "Not signed in" });
   try {

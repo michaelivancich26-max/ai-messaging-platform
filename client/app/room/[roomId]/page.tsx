@@ -207,6 +207,13 @@ export default function RoomPage() {
     if (socket.connected) rejoin();
     socket.on("connect_error", (err) => console.error("[Socket] connect_error", err.message));
     socket.on("error", ({ message }: { message: string }) => setToast(message));
+    socket.on("rateLimited", ({ event }: { event: string; scope: string }) => {
+      // The server dropped this event (too fast) and will send no response. Surface
+      // it and undo any optimistic UI so the sender doesn't see a false success.
+      if (event === "summarize") { setToast("Slow down — try summarizing again in a moment."); setSummarizing(false); return; }
+      if (event === "sendMessage") { setToast("You're sending too fast — that message wasn't sent."); dropLastOptimistic(); return; }
+      setToast("You're doing that too fast — slow down a moment.");
+    });
     socket.on("roomDeleted", () => router.push("/lobby"));
     socket.on("kicked", () => router.push("/lobby"));
     socket.on("inviteSent", ({ targetUsername }: { targetUsername?: string }) => {
@@ -508,6 +515,7 @@ export default function RoomPage() {
       socket.off("messageDeleted");
       socket.off("connect_error");
       socket.off("error");
+      socket.off("rateLimited");
       socket.off("roomDeleted");
       socket.off("kicked");
       socket.off("inviteSent");

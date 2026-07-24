@@ -4,10 +4,18 @@ import { PrismaClient } from "@prisma/client";
 import { generateToken, expiresAt } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
 import { AGREEMENTS_VERSION } from "@/lib/legal";
+import { checkLimits, clientIp } from "@/lib/rateLimit";
 
 const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
+  // Throttle sign-ups per IP — a scripted flood mints accounts, burns email quota,
+  // and spends a bcrypt-12 hash per call.
+  const ip = clientIp(req);
+  const limited = checkLimits([[`register:m:${ip}`, 5, 60_000], [`register:h:${ip}`, 20, 3_600_000]],
+    "Too many sign-up attempts. Please wait a bit and try again.");
+  if (limited) return limited;
+
   const { username, email, password, agreed } = await req.json();
 
   if (!username || !email || !password) {

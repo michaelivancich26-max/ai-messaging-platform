@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { checkLimits } from "@/lib/rateLimit";
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,9 @@ export async function POST(req: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  // Each call runs two bcrypt-12 ops; cap to prevent CPU-exhaustion churn.
+  const limited = checkLimits([[`chpw:${session.user.email}`, 5, 60_000]], "Too many attempts. Please wait a minute.");
+  if (limited) return limited;
 
   const { currentPassword, newPassword } = await req.json();
   if (!currentPassword || !newPassword) {
