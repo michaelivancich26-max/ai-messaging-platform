@@ -2,6 +2,8 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Layers } from "lucide-react";
 import Deck from "@/components/Deck";
 
 export default function DeckPage() {
@@ -21,6 +23,9 @@ export default function DeckPage() {
           Take a side on each claim. We use these to find you someone who genuinely
           disagrees — so you argue what you actually think, not a side you were dealt.
         </p>
+        <Link href="/beliefs" className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+          <Layers className="h-3.5 w-3.5" /> See your Belief Map
+        </Link>
       </div>
       <Deck userId={userId} />
     </div>

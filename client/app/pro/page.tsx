@@ -13,8 +13,8 @@ const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 // chip so we never imply a paid feature works before it does.
 const BENEFITS: { Icon: LucideIcon; title: string; blurb: string; live: boolean }[] = [
   { Icon: Dumbbell, title: "Unlimited Arena practice", blurb: "No daily cap on matches against the AI opponents.", live: true },
-  { Icon: Sparkles, title: "AI post-match coach", blurb: "A breakdown after every match — what landed, what to fix, the rebuttal you missed.", live: false },
-  { Icon: Layers, title: "Belief Map", blurb: "See where you stand across topics, and how your positions have shifted over time.", live: false },
+  { Icon: Sparkles, title: "AI post-match coach", blurb: "A breakdown after every match — what landed, what to fix, the rebuttal you missed.", live: true },
+  { Icon: Layers, title: "Belief Map", blurb: "See where you stand across topics, and how your positions have shifted over time.", live: true },
   { Icon: Bot, title: "Custom AI opponents", blurb: "Describe an opponent and the AI plays that persona.", live: false },
   { Icon: BarChart3, title: "Advanced analytics", blurb: "Rubric trends, win-rate by topic, head-to-head records, rank history.", live: false },
   { Icon: Trophy, title: "Tournaments & private rooms", blurb: "Host bracketed tournaments and large or private debate rooms.", live: false },

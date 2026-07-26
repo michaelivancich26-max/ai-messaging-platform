@@ -13,7 +13,7 @@ import { BOTS, type Bot } from "@/lib/bots";
 import {
   Home, Swords, Trophy, Zap, MessagesSquare, GraduationCap, BookOpen,
   Puzzle, Dumbbell, Star, ChevronRight, Radio, Globe, Settings, MessageSquare,
-  Users, Sun, Moon, Shield, LogOut, Sparkles, type LucideIcon,
+  Users, Sun, Moon, Shield, LogOut, Sparkles, Layers, type LucideIcon,
 } from "lucide-react";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -343,6 +343,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
                     <Settings className="h-4 w-4" />
                     Edit profile
+                  </button>
+                  <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/beliefs"); }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+                    <Layers className="h-4 w-4" />
+                    Belief Map
                   </button>
                   <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/pro"); }}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40 transition-colors">

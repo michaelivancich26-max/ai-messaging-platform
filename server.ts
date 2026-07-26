@@ -3702,6 +3702,134 @@ app.post("/api/rapid/aftermath/:roomName", async (req, res) => {
   }
 });
 
+// ── Belief Map (Grounds Pro) ─────────────────────────────────────────────────
+// Where you stand, and how that has moved. Reads the two halves of the belief
+// layer together: "UserBelief" is current state (a destructive upsert, so it
+// only knows NOW), and "BeliefChange" is the append-only log of every move.
+//
+// Self-only by construction — every query is keyed on the caller's own id, so
+// there is no id parameter to tamper with. Pro-gated on a FRESH userIsPro read.
+//
+// Three honest gaps in the history, worth knowing before reading the numbers:
+// the FIRST position on a claim is never logged (recordBelief only writes a
+// change when a previous stance existed), skips in and out are excluded, and
+// deck "Back" corrections pass log=false. So `shifts` counts real recorded
+// movement, not "every edit ever" — it undercounts rather than inventing.
+app.get("/api/beliefs/map", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    if (!(await userIsPro(userId))) {
+      return res.status(402).json({ error: "The Belief Map is a Grounds Pro feature.", code: "pro_only" });
+    }
+
+    // Every COUNT is cast ::int and every AVG ::float8 — Postgres hands back
+    // bigint/numeric otherwise, and neither survives res.json.
+    const [totals, byCategory, claims, timeline, aftermath] = await Promise.all([
+      prisma.$queryRawUnsafe<{
+        positions: number; skipped: number; categories: number;
+        flips: number; shifts: number; firstPositionAt: Date | null;
+      }[]>(`
+        SELECT
+          (SELECT COUNT(*)::int FROM "UserBelief" WHERE "userId" = $1 AND stance <> 'skip')            AS positions,
+          (SELECT COUNT(*)::int FROM "UserBelief" WHERE "userId" = $1 AND stance =  'skip')            AS skipped,
+          (SELECT COUNT(DISTINCT p."categoryId")::int
+             FROM "UserBelief" b JOIN "Proposition" p ON p.id = b."propositionId"
+            WHERE b."userId" = $1 AND b.stance <> 'skip')                                              AS categories,
+          (SELECT COUNT(*)::int FROM "BeliefChange" WHERE "userId" = $1 AND "fromStance" <> "toStance") AS flips,
+          (SELECT COUNT(*)::int FROM "BeliefChange" WHERE "userId" = $1)                                AS shifts,
+          (SELECT MIN("createdAt") FROM "UserBelief" WHERE "userId" = $1)                               AS "firstPositionAt"
+      `, userId),
+
+      prisma.$queryRawUnsafe<{
+        categoryId: string; positions: number; agrees: number;
+        disagrees: number; strong: number; moved: number; lean: number | null;
+      }[]>(`
+        SELECT p."categoryId",
+               COUNT(*)::int                                      AS positions,
+               COUNT(*) FILTER (WHERE b.stance = 'agree')::int    AS agrees,
+               COUNT(*) FILTER (WHERE b.stance = 'disagree')::int AS disagrees,
+               COUNT(*) FILTER (WHERE b.confidence = 2)::int      AS strong,
+               COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM "BeliefChange" c
+                 WHERE c."userId" = b."userId" AND c."propositionId" = b."propositionId"))::int AS moved,
+               ROUND(AVG(CASE b.stance WHEN 'agree'    THEN  b.confidence
+                                       WHEN 'disagree' THEN -b.confidence END), 3)::float8      AS lean
+        FROM "UserBelief" b
+        JOIN "Proposition" p ON p.id = b."propositionId"
+        WHERE b."userId" = $1 AND b.stance <> 'skip'
+        GROUP BY p."categoryId"
+        ORDER BY positions DESC, p."categoryId"
+      `, userId),
+
+      prisma.$queryRawUnsafe<{
+        propositionId: string; text: string; categoryId: string; stance: string;
+        confidence: number | null; axis: number | null; changes: number;
+        createdAt: Date; updatedAt: Date;
+      }[]>(`
+        SELECT b."propositionId", p.text, p."categoryId", b.stance, b.confidence,
+               (CASE b.stance WHEN 'agree'    THEN  b.confidence
+                              WHEN 'disagree' THEN -b.confidence END)::int AS axis,
+               (SELECT COUNT(*)::int FROM "BeliefChange" c
+                 WHERE c."userId" = b."userId" AND c."propositionId" = b."propositionId") AS changes,
+               b."createdAt", b."updatedAt"
+        FROM "UserBelief" b
+        JOIN "Proposition" p ON p.id = b."propositionId"
+        WHERE b."userId" = $1 AND b.stance <> 'skip'
+        ORDER BY b."updatedAt" DESC
+        LIMIT 300
+      `, userId),
+
+      prisma.$queryRawUnsafe<{
+        id: string; propositionId: string; text: string; categoryId: string;
+        fromStance: string; toStance: string; fromConfidence: number | null;
+        toConfidence: number | null; flipped: boolean; inDebate: boolean; createdAt: Date;
+      }[]>(`
+        SELECT c.id, c."propositionId", p.text, p."categoryId",
+               c."fromStance", c."toStance", c."fromConfidence", c."toConfidence",
+               (c."fromStance" <> c."toStance") AS flipped,
+               (c."roomName" IS NOT NULL)       AS "inDebate",
+               c."createdAt"
+        FROM "BeliefChange" c
+        JOIN "Proposition" p ON p.id = c."propositionId"
+        WHERE c."userId" = $1
+        ORDER BY c."createdAt" DESC
+        LIMIT 100
+      `, userId),
+
+      // Held-your-ground vs moved, over the rounds where you were actually
+      // ASKED. "Answered but no BeliefChange for that room" is the only record
+      // that you debated and held — EXISTS rather than a join, because two
+      // changes sharing a roomName would otherwise fan the count out.
+      prisma.$queryRawUnsafe<{ answered: number; moved: number; flipped: number }[]>(`
+        SELECT COUNT(*)::int AS answered,
+               COUNT(*) FILTER (WHERE EXISTS (
+                 SELECT 1 FROM "BeliefChange" c
+                  WHERE c."userId" = a."userId" AND c."roomName" = a."roomName"))::int AS moved,
+               COUNT(*) FILTER (WHERE EXISTS (
+                 SELECT 1 FROM "BeliefChange" c
+                  WHERE c."userId" = a."userId" AND c."roomName" = a."roomName"
+                    AND c."fromStance" <> c."toStance"))::int AS flipped
+        FROM "RapidAftermathAnswered" a
+        WHERE a."userId" = $1
+      `, userId),
+    ]);
+
+    const t = totals[0] ?? { positions: 0, skipped: 0, categories: 0, flips: 0, shifts: 0, firstPositionAt: null };
+    const a = aftermath[0] ?? { answered: 0, moved: 0, flipped: 0 };
+
+    res.json({
+      totals: { ...t, gate: DECK_GATE },
+      aftermath: { ...a, held: a.answered - a.moved },
+      byCategory: byCategory.map((c) => ({ ...c, label: categoryLabel(c.categoryId), lean: c.lean ?? 0 })),
+      claims: claims.map((c) => ({ ...c, label: categoryLabel(c.categoryId) })),
+      timeline: timeline.map((c) => ({ ...c, label: categoryLabel(c.categoryId) })),
+    });
+  } catch (e) {
+    console.error("[GET /api/beliefs/map]", e);
+    res.status(500).json({ error: "Couldn't load your belief map." });
+  }
+});
+
 // ── Review ───────────────────────────────────────────────────────────────────
 // Generated claims land as drafts; nothing reaches the deck without a human.
 
