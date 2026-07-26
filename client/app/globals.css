@@ -50,6 +50,19 @@
   padding-top: env(safe-area-inset-top);
 }
 
+/* Prevent iOS Safari from auto-zooming into a focused form field — it does this
+   whenever the field's font-size is < 16px and never zooms back out, forcing a
+   manual pinch-zoom-out after every input. Keep text controls at 16px on touch
+   devices. Pinch-zoom itself stays enabled, so this doesn't regress accessibility. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+
 /* ── Typography baseline ───────────────────────────────────────────────── */
 @layer base {
   html {

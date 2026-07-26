@@ -31,6 +31,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // Fit content to the device width at 1x, and keep zoom enabled (no maximumScale /
+  // userScalable) so pinch-to-zoom still works for accessibility.
+  width: "device-width",
+  initialScale: 1,
   viewportFit: "cover",
   themeColor: "#ffffff",
   interactiveWidget: "resizes-content",
