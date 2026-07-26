@@ -1,12 +1,12 @@
 # Agent Handoff — Grounds for Debate / Grounds Pro
 
-Pick-up point as of commit `92f8b2a` on `main`. This doc is for another agent continuing the **Grounds Pro premium-tier** build. Read it before touching code — the "Traps" section will save you a broken deploy.
+Pick-up point as of commit `8187747` on `main`. This doc is for another agent continuing the **Grounds Pro premium-tier** build. Read it before touching code — the "Traps" section will save you a broken deploy.
 
 ---
 
 ## 0. TL;DR — what to do next
 
-The premium tier is being built **wave by wave**. **Waves 1–2 are shipped** (entitlement + Stripe billing + free Arena cap; AI post-match coach). The next task is **Wave 3 — the Belief Map** (a Pro-gated visualization of a user's deck positions and how they've shifted over time). See §6 for the full roadmap.
+The premium tier is being built **wave by wave**. **Waves 1–3 are shipped** (entitlement + Stripe billing + free Arena cap; AI post-match coach; the Belief Map). The next task is **Wave 4 — Arena practice tools + custom AI opponents**, which also needs `MatchCoach` added to the Arena bot-result screen. See §6 for the full roadmap.
 
 Working rhythm for every change: **build → typecheck both projects → validate any raw SQL against Docker Postgres (and/or `next build`) → adversarial-review workflow → fix findings → commit → push to `main`**. Ultracode is on, so orchestrate reviews via the Workflow tool and adversarially verify.
 
@@ -84,7 +84,13 @@ Node lives at `C:\Program Files\nodejs` (Windows / Git-Bash). Prepend it to PATH
 
 **Wave 2 — AI post-match coach:** `services/coach.ts` (`coachMatch`) reads a room's HUMAN debate messages (bounded like `services/summarizer.ts`; **excludes spectator-chat** via `NOT:{channel:{isSpectatorChat:true}}`), labels the requester's messages "YOU", asks Haiku for `{summary, strengths, improvements, fallacies, nextTime}`. `GET /api/coach/:roomName` (aiRouteLimiter) is Pro-gated + participant-only (`RoomMember role != 'SPECTATOR'`) + Redis-cached 7d (`?refresh=1` bypasses). `client/components/MatchCoach.tsx` renders beside `RapidAftermath` in both the ended-match overlay and the voided-round banner (`!isSpectator`); non-Pro → upsell. **Coach is not yet on the Arena bot-result screen** (do it in Wave 4).
 
-**Pro UI entry points:** the `/pro` page (checkout/manage; "Live" vs "Rolling out" benefit chips), a **home-page banner**, the settings-menu "Grounds Pro" link, and the Arena/coach nudges. `usePro()` gates all of them.
+**Wave 3 — Belief Map:** `GET /api/beliefs/map` + the `/beliefs` page (settings popover and the deck header link to it). Pro-gated on a fresh `userIsPro`; **self-only by construction** — every query is keyed on the caller's own id, so there is no id parameter to tamper with. Returns headline totals, per-category lean, current positions, the shift timeline, and held-vs-moved. Things that bit / nearly bit:
+- The belief layer has two halves and this is the **first code to read the second one**. `UserBelief` is a destructive upsert (knows only NOW); `BeliefChange` is the append-only history, already indexed `("userId","createdAt")`.
+- **The history has three gaps — recorded movement UNDERCOUNTS.** A claim's FIRST position is never logged (`recordBelief` only writes when a previous stance existed), skips in/out are excluded, and deck "Back" corrections pass `log=false`. The page says so in a footnote rather than implying the log is complete.
+- Stance is a `(agree|disagree|skip, confidence 1|2)` **pair, not a signed scale** — derive a −2..+2 axis in SQL (`CASE stance WHEN 'agree' THEN confidence WHEN 'disagree' THEN -confidence END`). There is no neutral 0. Only grouping dimension is `Proposition.categoryId` (6 fixed categories).
+- `BeliefChange.roomName` is non-null **only** for aftermath answers, so "debated and HELD" is only recoverable as `RapidAftermathAnswered` with no matching change. Use `EXISTS`, **not a join** — two changes sharing a roomName would fan the count out.
+
+**Pro UI entry points:** the `/pro` page (checkout/manage; "Live" vs "Rolling out" benefit chips — remember to flip a chip to `live: true` when its wave ships; wave 2's was missed and got flipped in wave 3), a **home-page banner**, the settings-menu "Grounds Pro" and "Belief Map" links, and the Arena/coach nudges. `usePro()` gates all of them.
 
 ---
 
@@ -98,6 +104,7 @@ Node lives at `C:\Program Files\nodejs` (Windows / Git-Bash). Prepend it to PATH
 | Upgrade page | `client/app/pro/page.tsx` |
 | Admin comp toggle | `client/app/admin/pro/page.tsx` |
 | Coach UI | `client/components/MatchCoach.tsx` (rendered in `client/app/room/[roomId]/page.tsx`) |
+| Belief Map page | `client/app/beliefs/page.tsx` (linked from `AppShell.tsx` settings popover + `client/app/deck/page.tsx`) |
 | Home Pro banner + settings link | `client/app/home/page.tsx`, `client/components/AppShell.tsx` |
 | Env template | `.env.example` |
 
@@ -105,7 +112,7 @@ Node lives at `C:\Program Files\nodejs` (Windows / Git-Bash). Prepend it to PATH
 
 ## 6. Remaining roadmap (build each as its own reviewed wave; gate via `userIsPro`)
 
-3. **Belief Map** — a Pro visualization of the user's deck positions across topics and how they've **shifted over time** (the product's north-star is mind-change, so lean into that). Data: the belief/deck layer (`services/propositions.ts`, `getDeck`/`recordBelief`, the `Belief` runtime tables). Likely a new server aggregation endpoint + a client page/section. Shareable "where I stand" card is a growth angle.
+3. ~~**Belief Map**~~ — **shipped** in `8187747` (see §4). The one deliberately-deferred piece: a shareable public "where I stand" card, which is a growth angle but adds an unauthed surface and its own privacy questions.
 4. **Arena practice tools + Custom AI opponents** — practice-only assist/drills in Arena (never ranked), and "describe an opponent → AI plays that persona" (`services/debateBot.ts`, `client/lib/bots.ts`). **Also add `MatchCoach` to the Arena bot-result screen** (it's missing there).
 5. **Advanced analytics** — rubric trends over time, win-rate by category, head-to-head, rank history. The data mostly exists (`avgLogic/avgEvidence/…`, `elo`/`arenaElo`, the leaderboard/rank queries in `buildProfilePayload`).
 6. **Power-user creation** — tournaments/brackets, large/private Common Grounds rooms, room-owner tools.
@@ -113,12 +120,14 @@ Later: cosmetics (Pro badge, name colors, profile themes — zero-integrity-risk
 
 ---
 
-## 7. Operational status (as of `92f8b2a`)
+## 7. Operational status (as of `8187747`)
 
 - **Billing is LIVE** — real Stripe keys are set in **Railway**; the checkout redirect to Stripe works. It has **not** been validated end-to-end because live keys reject test cards — validate in Stripe **test mode** (swap Railway keys to `sk_test_…` + a test webhook, run `4242 4242 4242 4242`, swap back), or trust the reviewed webhook code and use the **`/admin/pro`** toggle to exercise gated features.
 - **Vercel** deploys from `main`; a bad `next build` (Trap #2) blocks it — always build client changes locally first. **Railway** deploys from `main` too; env changes need a redeploy/restart to take effect (watch the boot `[Stripe] …` log line).
-- **Local stack is DOWN.** Docker Postgres/Redis are up. Start the server via PowerShell (§2), client via `preview_start {name:"client"}` or `npm run dev`.
-- Recent trail: `92f8b2a` coach · `913052f` admin toggle · `2bdf757` boot log · `518ca58` Suspense fix · `0456f7c` home banner · `c848a56` err surfacing · `73da120` Managed Payments · `42336bd` Pro wave 1.
+- **Local stack:** Docker Postgres/Redis are up. Start the server via PowerShell (§2), client via `preview_start {name:"client"}` or `npm run dev`.
+- **Known pre-existing bug, unrelated to any wave:** the "Ensure Claim tables exist" block in `server.ts` (~L6650, search `[DB] Claim tables`) throws `P2010 / 42601 "cannot insert multiple commands into a prepared statement"` on **every** boot — it passes several statements to one `$executeRawUnsafe`. The catch swallows it, so the server starts and existing DBs already have the tables; a **fresh** database would silently never get them. Fix = one statement per call, like the neighbouring blocks.
+- **Verifying UI without screenshots:** `computer{screenshot}` still times out. Note that a frozen renderer also freezes CSS **transitions** mid-flight, so `getComputedStyle` on anything with `transition-colors` can report pre-toggle colors after a theme switch and look like a broken `dark:` variant. Reload the page in the target theme before measuring, and sanity-check by inserting a probe element with the same classes.
+- Recent trail: `8187747` Belief Map · `92f8b2a` coach · `913052f` admin toggle · `2bdf757` boot log · `518ca58` Suspense fix · `0456f7c` home banner · `c848a56` err surfacing · `73da120` Managed Payments · `42336bd` Pro wave 1.
 
 ## 8. Memory
 
