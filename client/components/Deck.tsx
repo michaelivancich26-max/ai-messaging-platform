@@ -232,20 +232,18 @@ export default function Deck({ userId }: { userId: string }) {
           and mobile too — the settings popover is desktop-only. */}
       <div className="mb-7">
         <div className="flex items-baseline justify-between text-xs">
-          {positioned > 0 ? (
-            <Link href="/beliefs"
-              /* -my-2 py-2 grows the tap target past the 24px minimum without
-                 moving the baseline this row is aligned on. */
-              className="group -my-2 inline-flex items-baseline gap-1 py-2 font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
-              {positioned} {positioned === 1 ? "position" : "positions"}
-              <span aria-hidden className="opacity-50 transition-opacity group-hover:opacity-100">›</span>
-              <span className="sr-only">— see your Belief Map</span>
-            </Link>
-          ) : (
-            <span className="font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              {positioned} {positioned === 1 ? "position" : "positions"}
-            </span>
-          )}
+          {/* Always a link, including at zero: /beliefs has an empty state that
+              explains the map and points back here, and this is the ONLY entry
+              point — gating it on positioned > 0 left a new account unable to
+              reach the feature at all. */}
+          <Link href="/beliefs"
+            /* -my-2 py-2 grows the tap target past the 24px minimum without
+               moving the baseline this row is aligned on. */
+            className="group -my-2 inline-flex items-baseline gap-1 py-2 font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
+            {positioned} {positioned === 1 ? "position" : "positions"}
+            <span aria-hidden className="opacity-50 transition-opacity group-hover:opacity-100">›</span>
+            <span className="sr-only">— see your Belief Map</span>
+          </Link>
           {ready ? (
             <Link href="/rapid" className="font-semibold text-orange-700 transition-colors hover:text-orange-600 dark:text-orange-400">
               Ready to queue <span aria-hidden>→</span>

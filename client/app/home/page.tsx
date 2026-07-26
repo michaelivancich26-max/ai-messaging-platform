@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import LiveMatches from "@/components/LiveMatches";
 import { MedalIcon, type Medal } from "@/components/MedalsPanel";
 import type { CredScore } from "@/lib/types";
@@ -162,7 +163,14 @@ export default function HomePage() {
 
               <div className="mt-6 max-w-md">
                 <div className="flex items-baseline justify-between text-xs">
-                  <span className="font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Your belief deck</span>
+                  {/* Second way into the Belief Map, mirroring the deck's own
+                      progress row — the front door reaches both breakpoints. */}
+                  <Link href="/beliefs"
+                    className="group -my-2 inline-flex items-baseline gap-1 py-2 font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
+                    Your belief deck
+                    <span aria-hidden className="opacity-50 transition-opacity group-hover:opacity-100">›</span>
+                    <span className="sr-only">— see your Belief Map</span>
+                  </Link>
                   <span className={ready ? "font-semibold text-brand-green-ink dark:text-brand-green" : "text-gray-500 dark:text-gray-400"}>
                     {ready ? "Ready to queue" : `${positioned} / ${gate} positions`}
                   </span>
