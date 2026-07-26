@@ -220,6 +220,10 @@ redis.connect().catch(console.error);
 
 // ─── Stripe / Pro entitlement ────────────────────────────────────────────────
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+// Managed Payments (Stripe handles the payment methods + tax) requires this preview
+// API version. We pin it per-request on the product/checkout calls that need it,
+// rather than on the whole client, so the other Stripe calls keep their default shape.
+const STRIPE_PREVIEW_VERSION = "2026-02-25.preview";
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID ?? "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const BILLING_RETURN_URL = process.env.CLIENT_URL ?? "http://localhost:3000";
@@ -5249,12 +5253,36 @@ async function stripeWebhookHandler(req: Request, res: Response) {
   }
 }
 
+// The recurring Price for Grounds Pro. Uses STRIPE_PRICE_ID when set; otherwise the
+// product + its $10/mo price are created once — with a subscription tax code so
+// Managed Payments can calculate tax — and the id cached (module + Redis) so we
+// never re-create it. Returns null if Stripe isn't configured / creation fails.
+let cachedProPriceId: string | null = STRIPE_PRICE_ID || null;
+async function ensureProPrice(): Promise<string | null> {
+  if (!stripe) return null;
+  if (cachedProPriceId) return cachedProPriceId;
+  try { const saved = await redis.get("stripe:pro_price_id"); if (saved) { cachedProPriceId = saved; return saved; } } catch { /* redis down */ }
+  try {
+    const product = await stripe.products.create({
+      name: "Grounds Pro",
+      description: "Unlimited Arena, AI coaching, analytics, and power-user tools.",
+      tax_code: "txcd_10103100",
+      default_price_data: { unit_amount: 1000, currency: "usd", recurring: { interval: "month" } },
+    } as any, { apiVersion: STRIPE_PREVIEW_VERSION as any });
+    const priceId = typeof product.default_price === "string" ? product.default_price : ((product.default_price as any)?.id ?? null);
+    if (priceId) { cachedProPriceId = priceId; try { await redis.set("stripe:pro_price_id", priceId); } catch { /* redis down */ } }
+    return priceId;
+  } catch (e) { console.error("[stripe] ensureProPrice:", e); return null; }
+}
+
 // Start a Pro subscription — returns a Stripe Checkout URL for the client to open.
 app.post("/api/billing/checkout", async (req, res) => {
   const userId = actorId(req);
   if (!userId) return res.status(401).json({ error: "Not authenticated." });
-  if (!stripe || !STRIPE_PRICE_ID) return res.status(503).json({ error: "Billing isn't configured yet." });
+  if (!stripe) return res.status(503).json({ error: "Billing isn't configured yet." });
   try {
+    const priceId = await ensureProPrice();
+    if (!priceId) return res.status(503).json({ error: "Billing isn't configured yet." });
     const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT email, "isPro", "stripeCustomerId" FROM "User" WHERE id = $1`, userId);
     const u = rows[0]; if (!u) return res.status(404).json({ error: "User not found." });
     // Guard against a second subscription (double billing) — a churned user (isPro
@@ -5266,16 +5294,19 @@ app.post("/api/billing/checkout", async (req, res) => {
       customerId = customer.id;
       await prisma.$executeRawUnsafe(`UPDATE "User" SET "stripeCustomerId" = $2 WHERE id = $1`, userId, customerId);
     }
+    // Managed Payments: Stripe handles the payment methods + tax at Checkout; it
+    // requires the preview API version, pinned per-request here.
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
-      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: userId,
       metadata: { userId },
       allow_promotion_codes: true,
+      managed_payments: { enabled: true },
       success_url: `${BILLING_RETURN_URL}/dashboard?pro=success`,
       cancel_url: `${BILLING_RETURN_URL}/pro?canceled=1`,
-    });
+    } as any, { apiVersion: STRIPE_PREVIEW_VERSION as any });
     res.json({ url: session.url });
   } catch (e) {
     console.error("[billing checkout]", e);
@@ -5313,9 +5344,9 @@ app.get("/api/billing/status", async (req, res) => {
       status: u.proStatus ?? null,
       currentPeriodEnd: u.proCurrentPeriodEnd ?? null,
       manageable: !!u.stripeCustomerId,
-      configured: !!(stripe && STRIPE_PRICE_ID),
+      configured: !!stripe,
     });
-  } catch { res.json({ isPro: false, configured: !!(stripe && STRIPE_PRICE_ID) }); }
+  } catch { res.json({ isPro: false, configured: !!stripe }); }
 });
 
 // Admin: grant / revoke Pro directly (comping + testing without a Stripe round-trip).
