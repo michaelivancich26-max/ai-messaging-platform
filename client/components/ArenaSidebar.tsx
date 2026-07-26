@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { BOTS, BOT_COLORS, type Bot } from "@/lib/bots";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
@@ -35,6 +35,10 @@ interface Props {
 export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
   const { data: session } = useSession();
   const router = useRouter();
+  // Shown on both /arena (AppShell-wrapped) and the bare /room (arena bot rooms).
+  // Only the room lacks the AppShell rail, so only there does this sidebar need to
+  // carry its own profile + sign out — on /arena they'd duplicate the rail.
+  const inRoom = (usePathname() ?? "").startsWith("/room");
   const userId: string = (session?.user as any)?.id ?? "";
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -99,7 +103,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         </div>
 
         {/* Bot list */}
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav className="flex-1 overflow-y-auto py-2 pb-safe">
           <div className="px-3 pb-1 pt-2">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Opponents</p>
           </div>
@@ -151,7 +155,9 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
           )}
         </nav>
 
-        {/* Footer */}
+        {/* Footer — profile + sign out only inside a room (bare route, no AppShell).
+            On /arena the AppShell rail already provides these. */}
+        {inRoom && (
         <div className="border-t border-gray-200 dark:border-gray-800 px-2 pt-2 pb-safe space-y-0.5">
           <button
             onClick={() => router.push("/dashboard")}
@@ -174,6 +180,7 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
             <span className="text-sm">Sign out</span>
           </button>
         </div>
+        )}
       </aside>
     </>
   );
