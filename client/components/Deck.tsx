@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Layers } from "lucide-react";
 import { api } from "@/lib/api";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -209,18 +210,42 @@ export default function Deck({ userId }: { userId: string }) {
             Find someone who disagrees <span aria-hidden>→</span>
           </Link>
         )}
+        {/* Finishing the deck is the moment the whole picture is worth seeing. */}
+        {positioned > 0 && (
+          <div className="mt-4">
+            <Link href="/beliefs"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-card transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+              <Layers className="h-4 w-4" /> See your Belief Map
+            </Link>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-xl py-8">
-      {/* Progress — the gate is a matching requirement, so it's stated as one. */}
+      {/* Progress — the gate is a matching requirement, so it's stated as one.
+          The count doubles as the way into the Belief Map: the positions it's
+          counting ARE the map, so this is the honest place to open it from.
+          Lives here rather than in a nav menu so it reaches the Rapid deck tab
+          and mobile too — the settings popover is desktop-only. */}
       <div className="mb-7">
         <div className="flex items-baseline justify-between text-xs">
-          <span className="font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            {positioned} {positioned === 1 ? "position" : "positions"}
-          </span>
+          {positioned > 0 ? (
+            <Link href="/beliefs"
+              /* -my-2 py-2 grows the tap target past the 24px minimum without
+                 moving the baseline this row is aligned on. */
+              className="group -my-2 inline-flex items-baseline gap-1 py-2 font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
+              {positioned} {positioned === 1 ? "position" : "positions"}
+              <span aria-hidden className="opacity-50 transition-opacity group-hover:opacity-100">›</span>
+              <span className="sr-only">— see your Belief Map</span>
+            </Link>
+          ) : (
+            <span className="font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              {positioned} {positioned === 1 ? "position" : "positions"}
+            </span>
+          )}
           {ready ? (
             <Link href="/rapid" className="font-semibold text-orange-700 transition-colors hover:text-orange-600 dark:text-orange-400">
               Ready to queue <span aria-hidden>→</span>
