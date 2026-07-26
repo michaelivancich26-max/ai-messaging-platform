@@ -5275,6 +5275,11 @@ async function ensureProPrice(): Promise<string | null> {
   } catch (e) { console.error("[stripe] ensureProPrice:", e); return null; }
 }
 
+// Surface Stripe's own error message (config-level, safe for the operator setting
+// this up — e.g. "Managed Payments is not enabled") to the client; anything that
+// isn't a Stripe error stays a generic message.
+const stripeErrMsg = (e: any, fallback: string) => (String(e?.type ?? "").startsWith("Stripe") && e?.message) ? String(e.message) : fallback;
+
 // Start a Pro subscription — returns a Stripe Checkout URL for the client to open.
 app.post("/api/billing/checkout", async (req, res) => {
   const userId = actorId(req);
@@ -5310,7 +5315,7 @@ app.post("/api/billing/checkout", async (req, res) => {
     res.json({ url: session.url });
   } catch (e) {
     console.error("[billing checkout]", e);
-    res.status(500).json({ error: "Couldn't start checkout." });
+    res.status(500).json({ error: stripeErrMsg(e, "Couldn't start checkout.") });
   }
 });
 
@@ -5327,7 +5332,7 @@ app.post("/api/billing/portal", async (req, res) => {
     res.json({ url: session.url });
   } catch (e) {
     console.error("[billing portal]", e);
-    res.status(500).json({ error: "Couldn't open the billing portal." });
+    res.status(500).json({ error: stripeErrMsg(e, "Couldn't open the billing portal.") });
   }
 });
 
