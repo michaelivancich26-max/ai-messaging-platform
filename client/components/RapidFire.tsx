@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import Deck from "@/components/Deck";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { Zap } from "@/lib/icons";
@@ -37,6 +37,9 @@ export default function RapidFire({ userId, username }: { userId: string; userna
   const [found, setFound] = useState<MatchFound | null>(null);
   const [needsDeck, setNeedsDeck] = useState<NeedsDeck | null>(null);
   const queuedRef = useRef(false);
+  // The belief deck used to be its own page; it's now a tab here since it's the
+  // pre-requisite for matching (pairing needs claims you've taken a side on).
+  const [tab, setTab] = useState<"queue" | "deck">("queue");
 
   useEffect(() => {
     api(`${SERVER}/api/topics`).then(r => r.json())
@@ -142,10 +145,10 @@ export default function RapidFire({ userId, username }: { userId: string; userna
             <div className="h-full rounded-full bg-orange-500 transition-[width] duration-300" style={{ width: `${Math.max(6, pct)}%` }} />
           </div>
         </div>
-        <Link href="/deck"
+        <button onClick={() => { setNeedsDeck(null); setTab("deck"); }}
           className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-orange-700 px-6 py-3.5 text-base font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
-          Open the deck <span aria-hidden>→</span>
-        </Link>
+          Set your positions <span aria-hidden>→</span>
+        </button>
       </div>
     );
   }
@@ -236,6 +239,32 @@ export default function RapidFire({ userId, username }: { userId: string; userna
 
   return (
     <div className="mx-auto max-w-lg py-8 md:py-10">
+      {/* Toggle between queueing and building your belief deck ("Where you stand") —
+          the deck used to be its own page; it's what pairing matches you on. */}
+      <div className="mx-auto mb-7 flex max-w-xs rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+        {([["queue", "Find a match"], ["deck", "Where you stand"]] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} aria-pressed={tab === k}
+            className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${tab === k
+              ? "bg-white text-orange-700 shadow-sm dark:bg-gray-900 dark:text-orange-400"
+              : "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "deck" ? (
+        <div>
+          <div className="mb-5 text-center">
+            <h3 className="font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Where you stand</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+              Take a side on each claim. We use these to find you someone who genuinely
+              disagrees — so you argue what you actually think, not a side you were dealt.
+            </p>
+          </div>
+          <Deck userId={userId} />
+        </div>
+      ) : (
+        <>
       <div className="text-center">
         <p className="flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">
           <Zap className="h-4 w-4" />
@@ -299,6 +328,8 @@ export default function RapidFire({ userId, username }: { userId: string; userna
         className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-700 py-4 text-base font-semibold text-white shadow-glow transition-transform duration-150 hover:bg-orange-600 active:scale-[0.99] motion-reduce:active:scale-100">
         Find an opponent <span aria-hidden>→</span>
       </button>
+        </>
+      )}
     </div>
   );
 }

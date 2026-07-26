@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Zap, MessagesSquare, Trophy, Layers, ChevronRight, type LucideIcon } from "lucide-react";
+import { Zap, MessagesSquare, Trophy, Dumbbell, ChevronRight, type LucideIcon } from "lucide-react";
 
 // The Debate hub — the landing page for the "Debate" section. Clicking Debate in
 // the rail used to jump straight to Rapid, burying the other modes; this lists all
@@ -20,8 +20,8 @@ const MODES: Mode[] = [
     tile: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300", ring: "hover:border-indigo-300 dark:hover:border-indigo-900/70" },
   { href: "/compete", label: "Battle Grounds", blurb: "Ranked 1v1 and team matches, scored by an AI judge. Climb the ELO ladder.", Icon: Trophy,
     tile: "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300", ring: "hover:border-violet-300 dark:hover:border-violet-900/70" },
-  { href: "/deck", label: "Where You Stand", blurb: "Swipe through sharp claims and take a side — it's what pairing matches you on.", Icon: Layers,
-    tile: "bg-teal-100 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300", ring: "hover:border-teal-300 dark:hover:border-teal-900/70" },
+  { href: "/arena", label: "Arena", blurb: "Sharpen up against 10 AI opponents across five tiers — with no rating on the line.", Icon: Dumbbell,
+    tile: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300", ring: "hover:border-amber-300 dark:hover:border-amber-900/70" },
 ];
 
 // Decorative sample exchange — rendered blurred, so the text only needs plausible shape.
@@ -46,7 +46,7 @@ export default function DebateHubPage() {
         <header>
           <p className="text-[11px] font-bold uppercase tracking-widest text-brand-green-ink dark:text-brand-green">Debate</p>
           <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-white md:text-3xl">Choose how you want to argue</h1>
-          <p className="mt-1.5 max-w-2xl text-sm text-gray-600 dark:text-gray-400">Four ways in — a live match with a stranger, an open room, a ranked bout, or building the belief deck that pairs you.</p>
+          <p className="mt-1.5 max-w-2xl text-sm text-gray-600 dark:text-gray-400">Four ways in — a live match with a stranger, an open room, a ranked bout, or practice against the AI.</p>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">

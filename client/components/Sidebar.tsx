@@ -103,7 +103,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2 pb-safe">
 
         {/* Hub link */}
         <div className="px-2 pb-1">
@@ -187,7 +187,10 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
 
       </nav>
 
-      {/* Profile + Sign out */}
+      {/* Profile + Sign out — only inside a room (a bare route with no AppShell).
+          On the Common Grounds lobby the AppShell rail already shows these, so they'd
+          be redundant here. `activeRoomName` is passed only by the room, never the lobby. */}
+      {activeRoomName && (
       <div className="border-t border-gray-200 dark:border-gray-800 px-2 pt-2 pb-safe space-y-0.5">
         <button onClick={() => router.push("/dashboard")}
           className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200 transition-colors ${collapsed ? "justify-center" : ""}`}>
@@ -210,6 +213,7 @@ export default function Sidebar({ activeRoomName, onBrowseClick, mobileOpen, onM
           {!collapsed && <span className="text-sm">Sign out</span>}
         </button>
       </div>
+      )}
     </aside>
     </>
   );

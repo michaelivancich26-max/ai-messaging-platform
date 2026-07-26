@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
 import { BOTS, type Bot } from "@/lib/bots";
 import {
-  Home, Swords, Trophy, Zap, MessagesSquare, Layers, GraduationCap, BookOpen,
+  Home, Swords, Trophy, Zap, MessagesSquare, GraduationCap, BookOpen,
   Puzzle, Dumbbell, Star, ChevronRight, Radio, Globe, Settings, MessageSquare,
   Users, Sun, Moon, Shield, LogOut, type LucideIcon,
 } from "lucide-react";
@@ -42,7 +42,7 @@ const DEBATE_CHILDREN: Child[] = [
   { href: "/rapid", label: "Rapid Fire", blurb: "Match a stranger who disagrees", Icon: Zap, live: true },
   { href: "/lobby", label: "Common Grounds", blurb: "Open debate rooms", Icon: MessagesSquare },
   { href: "/compete", label: "Battle Grounds", blurb: "Ranked 1v1, AI judged", Icon: Trophy },
-  { href: "/deck", label: "Where You Stand", blurb: "Take sides to get matched", Icon: Layers },
+  { href: "/arena", label: "Arena", blurb: "Practice against AI opponents", Icon: Dumbbell },
 ];
 
 const LEARN_CHILDREN: Child[] = [
@@ -179,7 +179,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const onMessages = pathname.startsWith("/messages");
   const onFriends = pathname.startsWith("/friends");
-  const onDebate = isActive(NAV.find(n => n.id === "debate")!);
 
   const Avatar = ({ size }: { size: string }) => avatarUrl
     ? <img src={avatarUrl} alt={username} className={`${size} rounded-full object-cover ring-1 ring-gray-300 dark:ring-gray-700`} />
@@ -421,37 +420,29 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden focus:outline-none">{children}</main>
 
-        {/* Mobile bottom: a constant Debate button over the icon bar. Debate is the
-            core action, so it gets a persistent CTA and leaves the tab row itself. */}
-        <div className="shrink-0 border-t border-gray-200 bg-white pb-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
-          <div className="px-3 pt-2">
-            <button onClick={() => go("/debate")} aria-current={onDebate ? "page" : undefined}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-transform active:scale-[0.99] motion-reduce:active:scale-100">
-              <Swords className="h-4 w-4" /> Debate
-            </button>
-          </div>
-          <nav aria-label="Primary" className="flex">
-            {NAV.filter(item => item.id !== "debate").map(item => {
-              const active = isActive(item);
-              const isGroup = !!item.children || !!item.bots;
-              return (
-                <button key={item.id}
-                  onClick={() => isGroup ? setMobileSheet(s => s === item.id ? null : item.id) : go(item.href)}
-                  aria-current={active ? "page" : undefined}
-                  aria-haspopup={isGroup ? "dialog" : undefined}
-                  aria-expanded={isGroup ? mobileSheet === item.id : undefined}
-                  className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors ${active ? "font-semibold text-brand-green-ink dark:text-brand-green" : "font-medium text-gray-500 dark:text-gray-400"}`}>
-                  {active && <span aria-hidden className="absolute top-0 h-0.5 w-7 rounded-b-full bg-brand-green" />}
-                  <span className="relative">
-                    <item.Icon className="h-5 w-5" />
-                    {item.live && !active && <span aria-hidden className="absolute -right-1 -top-0.5 h-1.5 w-1.5 rounded-full bg-orange-500" />}
-                  </span>
-                  {item.short}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
+        {/* Mobile bottom tab bar. Grouped tabs open a sheet of children — except
+            Debate, which navigates to its hub page (/debate). */}
+        <nav aria-label="Primary" className="flex shrink-0 border-t border-gray-200 bg-white pb-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
+          {NAV.map(item => {
+            const active = isActive(item);
+            const opensSheet = (!!item.children || !!item.bots) && item.id !== "debate";
+            return (
+              <button key={item.id}
+                onClick={() => opensSheet ? setMobileSheet(s => s === item.id ? null : item.id) : go(item.href)}
+                aria-current={active ? "page" : undefined}
+                aria-haspopup={opensSheet ? "dialog" : undefined}
+                aria-expanded={opensSheet ? mobileSheet === item.id : undefined}
+                className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors ${active ? "font-semibold text-brand-green-ink dark:text-brand-green" : "font-medium text-gray-500 dark:text-gray-400"}`}>
+                {active && <span aria-hidden className="absolute top-0 h-0.5 w-7 rounded-b-full bg-brand-green" />}
+                <span className="relative">
+                  <item.Icon className="h-5 w-5" />
+                  {item.live && !active && <span aria-hidden className="absolute -right-1 -top-0.5 h-1.5 w-1.5 rounded-full bg-orange-500" />}
+                </span>
+                {item.short}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
       {/* Mobile flyout sheet for a grouped tab */}
