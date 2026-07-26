@@ -228,6 +228,8 @@ const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID ?? "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const BILLING_RETURN_URL = process.env.CLIENT_URL ?? "http://localhost:3000";
 const FREE_ARENA_DAILY = 5;   // free-tier Arena matches per day; Pro is unlimited
+// Boot diagnostic so "billing switched off" is greppable in the deploy logs.
+console.log(`[Stripe] billing ${stripe ? "configured" : "OFF — STRIPE_SECRET_KEY not set in this environment"}; webhook secret ${STRIPE_WEBHOOK_SECRET ? "set" : "MISSING"}`);
 
 // Entitlement is always read FRESH from the DB — never trusted from the client or
 // the session JWT, since a Stripe upgrade lands via webhook long after the token
