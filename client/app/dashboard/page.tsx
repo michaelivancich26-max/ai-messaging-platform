@@ -3,12 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Layers, ChevronRight } from "lucide-react";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import { RankingsCard, type Rank } from "@/components/RankingsCard";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
+import { usePro } from "@/lib/usePro";
 import { Flame } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -143,6 +146,8 @@ export default function DashboardPage() {
   const [showPw, setShowPw] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  const { isPro } = usePro();
 
   const [dataOpen, setDataOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -348,6 +353,29 @@ export default function DashboardPage() {
                 sub={stats?.longestStreak ? `best ${stats.longestStreak}` : undefined}
               />
             </div>
+
+            {/* ── Belief Map ── Third way in, alongside the home hero and the
+                deck's progress row. This is the "your record" page, and the map
+                is part of that record. The Pro chip shows only to non-Pro so an
+                upsell is never a surprise — and never noise for a subscriber. */}
+            <Link href="/beliefs"
+              className="group flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                <Layers className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Belief Map</span>
+                  {!isPro && (
+                    <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-800 dark:text-orange-300">Pro</span>
+                  )}
+                </span>
+                <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                  Where you stand across every topic — and every time a debate moved you.
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-gray-500" />
+            </Link>
 
             {/* ── Rankings ── (gated on loaded profile data so a ranked user never
                 flashes "Unranked" while the fetch is still in flight) */}

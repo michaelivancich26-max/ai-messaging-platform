@@ -239,7 +239,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5">
                 <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{rec.name}</span>
-                <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">Recommended</span>
+                <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-800 dark:text-orange-300">Recommended</span>
               </span>
               <span className="block truncate text-xs text-gray-500 dark:text-gray-400">{rec.title} · Tier {rec.tier} {rec.tierName}</span>
             </span>

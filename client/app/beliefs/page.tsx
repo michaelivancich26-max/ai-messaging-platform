@@ -144,7 +144,7 @@ export default function BeliefsPage() {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-2">
               <span className="text-sm font-bold text-gray-900 dark:text-gray-100">The Belief Map is a Pro feature</span>
-              <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">Pro</span>
+              <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-800 dark:text-orange-300">Pro</span>
             </span>
             <span className="mt-0.5 block text-xs text-gray-600 dark:text-gray-400">
               See your positions across every topic, which ones a debate has moved, and where you tend to hold firm.
