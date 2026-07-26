@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { api } from "@/lib/api";
@@ -21,7 +21,17 @@ const BENEFITS: { Icon: LucideIcon; title: string; blurb: string; live: boolean 
   { Icon: BadgeCheck, title: "Pro badge", blurb: "A mark on your profile and in chat.", live: false },
 ];
 
+// useSearchParams() forces a client-render bailout, which Next requires be wrapped
+// in a Suspense boundary or the production build fails to prerender this route.
 export default function ProPage() {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950 dark:text-gray-400">Loading…</div>}>
+      <ProContent />
+    </Suspense>
+  );
+}
+
+function ProContent() {
   const router = useRouter();
   const params = useSearchParams();
   useSession({ required: true, onUnauthenticated() { router.push("/"); } });
