@@ -6,7 +6,6 @@ import { useSession } from "next-auth/react";
 import NotificationBell from "./NotificationBell";
 import { Wordmark } from "./Wordmark";
 import { useTheme } from "./ThemeProvider";
-import { useFocusTrap } from "@/lib/useFocusTrap";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
@@ -115,10 +114,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Mobile: tapping a grouped tab opens a bottom sheet of its children.
-  const [mobileSheet, setMobileSheet] = useState<string | null>(null);
-  const sheetRef = useFocusTrap<HTMLDivElement>(!!mobileSheet);
-
   useEffect(() => {
     if (!userId) return;
     api(`${SERVER}/api/users/${userId}/profile`).then(r => r.json())
@@ -160,22 +155,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
   }, [settingsOpen]);
 
-  // Close any flyout / sheet on route change.
-  useEffect(() => { setOpenGroup(null); setMobileSheet(null); }, [pathname]);
-
-  // Escape closes the mobile group sheet (focus restore is handled by useFocusTrap).
-  useEffect(() => {
-    if (!mobileSheet) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMobileSheet(null); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [mobileSheet]);
+  // Close the desktop flyout on route change.
+  useEffect(() => { setOpenGroup(null); }, [pathname]);
 
   const isActive = (item: NavItem) => item.id === "home"
     ? pathname === "/home"
     : [item.href, ...(item.match ?? [])].some(p => pathname.startsWith(p));
 
-  const go = (href: string) => { setOpenGroup(null); setMobileSheet(null); router.push(href); };
+  const go = (href: string) => { setOpenGroup(null); router.push(href); };
 
   const onMessages = pathname.startsWith("/messages");
   const onFriends = pathname.startsWith("/friends");
@@ -420,18 +407,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden focus:outline-none">{children}</main>
 
-        {/* Mobile bottom tab bar. Grouped tabs open a sheet of children — except
-            Debate (→ its /debate hub) and Practice (→ /arena), which navigate directly. */}
+        {/* Mobile bottom tab bar. Every tab navigates to its page; grouped items go
+            to their landing/hub page (Debate→/debate, Learn→/learn, Practice→/arena). */}
         <nav aria-label="Primary" className="flex shrink-0 border-t border-gray-200 bg-white pb-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
           {NAV.map(item => {
             const active = isActive(item);
-            const opensSheet = (!!item.children || !!item.bots) && item.id !== "debate" && item.id !== "practice";
             return (
               <button key={item.id}
-                onClick={() => opensSheet ? setMobileSheet(s => s === item.id ? null : item.id) : go(item.href)}
+                onClick={() => go(item.href)}
                 aria-current={active ? "page" : undefined}
-                aria-haspopup={opensSheet ? "dialog" : undefined}
-                aria-expanded={opensSheet ? mobileSheet === item.id : undefined}
                 className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] transition-colors ${active ? "font-semibold text-brand-green-ink dark:text-brand-green" : "font-medium text-gray-500 dark:text-gray-400"}`}>
                 {active && <span aria-hidden className="absolute top-0 h-0.5 w-7 rounded-b-full bg-brand-green" />}
                 <span className="relative">
@@ -445,22 +429,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
       </div>
 
-      {/* Mobile flyout sheet for a grouped tab */}
-      {mobileSheet && (() => {
-        const item = NAV.find(n => n.id === mobileSheet);
-        if (!item) return null;
-        return (
-          <div className="fixed inset-0 z-[60] md:hidden">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setMobileSheet(null)} />
-            <div ref={sheetRef} role="dialog" aria-modal="true" aria-label={item.label}
-              className="absolute inset-x-0 bottom-0 max-h-[70vh] overflow-y-auto rounded-t-2xl border-t border-gray-200 bg-white p-3 pb-safe shadow-hero dark:border-gray-800 dark:bg-gray-900">
-              <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-700" />
-              <p className="px-1 pb-1 text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">{item.label}</p>
-              {flyoutBody(item, go)}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
