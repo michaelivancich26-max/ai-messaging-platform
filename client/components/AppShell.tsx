@@ -174,6 +174,58 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const rec = recommendedBot(arenaWins);
 
+  // ── Settings menu ───────────────────────────────────────────────────────────
+  // One definition, rendered in the rail on desktop and the top bar on mobile.
+  // It used to exist ONLY in the rail, which is `md:flex` — so theme, profile,
+  // Grounds Pro, Admin and sign-out were unreachable on a phone.
+  //
+  // Mounted in exactly ONE place per breakpoint via useIsDesktop, for the same
+  // reason as the notification bell: both copies would otherwise share
+  // `settingsOpen` and open together, and `settingsRef` would point at whichever
+  // mounted last, breaking outside-click-to-close for the other.
+  const settingsMenu = (placement: "up" | "down") => (
+    <div className="relative" ref={settingsRef}>
+      <button ref={settingsBtnRef} onClick={() => setSettingsOpen(v => !v)} aria-haspopup="menu" aria-expanded={settingsOpen}
+        title="Settings" aria-label="Settings" className={utilBtn(settingsOpen)}>
+        <Settings className="h-5 w-5" />
+      </button>
+      {settingsOpen && (
+        <div role="menu"
+          className={`absolute right-0 z-50 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-elevated dark:border-gray-800 dark:bg-gray-900 ${
+            placement === "up" ? "bottom-full left-0 mb-2" : "top-full mt-2"}`}>
+          <button role="menuitem" onClick={() => { toggleTheme(); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {theme === "dark" ? "Light mode" : "Dark mode"}
+          </button>
+          <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/dashboard"); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+            <Settings className="h-4 w-4" />
+            Edit profile
+          </button>
+          <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/pro"); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40 transition-colors">
+            <Sparkles className="h-4 w-4" />
+            Grounds Pro
+          </button>
+          {isAdmin && (
+            <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/admin/pro"); }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+              <Shield className="h-4 w-4" />
+              Admin
+            </button>
+          )}
+          <div className="my-1 border-t border-gray-200 dark:border-gray-800" />
+          <button role="menuitem" onClick={() => signOutEverywhere()}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors">
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   // ── A group's flyout contents (desktop) or sheet contents (mobile) ──────────
   const flyoutBody = (item: NavItem, onPick: (href: string) => void) => {
     if (item.bots) {
@@ -326,45 +378,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </button>
 
           <div className="flex items-center justify-between px-0.5">
-            {/* Settings */}
-            <div className="relative" ref={settingsRef}>
-              <button ref={settingsBtnRef} onClick={() => setSettingsOpen(v => !v)} aria-haspopup="menu" aria-expanded={settingsOpen}
-                title="Settings" className={utilBtn(settingsOpen)}>
-                <Settings className="h-5 w-5" />
-              </button>
-              {settingsOpen && (
-                <div role="menu" className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-xl border border-gray-200 bg-white p-1 shadow-elevated dark:border-gray-800 dark:bg-gray-900">
-                  <button role="menuitem" onClick={() => { toggleTheme(); }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
-                    {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                    {theme === "dark" ? "Light mode" : "Dark mode"}
-                  </button>
-                  <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/dashboard"); }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
-                    <Settings className="h-4 w-4" />
-                    Edit profile
-                  </button>
-                  <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/pro"); }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 dark:text-orange-300 dark:hover:bg-orange-950/40 transition-colors">
-                    <Sparkles className="h-4 w-4" />
-                    Grounds Pro
-                  </button>
-                  {isAdmin && (
-                    <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/admin/pro"); }}
-                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
-                      <Shield className="h-4 w-4" />
-                      Admin
-                    </button>
-                  )}
-                  <div className="my-1 border-t border-gray-200 dark:border-gray-800" />
-                  <button role="menuitem" onClick={() => signOutEverywhere()}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors">
-                    <LogOut className="h-4 w-4" />
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
+            {/* Settings — mounted here on desktop only (see useIsDesktop) */}
+            {isDesktop !== false ? settingsMenu("up") : <span className="h-9 w-9" />}
 
             {/* Direct messages */}
             <button onClick={() => go("/messages")} title="Messages" aria-current={onMessages ? "page" : undefined}
@@ -415,6 +430,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
               )}
             </button>
             <button onClick={() => go("/dashboard")} aria-label="Your profile"><Avatar size="h-7 w-7" /></button>
+            {/* Settings — mounted here on mobile only; the rail this used to
+                live in is desktop-only, so a phone had no way to reach theme,
+                profile, Grounds Pro, Admin or sign-out. */}
+            {isDesktop === false && settingsMenu("down")}
           </div>
         </div>
 
