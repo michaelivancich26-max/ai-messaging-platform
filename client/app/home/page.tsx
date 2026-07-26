@@ -10,7 +10,8 @@ import { SERIES, TOTAL_LESSONS } from "@/app/learn/content";
 import { PUZZLES } from "@/app/learn/puzzles/content";
 import { api } from "@/lib/api";
 import { Flame, Scale, Zap } from "@/lib/icons";
-import { MessagesSquare, Dumbbell, Trophy, BookOpen, Puzzle, Radio, ChevronRight, type LucideIcon } from "lucide-react";
+import { MessagesSquare, Dumbbell, Trophy, BookOpen, Puzzle, Radio, ChevronRight, Sparkles, type LucideIcon } from "lucide-react";
+import { usePro } from "@/lib/usePro";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -26,6 +27,7 @@ export default function HomePage() {
   const router = useRouter();
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
   const userId: string = (session?.user as any)?.id ?? "";
+  const { isPro, loading: proLoading } = usePro();
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [streak, setStreak] = useState<{ current: number; longest: number } | null>(null);
@@ -212,6 +214,33 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* ── Grounds Pro — upgrade / manage ──────────────────────────────── */}
+        {!proLoading && (isPro ? (
+          <button onClick={() => router.push("/pro")}
+            className="flex w-full items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left shadow-card transition-colors hover:bg-amber-100/70 dark:border-amber-900/50 dark:bg-amber-950/20 dark:hover:bg-amber-950/40">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"><Sparkles className="h-5 w-5" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">You&rsquo;re on Grounds Pro</span>
+              <span className="block text-xs text-gray-600 dark:text-gray-400">Manage your subscription</span>
+            </span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400" />
+          </button>
+        ) : (
+          <button onClick={() => router.push("/pro")}
+            className="group flex w-full items-center gap-4 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-amber-900/50 dark:from-amber-950/25 dark:to-orange-950/25">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-orange-700 dark:text-amber-300"><Sparkles className="h-5 w-5" /></span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Grounds Pro</span>
+                <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300">Upgrade</span>
+              </span>
+              <span className="mt-0.5 block text-xs text-gray-600 dark:text-gray-400">Unlimited Arena, AI coaching, analytics, and more.</span>
+            </span>
+            <span className="hidden shrink-0 items-center gap-1 rounded-xl bg-orange-700 px-4 py-2 text-sm font-semibold text-white shadow-glow transition-colors group-hover:bg-orange-600 sm:inline-flex">Upgrade <ChevronRight className="h-4 w-4" /></span>
+            <ChevronRight className="h-5 w-5 shrink-0 text-orange-700 dark:text-amber-300 sm:hidden" />
+          </button>
+        ))}
 
         {/* ── Jump in — the quick-start list (chess.com's play column) ─────── */}
         <section className="grid gap-6 lg:grid-cols-[1.1fr_1.4fr]">
