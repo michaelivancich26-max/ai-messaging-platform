@@ -13,9 +13,14 @@ interface Props {
   userId: string;
   username: string;
   collapsed?: boolean;
+  // Docked at the bottom of the rail, the panel must open upward instead of down.
+  openUp?: boolean;
+  // Right-docked (mobile top bar): anchor the panel to the right so a 320px panel
+  // doesn't overflow off the right edge of a narrow viewport.
+  alignRight?: boolean;
 }
 
-export default function NotificationBell({ userId, username, collapsed }: Props) {
+export default function NotificationBell({ userId, username, collapsed, openUp, alignRight }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
@@ -119,7 +124,7 @@ export default function NotificationBell({ userId, username, collapsed }: Props)
 
       {open && (
         <div className={`absolute z-50 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl ${
-          collapsed ? "left-12 top-0" : "left-0 top-10"
+          openUp ? "bottom-11 left-0" : collapsed ? "left-12 top-0" : alignRight ? "right-0 top-10" : "left-0 top-10"
         } w-80`}>
           <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-800 px-4 py-2.5">
             <span className="text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400">Notifications</span>
