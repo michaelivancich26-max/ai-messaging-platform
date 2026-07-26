@@ -421,11 +421,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden focus:outline-none">{children}</main>
 
         {/* Mobile bottom tab bar. Grouped tabs open a sheet of children — except
-            Debate, which navigates to its hub page (/debate). */}
+            Debate (→ its /debate hub) and Practice (→ /arena), which navigate directly. */}
         <nav aria-label="Primary" className="flex shrink-0 border-t border-gray-200 bg-white pb-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
           {NAV.map(item => {
             const active = isActive(item);
-            const opensSheet = (!!item.children || !!item.bots) && item.id !== "debate";
+            const opensSheet = (!!item.children || !!item.bots) && item.id !== "debate" && item.id !== "practice";
             return (
               <button key={item.id}
                 onClick={() => opensSheet ? setMobileSheet(s => s === item.id ? null : item.id) : go(item.href)}
