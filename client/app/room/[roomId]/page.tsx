@@ -21,6 +21,7 @@ import TurnBanner from "@/components/TurnBanner";
 import UserProfileModal from "@/components/UserProfileModal";
 import SidebarChat from "@/components/SidebarChat";
 import RapidAftermath from "@/components/RapidAftermath";
+import MatchCoach from "@/components/MatchCoach";
 import SubDebateModal from "@/components/SubDebateModal";
 import ScoreBreakdownPanel from "@/components/ScoreBreakdownPanel";
 import type { RoomMeta } from "@/components/RoomPanel";
@@ -1585,7 +1586,12 @@ export default function RoomPage() {
             </button>
           </div>
           {/* A voided round was still a debate — it can still have moved someone. */}
-          {!isSpectator && <div className="mx-auto max-w-xl"><RapidAftermath roomName={roomId} /></div>}
+          {!isSpectator && (
+            <div className="mx-auto max-w-xl space-y-4">
+              <RapidAftermath roomName={roomId} />
+              <MatchCoach roomName={roomId} />
+            </div>
+          )}
         </div>
       )}
 
@@ -1858,6 +1864,7 @@ export default function RoomPage() {
                     </div>
                     {/* Closes the loop: whichever way the match went, ask if it moved them. */}
                     {isRapidMatch && <RapidAftermath roomName={roomId} />}
+                    {!isSpectator && <MatchCoach roomName={roomId} />}
                     <button onClick={() => router.push(isRapidMatch ? "/rapid" : "/compete")} className="w-full rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 transition-colors active:scale-[0.98] motion-reduce:active:scale-100">
                       {isRapidMatch ? "Find another →" : "Return to Battle Grounds"}
                     </button>

@@ -9,6 +9,7 @@ import cors from "cors";
 import { scheduleAI, respondToMention } from "./services/aiOrchestrator";
 import { evaluateClaim, computeCredibility, SCORE_WEIGHTS } from "./services/claimEvaluator";
 import { summarizeConversation } from "./services/summarizer";
+import { coachMatch } from "./services/coach";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
 import { computeMedals, type MedalStats } from "./services/medals";
@@ -5368,6 +5369,36 @@ app.post("/api/admin/set-pro", async (req, res) => {
   if (!target) return res.status(404).json({ error: "No such user." });
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "isPro" = $2, "proStatus" = $3 WHERE id = $1`, target.id, makePro, makePro ? "comp" : "canceled");
   res.json({ ok: true, isPro: makePro });
+});
+
+// ─── AI post-match coach (Grounds Pro) ───────────────────────────────────────
+// A breakdown of how the requesting user argued in one of their finished matches.
+// Pro-gated, participant-only, and cached (the AI call is a paid path).
+app.get("/api/coach/:roomName", aiRouteLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  const roomName = String(req.params.roomName);
+  const refresh = req.query.refresh === "1";   // Regenerate bypasses the cache
+  try {
+    if (!(await userIsPro(userId))) return res.status(402).json({ error: "AI coaching is a Grounds Pro feature.", code: "pro_only" });
+    const room = await prisma.room.findUnique({ where: { name: roomName } });
+    if (!room) return res.status(404).json({ error: "Match not found." });
+    // You can only be coached on a match you actually debated in — not one you spectated.
+    const member = await prisma.roomMember.findFirst({ where: { roomId: room.id, userId, role: { not: "SPECTATOR" } } });
+    if (!member) return res.status(403).json({ error: "You can only get coaching for your own matches." });
+
+    const cacheKey = `coach:${room.id}:${userId}`;
+    if (!refresh) { try { const cached = await redis.get(cacheKey); if (cached) return res.json(JSON.parse(cached)); } catch { /* redis down */ } }
+
+    const report = await coachMatch({ prisma, roomId: room.id, userId, topic: (room as any).proposition ?? null });
+    if (!report) return res.status(422).json({ error: "There isn't enough of your side of the debate to coach yet.", code: "too_short" });
+
+    try { await redis.set(cacheKey, JSON.stringify(report), { EX: 60 * 60 * 24 * 7 }); } catch { /* redis down */ }
+    res.json(report);
+  } catch (e) {
+    console.error("[coach]", e);
+    res.status(500).json({ error: "Couldn't generate coaching. Try again." });
+  }
 });
 
 app.post("/api/bot-rooms", createLimiter, async (req, res) => {
