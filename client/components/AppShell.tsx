@@ -393,7 +393,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {/* ── Main column ────────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
-        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 pt-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
+        <div className="flex min-h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 pt-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
           <button onClick={() => go("/home")} className="flex items-center gap-1.5" aria-label="Home">
             <Shield className="h-5 w-5 text-brand-green" />
             <Wordmark className="text-sm" />

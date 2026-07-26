@@ -97,7 +97,7 @@ export default function AuthPage() {
   // redirecting — show a placeholder instead of flashing the login form.
   if (status === "loading" || status === "authenticated") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 dark:bg-gray-950">
+      <main className="flex h-full items-center justify-center overflow-y-auto bg-gray-50 bg-hero-glow px-4 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-3">
           <WordmarkFull className="text-2xl opacity-90" />
           <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
@@ -109,7 +109,8 @@ export default function AuthPage() {
   // ── Forgot password view ──────────────────────────────────────────────────
   if (view === "forgot") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 dark:bg-gray-950">
+      <main className="h-full overflow-y-auto bg-gray-50 bg-hero-glow dark:bg-gray-950">
+        <div className="flex min-h-full items-center justify-center px-4 py-10">
         <div className="w-full max-w-sm animate-fadeInUp rounded-2xl border border-gray-200 bg-white p-8 shadow-hero dark:border-gray-800 dark:bg-gray-900">
           <button
             onClick={() => switchView("login")}
@@ -159,13 +160,19 @@ export default function AuthPage() {
             </form>
           )}
         </div>
+        </div>
       </main>
     );
   }
 
   // ── Login / Signup view ───────────────────────────────────────────────────
+  // The page is a scroll container (the body is a fixed, overflow-hidden dvh box),
+  // so when the on-screen keyboard shrinks the viewport the focused field can
+  // scroll into view instead of hiding behind the keyboard. min-h-full keeps the
+  // card centered when there's room.
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-gray-50 bg-hero-glow px-4 py-10 dark:bg-gray-950">
+    <main className="relative h-full overflow-y-auto bg-gray-50 bg-hero-glow dark:bg-gray-950">
+      <div className="flex min-h-full items-center justify-center px-4 py-10">
       <div className="grid w-full max-w-4xl items-center gap-10 lg:grid-cols-2 lg:gap-14">
 
         {/* Brand hero — the confident first impression. */}
@@ -319,6 +326,7 @@ export default function AuthPage() {
             <a href="/legal/guidelines" className="underline hover:text-gray-600 dark:hover:text-gray-300">Guidelines</a>
           </p>
         </div>
+      </div>
       </div>
     </main>
   );
