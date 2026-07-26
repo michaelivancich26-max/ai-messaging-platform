@@ -93,6 +93,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
   const userId: string = (session?.user as any)?.id ?? "";
   const username: string = (session?.user as any)?.username ?? session?.user?.name ?? "";
+  const isAdmin: boolean = (session?.user as any)?.isAdmin ?? false;
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [arenaWins, setArenaWins] = useState(0);
   const [dmUnread, setDmUnread] = useState(0);
@@ -348,6 +349,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
                     <Sparkles className="h-4 w-4" />
                     Grounds Pro
                   </button>
+                  {isAdmin && (
+                    <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/admin/pro"); }}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+                      <Shield className="h-4 w-4" />
+                      Admin
+                    </button>
+                  )}
                   <div className="my-1 border-t border-gray-200 dark:border-gray-800" />
                   <button role="menuitem" onClick={() => signOutEverywhere()}
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition-colors">
