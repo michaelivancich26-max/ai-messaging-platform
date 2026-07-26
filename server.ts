@@ -55,6 +55,7 @@ const passwordLimiter = mkLimiter(60_000, 8, "Too many attempts. Wait a minute a
 const createLimiter = mkLimiter(60_000, 12, "You're creating things too fast. Slow down.");
 const heavyReadLimiter = mkLimiter(60_000, 60, "Slow down — too many requests.");
 const exportLimiter = mkLimiter(15 * 60_000, 5, "Data export is limited to a few times per 15 minutes.");
+const friendsLimiter = mkLimiter(60_000, 40, "You're doing that too fast — wait a moment.");   // friend requests/responses
 
 // Open the caller's session token, if they sent one, and hang the result off
 // the request. This only ESTABLISHES identity — it doesn't require it, because
@@ -267,6 +268,13 @@ function deliverNotification(userId: string, notif: object) {
   const sids = userSockets.get(userId);
   if (!sids) return;
   for (const sid of sids) io.to(sid).emit("notification", notif);
+}
+
+// Nudge a user's open tabs to refetch their friends list / badge after a change.
+function emitFriends(userId: string, payload: object = {}) {
+  const sids = userSockets.get(userId);
+  if (!sids) return;
+  for (const sid of sids) io.to(sid).emit("friendsUpdate", payload);
 }
 
 // Debate positions: roomId → Map<userId, { userId, username, position }>
@@ -5763,6 +5771,140 @@ app.get("/api/users/search", async (req, res) => {
   }
 });
 
+// ─── Friends ───────────────────────────────────────────────────────────────
+// A basic friend graph: a directed request row that flips 'pending' → 'accepted'.
+// The (unordered) pair is unique, so there is at most one row between two users.
+// Identity always comes from actorId(req); the body only names the *other* user.
+
+app.get("/api/friends", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT f.id, f.status, f."requesterId", f."addresseeId", f."createdAt",
+              u.id AS other_id, u.username, u."avatarUrl"
+         FROM "Friendship" f
+         JOIN "User" u ON u.id = CASE WHEN f."requesterId" = $1 THEN f."addresseeId" ELSE f."requesterId" END
+        WHERE f."requesterId" = $1 OR f."addresseeId" = $1
+        ORDER BY f."createdAt" DESC`, userId);
+    const friends: any[] = [], incoming: any[] = [], outgoing: any[] = [];
+    for (const r of rows) {
+      const person = { id: r.other_id, username: r.username, avatarUrl: r.avatarUrl ?? null };
+      if (r.status === "accepted") friends.push({ ...person, online: userSockets.has(r.other_id) });
+      else if (r.addresseeId === userId) incoming.push({ requestId: r.id, createdAt: r.createdAt, ...person });
+      else outgoing.push({ requestId: r.id, ...person });
+    }
+    // Online friends first, then alphabetical.
+    friends.sort((a, b) => (Number(b.online) - Number(a.online)) || a.username.localeCompare(b.username));
+    res.json({ friends, incoming, outgoing });
+  } catch (e) { console.error("[friends list]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// Counts only — polled by the rail for the Friends badge.
+app.get("/api/friends/summary", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT (COUNT(*) FILTER (WHERE status='pending' AND "addresseeId" = $1))::int AS incoming,
+              (COUNT(*) FILTER (WHERE status='accepted'))::int AS friends
+         FROM "Friendship" WHERE "requesterId" = $1 OR "addresseeId" = $1`, userId);
+    const r = rows[0] ?? {};
+    res.json({ incoming: Number(r.incoming ?? 0), friends: Number(r.friends ?? 0) });
+  } catch { res.json({ incoming: 0, friends: 0 }); }
+});
+
+app.post("/api/friends/request", friendsLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  const targetUsername = String(req.body?.targetUsername ?? "").trim();
+  const targetId0 = String(req.body?.targetId ?? "").trim();
+  if (!targetUsername && !targetId0) return res.status(400).json({ error: "Who do you want to add?" });
+  try {
+    const target = targetId0
+      ? await prisma.user.findUnique({ where: { id: targetId0 }, select: { id: true, username: true } })
+      : await prisma.user.findFirst({ where: { username: { equals: targetUsername, mode: "insensitive" } }, select: { id: true, username: true } });
+    if (!target) return res.status(404).json({ error: "No such user." });
+    if (target.id === userId) return res.status(400).json({ error: "You can't add yourself." });
+    const existing = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, status, "requesterId" FROM "Friendship"
+        WHERE ("requesterId" = $1 AND "addresseeId" = $2) OR ("requesterId" = $2 AND "addresseeId" = $1) LIMIT 1`,
+      userId, target.id);
+    const ex = existing[0];
+    if (ex) {
+      if (ex.status === "accepted") return res.status(409).json({ error: "You're already friends." });
+      if (ex.requesterId === userId) return res.status(409).json({ error: "Request already sent." });
+      // They already requested you → accept it (mutual add).
+      await prisma.$executeRawUnsafe(`UPDATE "Friendship" SET status='accepted', "respondedAt"=NOW() WHERE id = $1`, ex.id);
+      emitFriends(target.id); emitFriends(userId);
+      return res.json({ ok: true, status: "accepted" });
+    }
+    const out = await prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*)::int AS n FROM "Friendship" WHERE "requesterId" = $1 AND status='pending'`, userId);
+    if (Number(out[0]?.n ?? 0) >= 100) return res.status(429).json({ error: "You have too many pending requests." });
+    // Race-safe: two people adding each other at once both pass the SELECT above,
+    // so the INSERT can lose to the unordered-pair unique index. DO NOTHING instead
+    // of 500ing, then re-resolve (accept if they beat us to it, else report state).
+    const inserted = await prisma.$executeRawUnsafe(
+      `INSERT INTO "Friendship" ("id","requesterId","addresseeId","status") VALUES (gen_random_uuid()::text,$1,$2,'pending')
+       ON CONFLICT (LEAST("requesterId","addresseeId"), GREATEST("requesterId","addresseeId")) DO NOTHING`,
+      userId, target.id);
+    if (inserted === 0) {
+      const now = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, status, "requesterId" FROM "Friendship"
+          WHERE ("requesterId" = $1 AND "addresseeId" = $2) OR ("requesterId" = $2 AND "addresseeId" = $1) LIMIT 1`,
+        userId, target.id);
+      const n = now[0];
+      if (n && n.status === "pending" && n.requesterId !== userId) {
+        await prisma.$executeRawUnsafe(`UPDATE "Friendship" SET status='accepted', "respondedAt"=NOW() WHERE id = $1`, n.id);
+        emitFriends(target.id); emitFriends(userId);
+        return res.json({ ok: true, status: "accepted" });
+      }
+      emitFriends(target.id); emitFriends(userId);
+      return res.json({ ok: true, status: n?.status === "accepted" ? "accepted" : "pending" });
+    }
+    emitFriends(target.id); emitFriends(userId);
+    res.json({ ok: true, status: "pending" });
+  } catch (e) { console.error("[friend request]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+app.post("/api/friends/respond", friendsLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  const requestId = String(req.body?.requestId ?? "").trim();
+  const accept = req.body?.accept === true;
+  if (!requestId) return res.status(400).json({ error: "requestId required." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, "requesterId", "addresseeId", status FROM "Friendship" WHERE id = $1 LIMIT 1`, requestId);
+    const fr = rows[0];
+    if (!fr) return res.status(404).json({ error: "Request not found." });
+    if (fr.addresseeId !== userId) return res.status(403).json({ error: "That request isn't yours to answer." });
+    if (fr.status !== "pending") return res.status(409).json({ error: "That request was already handled." });
+    if (accept) {
+      await prisma.$executeRawUnsafe(`UPDATE "Friendship" SET status='accepted', "respondedAt"=NOW() WHERE id = $1`, requestId);
+    } else {
+      await prisma.$executeRawUnsafe(`DELETE FROM "Friendship" WHERE id = $1`, requestId);
+    }
+    emitFriends(fr.requesterId); emitFriends(userId);
+    res.json({ ok: true, status: accept ? "accepted" : "declined" });
+  } catch (e) { console.error("[friend respond]", e); res.status(500).json({ error: "Server error" }); }
+});
+
+// Remove a friend, or cancel a pending request — either direction.
+app.post("/api/friends/remove", friendsLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  const targetId = String(req.body?.targetId ?? "").trim();
+  if (!targetId) return res.status(400).json({ error: "targetId required." });
+  try {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM "Friendship" WHERE ("requesterId" = $1 AND "addresseeId" = $2) OR ("requesterId" = $2 AND "addresseeId" = $1)`,
+      userId, targetId);
+    emitFriends(targetId); emitFriends(userId);
+    res.json({ ok: true });
+  } catch (e) { console.error("[friend remove]", e); res.status(500).json({ error: "Server error" }); }
+});
+
 // GET /api/notifications?userId=
 app.get("/api/notifications", async (req, res) => {
   const userId = actorId(req)!;
@@ -6169,6 +6311,26 @@ async function start() {
     console.log("[DB] Notification table ready");
   } catch (e) {
     console.error("[DB] Notification table setup failed:", e);
+  }
+
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Friendship" (
+        "id"          TEXT NOT NULL PRIMARY KEY,
+        "requesterId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "addresseeId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "status"      TEXT NOT NULL DEFAULT 'pending',
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "respondedAt" TIMESTAMP(3)
+      );
+    `);
+    // At most one relationship between any two users, in either direction.
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Friendship_pair_key" ON "Friendship"(LEAST("requesterId","addresseeId"), GREATEST("requesterId","addresseeId"));`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Friendship_addressee_idx" ON "Friendship"("addresseeId");`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Friendship_requester_idx" ON "Friendship"("requesterId");`);
+    console.log("[DB] Friendship table ready");
+  } catch (e) {
+    console.error("[DB] Friendship table setup failed:", e);
   }
 
   try {

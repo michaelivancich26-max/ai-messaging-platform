@@ -7,6 +7,7 @@ import NotificationBell from "./NotificationBell";
 import { Wordmark } from "./Wordmark";
 import { useTheme } from "./ThemeProvider";
 import { useFocusTrap } from "@/lib/useFocusTrap";
+import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
 import { BOTS, type Bot } from "@/lib/bots";
@@ -96,6 +97,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [arenaWins, setArenaWins] = useState(0);
   const [dmUnread, setDmUnread] = useState(0);
+  const [friendReq, setFriendReq] = useState(0);
   const { theme, toggle: toggleTheme } = useTheme();
   const isDesktop = useIsDesktop();
 
@@ -124,15 +126,30 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [userId]);
 
-  // Poll the DM unread badge; re-run on navigation so reading a thread clears it promptly.
+  // Poll the DM-unread and incoming-friend-request badges; re-run on navigation so
+  // reading a thread / opening /friends clears them promptly.
   useEffect(() => {
     if (!userId) return;
-    const load = () => api(`${SERVER}/api/dm/unread-count?userId=${userId}`)
-      .then(r => r.json()).then(d => setDmUnread(d?.unread ?? 0)).catch(() => {});
+    const load = () => {
+      api(`${SERVER}/api/dm/unread-count?userId=${userId}`)
+        .then(r => r.json()).then(d => setDmUnread(d?.unread ?? 0)).catch(() => {});
+      api(`${SERVER}/api/friends/summary?userId=${userId}`)
+        .then(r => r.json()).then(d => setFriendReq(d?.incoming ?? 0)).catch(() => {});
+    };
     load();
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
   }, [userId, pathname]);
+
+  // Live-refresh the friend-request badge when the other side acts.
+  useEffect(() => {
+    if (!userId) return;
+    const s = getSocket();
+    const on = () => api(`${SERVER}/api/friends/summary?userId=${userId}`)
+      .then(r => r.json()).then(d => setFriendReq(d?.incoming ?? 0)).catch(() => {});
+    s.on("friendsUpdate", on);
+    return () => { s.off("friendsUpdate", on); };
+  }, [userId]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -363,8 +380,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
             {/* Friends */}
             <button onClick={() => go("/friends")} title="Friends" aria-current={onFriends ? "page" : undefined}
-              aria-label="Friends" className={utilBtn(onFriends)}>
+              aria-label={friendReq > 0 ? `Friends, ${friendReq} pending request${friendReq === 1 ? "" : "s"}` : "Friends"} className={utilBtn(onFriends)}>
               <Users className="h-5 w-5" />
+              {friendReq > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{friendReq > 9 ? "9+" : friendReq}</span>
+              )}
             </button>
           </div>
         </div>
@@ -385,6 +405,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <MessageSquare className="h-5 w-5" />
               {dmUnread > 0 && (
                 <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{dmUnread > 9 ? "9+" : dmUnread}</span>
+              )}
+            </button>
+            <button onClick={() => go("/friends")} className="relative text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              aria-label={friendReq > 0 ? `Friends, ${friendReq} pending` : "Friends"}>
+              <Users className="h-5 w-5" />
+              {friendReq > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{friendReq > 9 ? "9+" : friendReq}</span>
               )}
             </button>
             <button onClick={() => go("/dashboard")} aria-label="Your profile"><Avatar size="h-7 w-7" /></button>

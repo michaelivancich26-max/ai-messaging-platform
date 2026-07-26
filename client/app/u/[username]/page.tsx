@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import type { CredScore } from "@/lib/types";
 import { api } from "@/lib/api";
+import FriendButton from "@/components/FriendButton";
 import { Flame, Zap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -174,6 +175,7 @@ export default function PublicProfilePage() {
                       </div>
                       {memberSince && <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Member since {memberSince}</p>}
                       {data.bio && <p className="mt-3 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{data.bio}</p>}
+                      {!isMe && data.id && <FriendButton targetId={data.id} targetUsername={data.username} className="mt-3" />}
                     </div>
                   </div>
                 </div>
