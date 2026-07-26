@@ -516,6 +516,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
   const [challenging, setChallenging] = useState(false);
   const [modalOpen, setModalOpen] = useState(autoOpen);
   const [error, setError] = useState("");
+  const [limitHit, setLimitHit] = useState(false);
   const userId: string = (session?.user as any)?.id ?? "";
   const c = BOT_COLORS[bot.color];
   const winRate = botWinRate(bot);
@@ -524,7 +525,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
     if (!userId || challenging) return;
     setModalOpen(false);
     setChallenging(true);
-    setError("");
+    setError(""); setLimitHit(false);
     try {
       const res = await api(`${SERVER}/api/bot-rooms`, {
         method: "POST",
@@ -532,7 +533,10 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
         body: JSON.stringify({ userId, botId: bot.id, winCondition }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Failed to start match."); setChallenging(false); return; }
+      if (!res.ok) {
+        if (res.status === 402 || data.code === "arena_limit") setLimitHit(true);
+        setError(data.error ?? "Failed to start match."); setChallenging(false); return;
+      }
       router.push(`/room/${data.name}`);
     } catch {
       setError("Network error. Try again.");
@@ -584,7 +588,14 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
         </div>
 
         {/* Challenge button */}
-        {error && <p className="mt-2 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
+        {limitHit ? (
+          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
+            {error}{" "}
+            <button onClick={() => router.push("/pro")} className="font-semibold underline hover:no-underline">Upgrade →</button>
+          </div>
+        ) : error ? (
+          <p className="mt-2 text-[11px] text-red-600 dark:text-red-400">{error}</p>
+        ) : null}
         <button
           onClick={() => setModalOpen(true)}
           disabled={challenging || !userId}

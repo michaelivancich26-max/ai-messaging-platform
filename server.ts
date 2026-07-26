@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import Stripe from "stripe";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { PrismaClient, SenderType } from "@prisma/client";
@@ -35,6 +36,10 @@ app.use(cors({
   },
   credentials: true,
 }));
+// Stripe's webhook needs the RAW request body for signature verification, so it is
+// registered before the JSON body parser (and before the write-limiter, since
+// Stripe retries and must not be throttled).
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), stripeWebhookHandler);
 app.use(express.json());
 // General limit — generous enough for rapid room navigation (each page load = ~6 GET requests)
 app.use(rateLimit({ windowMs: 60_000, max: 600, standardHeaders: true, legacyHeaders: false }));
@@ -212,6 +217,36 @@ const prisma = new PrismaClient();
 const redis = createClient({ url: process.env.REDIS_URL ?? "redis://localhost:6379" });
 redis.on("error", (err) => console.error("[Redis] Client error:", err));
 redis.connect().catch(console.error);
+
+// ─── Stripe / Pro entitlement ────────────────────────────────────────────────
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID ?? "";
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
+const BILLING_RETURN_URL = process.env.CLIENT_URL ?? "http://localhost:3000";
+const FREE_ARENA_DAILY = 5;   // free-tier Arena matches per day; Pro is unlimited
+
+// Entitlement is always read FRESH from the DB — never trusted from the client or
+// the session JWT, since a Stripe upgrade lands via webhook long after the token
+// was minted. (Same principle as the authz gates.)
+async function userIsPro(userId: string): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ isPro: boolean }[]>(`SELECT "isPro" FROM "User" WHERE id = $1`, userId);
+    return !!rows[0]?.isPro;
+  } catch { return false; }
+}
+
+// Per-user daily Arena counter in Redis (UTC-day bucket, auto-expiring). Enforcement
+// RESERVES a slot atomically (INCR, then gate on the returned value) so concurrent
+// starts can't slip past a check-then-act race; a failed match creation rolls the
+// reservation back. Fails OPEN if Redis is down (returns 0) rather than blocking.
+const arenaUsageKey = (userId: string) => `arena:day:${userId}:${new Date().toISOString().slice(0, 10)}`;
+async function reserveArenaSlot(userId: string): Promise<number> {
+  try { const n = await redis.incr(arenaUsageKey(userId)); if (n === 1) await redis.expire(arenaUsageKey(userId), 172800); return n; }
+  catch { return 0; }
+}
+async function releaseArenaSlot(userId: string): Promise<void> {
+  try { await redis.decr(arenaUsageKey(userId)); } catch { /* ignore */ }
+}
 
 const WINDOW_KEY = (roomId: string) => `chat:${roomId}:window`;
 const WINDOW_SIZE = 6;
@@ -5159,6 +5194,144 @@ app.post("/api/dm/read", async (req, res) => {
 });
 
 // POST /api/bot-rooms — create a private 1v1 debate room against a bot
+// ─── Billing / Pro ───────────────────────────────────────────────────────────
+
+// Stripe webhook (raw body; registered before express.json). Flips a user's isPro
+// entitlement in response to subscription lifecycle events. Hoisted so the route
+// registration near the top of the file can reference it.
+async function stripeWebhookHandler(req: Request, res: Response) {
+  if (!stripe || !STRIPE_WEBHOOK_SECRET) return res.status(503).end();
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body as Buffer, req.headers["stripe-signature"] as string, STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error("[stripe webhook] bad signature:", (err as Error).message);
+    return res.status(400).send("Invalid signature");
+  }
+  try {
+    if (event.type === "checkout.session.completed") {
+      const s = event.data.object as Stripe.Checkout.Session;
+      const userId = s.client_reference_id || (s.metadata?.userId ?? null);
+      const subId = (s.subscription as string) ?? null;
+      // Populate the renewal date now (keyed by userId) rather than depend on the
+      // ordering of the subscription.* events, which may arrive before/after this.
+      let periodEnd: Date | null = null;
+      if (subId && stripe) {
+        try {
+          const sub = await stripe.subscriptions.retrieve(subId);
+          const cpe = (sub as any).current_period_end ?? (sub as any).items?.data?.[0]?.current_period_end;
+          if (cpe) periodEnd = new Date(cpe * 1000);
+        } catch { /* a later subscription.updated event will fill it in */ }
+      }
+      if (userId) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE "User" SET "isPro" = true, "proStatus" = 'active',
+             "stripeCustomerId" = COALESCE($2, "stripeCustomerId"), "stripeSubscriptionId" = $3, "proCurrentPeriodEnd" = $4 WHERE id = $1`,
+          userId, (s.customer as string) ?? null, subId, periodEnd);
+      }
+    } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+      const sub = event.data.object as Stripe.Subscription;
+      // Keep Pro through the dunning window (past_due) so a temporary card decline
+      // doesn't instantly cut off a paying subscriber; drop it once truly inactive.
+      const active = sub.status === "active" || sub.status === "trialing" || sub.status === "past_due";
+      // Stripe moved current_period_end onto the subscription items in newer API
+      // versions, so read the item's value when the top-level field is absent.
+      const cpe = (sub as any).current_period_end ?? (sub as any).items?.data?.[0]?.current_period_end;
+      const periodEnd = cpe ? new Date(cpe * 1000) : null;
+      await prisma.$executeRawUnsafe(
+        `UPDATE "User" SET "isPro" = $2, "proStatus" = $3, "proCurrentPeriodEnd" = $4 WHERE "stripeSubscriptionId" = $1`,
+        sub.id, active, sub.status, periodEnd);
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error("[stripe webhook] handler error:", e);
+    res.status(500).end();
+  }
+}
+
+// Start a Pro subscription — returns a Stripe Checkout URL for the client to open.
+app.post("/api/billing/checkout", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  if (!stripe || !STRIPE_PRICE_ID) return res.status(503).json({ error: "Billing isn't configured yet." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT email, "isPro", "stripeCustomerId" FROM "User" WHERE id = $1`, userId);
+    const u = rows[0]; if (!u) return res.status(404).json({ error: "User not found." });
+    // Guard against a second subscription (double billing) — a churned user (isPro
+    // false) can still re-subscribe; the completed checkout replaces the old sub id.
+    if (u.isPro) return res.status(409).json({ error: "You're already on Grounds Pro.", code: "already_pro" });
+    let customerId: string | null = u.stripeCustomerId ?? null;
+    if (!customerId) {
+      const customer = await stripe.customers.create({ email: u.email ?? undefined, metadata: { userId } });
+      customerId = customer.id;
+      await prisma.$executeRawUnsafe(`UPDATE "User" SET "stripeCustomerId" = $2 WHERE id = $1`, userId, customerId);
+    }
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+      client_reference_id: userId,
+      metadata: { userId },
+      allow_promotion_codes: true,
+      success_url: `${BILLING_RETURN_URL}/dashboard?pro=success`,
+      cancel_url: `${BILLING_RETURN_URL}/pro?canceled=1`,
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error("[billing checkout]", e);
+    res.status(500).json({ error: "Couldn't start checkout." });
+  }
+});
+
+// Open the Stripe billing portal (manage / cancel the subscription).
+app.post("/api/billing/portal", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  if (!stripe) return res.status(503).json({ error: "Billing isn't configured yet." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT "stripeCustomerId" FROM "User" WHERE id = $1`, userId);
+    const customerId = rows[0]?.stripeCustomerId;
+    if (!customerId) return res.status(400).json({ error: "No billing account yet." });
+    const session = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: `${BILLING_RETURN_URL}/dashboard` });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error("[billing portal]", e);
+    res.status(500).json({ error: "Couldn't open the billing portal." });
+  }
+});
+
+// Live Pro status for the client (authoritative — reads the DB, not the JWT).
+app.get("/api/billing/status", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "isPro", "proStatus", "proCurrentPeriodEnd", "stripeCustomerId" FROM "User" WHERE id = $1`, userId);
+    const u = rows[0] ?? {};
+    res.json({
+      isPro: !!u.isPro,
+      status: u.proStatus ?? null,
+      currentPeriodEnd: u.proCurrentPeriodEnd ?? null,
+      manageable: !!u.stripeCustomerId,
+      configured: !!(stripe && STRIPE_PRICE_ID),
+    });
+  } catch { res.json({ isPro: false, configured: !!(stripe && STRIPE_PRICE_ID) }); }
+});
+
+// Admin: grant / revoke Pro directly (comping + testing without a Stripe round-trip).
+app.post("/api/admin/set-pro", async (req, res) => {
+  const adminId = actorId(req);
+  if (!adminId) return res.status(401).json({ error: "Not authenticated." });
+  const admin = await prisma.user.findUnique({ where: { id: adminId }, select: { isAdmin: true } });
+  if (!admin?.isAdmin) return res.status(403).json({ error: "Admins only." });
+  const username = String(req.body?.username ?? "").trim();
+  const makePro = req.body?.isPro === true;
+  const target = await prisma.user.findFirst({ where: { username: { equals: username, mode: "insensitive" } }, select: { id: true } });
+  if (!target) return res.status(404).json({ error: "No such user." });
+  await prisma.$executeRawUnsafe(`UPDATE "User" SET "isPro" = $2, "proStatus" = $3 WHERE id = $1`, target.id, makePro, makePro ? "comp" : "canceled");
+  res.json({ ok: true, isPro: makePro });
+});
+
 app.post("/api/bot-rooms", createLimiter, async (req, res) => {
   const userId = actorId(req)!;
   const { botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {
@@ -5167,9 +5340,26 @@ app.post("/api/bot-rooms", createLimiter, async (req, res) => {
   if (!botId) return res.status(400).json({ error: "botId required" });
   if (!BOT_IDS.includes(botId)) return res.status(400).json({ error: "Unknown bot" });
 
+  let arenaReserved = false;
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Free-tier Arena cap — 5 matches/day; Pro is unlimited. Reserve a slot ATOMICALLY
+    // (INCR + gate on the returned count) before creating the room, so concurrent starts
+    // can't race past the check; rolled back in the catch if creation fails.
+    const pro = await userIsPro(userId);
+    if (!pro) {
+      const n = await reserveArenaSlot(userId);
+      if (n > FREE_ARENA_DAILY) {
+        await releaseArenaSlot(userId);
+        return res.status(402).json({
+          error: `You've used all ${FREE_ARENA_DAILY} free Arena matches today. Upgrade to Grounds Pro for unlimited practice.`,
+          code: "arena_limit", limit: FREE_ARENA_DAILY,
+        });
+      }
+      arenaReserved = true;
+    }
 
     // Ranked iff the debate is on a vetted, two-sided LIVE claim — either chosen
     // by id, or a free-text topic that exactly matches one. Curated claims are
@@ -5211,6 +5401,7 @@ app.post("/api/bot-rooms", createLimiter, async (req, res) => {
 
     res.json({ name, id: room.id });
   } catch (e) {
+    if (arenaReserved) await releaseArenaSlot(userId);   // roll back the reserved free-tier slot
     console.error("[bot-rooms]", e);
     res.status(500).json({ error: "Failed to create bot room" });
   }
@@ -6447,6 +6638,13 @@ async function start() {
     // Rapid Fire has its own ladder so short, stranger-matched rounds can't move
     // the Battle Grounds rating.
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "rapidElo" INTEGER NOT NULL DEFAULT 1200`);
+    // Pro entitlement + Stripe linkage (see the Billing/Pro section).
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isPro" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "stripeCustomerId" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proStatus" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proCurrentPeriodEnd" TIMESTAMP(3)`);
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_stripeSubscriptionId_key" ON "User"("stripeSubscriptionId")`);
     console.log("[DB] User.elo column ready");
   } catch (e) {
     console.error("[DB] User.elo setup failed:", e);
