@@ -7,6 +7,7 @@ import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAvera
 import type { CredScore } from "@/lib/types";
 import { api } from "@/lib/api";
 import FriendButton from "@/components/FriendButton";
+import { RankingsCard, type Rank } from "@/components/RankingsCard";
 import { Flame, Zap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -18,6 +19,9 @@ interface ProfileData {
   avatarUrl: string | null;
   createdAt: string;
   elo: number;
+  arenaElo: number;
+  competitiveRank: Rank | null;
+  arenaRank: Rank | null;
   stats: {
     debateCount: number; messageCount: number; arenaMatchCount: number;
     arenaWins: number; arenaLosses: number; arenaBonus: number;
@@ -187,6 +191,9 @@ export default function PublicProfilePage() {
                   <StatCard value={`${data.stats.arenaWins}W ${data.stats.arenaLosses}L`} label="Bot record" />
                   <StatCard value={<span className="inline-flex items-center gap-1"><span>{data.stats.dailyStreak}</span><Flame className="h-5 w-5 shrink-0" aria-hidden /></span>} label="Day streak" sub={data.stats.longestStreak ? `best ${data.stats.longestStreak}` : undefined} />
                 </div>
+
+                {/* Rankings */}
+                <RankingsCard elo={data.elo} arenaElo={data.arenaElo} competitiveRank={data.competitiveRank} arenaRank={data.arenaRank} />
 
                 {/* Match history — completed 1v1 competitive matches */}
                 {matches.length > 0 && (

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
+import { RankingsCard, type Rank } from "@/components/RankingsCard";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
 import { Flame } from "@/lib/icons";
@@ -120,6 +121,10 @@ export default function DashboardPage() {
   const [email, setEmail] = useState("");
   const [emailVerified, setEmailVerified] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [elo, setElo] = useState(1200);
+  const [arenaElo, setArenaElo] = useState(1200);
+  const [competitiveRank, setCompetitiveRank] = useState<Rank | null>(null);
+  const [arenaRank, setArenaRank] = useState<Rank | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -160,6 +165,10 @@ export default function DashboardPage() {
         if (Array.isArray(data.medals)) setMedals(data.medals);
         if (Array.isArray(data.featuredMedals)) setFeaturedMedals(data.featuredMedals);
         if (data.claimAverages) setClaimAverages(data.claimAverages);
+        if (typeof data.elo === "number") setElo(data.elo);
+        if (typeof data.arenaElo === "number") setArenaElo(data.arenaElo);
+        setCompetitiveRank(data.competitiveRank ?? null);
+        setArenaRank(data.arenaRank ?? null);
       })
       .catch(() => {});
   }, [status, userId]);
@@ -339,6 +348,10 @@ export default function DashboardPage() {
                 sub={stats?.longestStreak ? `best ${stats.longestStreak}` : undefined}
               />
             </div>
+
+            {/* ── Rankings ── (gated on loaded profile data so a ranked user never
+                flashes "Unranked" while the fetch is still in flight) */}
+            {stats && <RankingsCard elo={elo} arenaElo={arenaElo} competitiveRank={competitiveRank} arenaRank={arenaRank} />}
 
             {/* ── Veritas Score ── */}
             {cred && <VeritasScorePanel cred={cred} arenaBonus={stats?.arenaBonus ?? 0} />}

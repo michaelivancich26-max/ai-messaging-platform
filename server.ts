@@ -4783,12 +4783,13 @@ async function buildProfilePayload(
 ) {
   const uid = user.id;
   const uRows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT elo, "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
+    `SELECT elo, "arenaElo", "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
             "claimsRated", "dailyStreak", "longestStreak", "featuredMedals"
      FROM "User" WHERE id = $1`, uid,
   ).catch(() => [] as any[]);
   const u0 = uRows[0] ?? {};
   const elo = Number(u0.elo ?? 1200);
+  const arenaElo = Number(u0.arenaElo ?? 1200);
   const claimAverages = {
     score:     Math.round(Number(u0.avgClaimScore ?? 0) * 10) / 10,
     accuracy:  Math.round(Number(u0.avgAccuracy   ?? 0) * 10) / 10,
@@ -4801,7 +4802,7 @@ async function buildProfilePayload(
   const dailyStreak = Number(u0.dailyStreak ?? 0);
   const longestStreak = Number(u0.longestStreak ?? 0);
 
-  const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows] = await Promise.all([
+  const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows, compRankRows, arenaRankRows] = await Promise.all([
     computeCredibility(uid, prisma).catch(() => null),
     prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
@@ -4839,6 +4840,26 @@ async function buildProfilePayload(
       `SELECT COUNT(*) AS count FROM "CompetitiveMatch" WHERE status = 'complete' AND "winnerId" = $1`,
       uid,
     ).catch(() => [{ count: 0n }]),
+    // Competitive (Battle Grounds) rank by ELO, over the same cohort the leaderboard
+    // shows: rated players — elo moved off the 1200 default, or has a completed win.
+    prisma.$queryRawUnsafe<any[]>(
+      `WITH cohort AS (
+         SELECT u.id, u.elo FROM "User" u
+         WHERE u.elo <> 1200
+            OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm WHERE cm.status = 'complete' AND cm."winnerId" = u.id)
+       ),
+       r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
+       SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
+    ).catch(() => [] as any[]),
+    // Arena rank by arena ELO, over players with at least one ranked arena match.
+    prisma.$queryRawUnsafe<any[]>(
+      `WITH cohort AS (
+         SELECT u.id, u."arenaElo" AS elo FROM "User" u
+         WHERE EXISTS (SELECT 1 FROM "ArenaMatch" am WHERE am."userId" = u.id AND am."ranked" = true)
+       ),
+       r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
+       SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
+    ).catch(() => [] as any[]),
   ]);
   const as = arenaStats[0] as any;
   const arenaWins = Number(as?.wins ?? 0);
@@ -4889,7 +4910,14 @@ async function buildProfilePayload(
     ? user
     : { id: user.id, username: user.username, bio: user.bio, avatarUrl: user.avatarUrl, createdAt: user.createdAt };
 
-  return { ...publicUser, elo, stats, claimAverages, medals, featuredMedals, ...(cred ? { cred } : {}) };
+  // Leaderboard positions (null = not yet on the board). Rank/total come from the
+  // window-function queries above; a missing row means the user isn't in the cohort.
+  const competitiveRank = compRankRows[0]?.rank != null
+    ? { rank: Number(compRankRows[0].rank), total: Number(compRankRows[0].total) } : null;
+  const arenaRank = arenaRankRows[0]?.rank != null
+    ? { rank: Number(arenaRankRows[0].rank), total: Number(arenaRankRows[0].total) } : null;
+
+  return { ...publicUser, elo, arenaElo, stats, claimAverages, medals, featuredMedals, competitiveRank, arenaRank, ...(cred ? { cred } : {}) };
 }
 
 // GET /api/users/:id/profile — profile; account fields only for the owner
