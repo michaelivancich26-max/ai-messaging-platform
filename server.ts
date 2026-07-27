@@ -5529,6 +5529,38 @@ app.get("/api/coach/:roomName", aiRouteLimiter, async (req, res) => {
   }
 });
 
+// How much of the free daily Arena allowance is left, so the UI can say so
+// BEFORE a match is burned rather than only after the 402. Read-only: this
+// uses GET, never INCR — reserving a slot is POST /api/bot-rooms' job alone.
+//
+// Redis is the source of truth for the counter and it fails OPEN at the gate
+// (a down Redis lets matches through), so when we can't read it we report
+// `known: false` and the client shows nothing rather than inventing a number.
+app.get("/api/arena/usage", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    if (await userIsPro(userId)) {
+      return res.json({ isPro: true, known: true, limit: null, used: 0, remaining: null });
+    }
+    let used = 0, known = true;
+    try {
+      const raw = await redis.get(arenaUsageKey(userId));
+      const n = raw == null ? 0 : parseInt(raw, 10);
+      used = Number.isFinite(n) && n > 0 ? n : 0;
+    } catch { known = false; }
+    res.json({
+      isPro: false, known,
+      limit: FREE_ARENA_DAILY,
+      used: Math.min(used, FREE_ARENA_DAILY),
+      remaining: Math.max(0, FREE_ARENA_DAILY - used),
+    });
+  } catch (e) {
+    console.error("[GET /api/arena/usage]", e);
+    res.status(500).json({ error: "Couldn't read your Arena usage." });
+  }
+});
+
 app.post("/api/bot-rooms", createLimiter, async (req, res) => {
   const userId = actorId(req)!;
   const { botId, winCondition = { type: "exchanges", limit: 10 } } = req.body as {

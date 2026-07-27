@@ -510,13 +510,15 @@ function MatchSetupModal({
 
 // ─── Bot Card ────────────────────────────────────────────────────────────────
 
-function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
+function BotCard({ bot, autoOpen = false, capReached = false, onCapHit, onMatchStarted }: {
+  bot: Bot; autoOpen?: boolean; capReached?: boolean;
+  onCapHit?: (message: string) => void; onMatchStarted?: () => void;
+}) {
   const { data: session } = useSession();
   const router = useRouter();
   const [challenging, setChallenging] = useState(false);
   const [modalOpen, setModalOpen] = useState(autoOpen);
   const [error, setError] = useState("");
-  const [limitHit, setLimitHit] = useState(false);
   const userId: string = (session?.user as any)?.id ?? "";
   const c = BOT_COLORS[bot.color];
   const winRate = botWinRate(bot);
@@ -525,7 +527,7 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
     if (!userId || challenging) return;
     setModalOpen(false);
     setChallenging(true);
-    setError(""); setLimitHit(false);
+    setError("");
     try {
       const res = await api(`${SERVER}/api/bot-rooms`, {
         method: "POST",
@@ -534,9 +536,15 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 402 || data.code === "arena_limit") setLimitHit(true);
+        // The cap is an account-level fact, not this card's — hand it up so every
+        // other opponent stops advertising a match the server will refuse.
+        if (res.status === 402 || data.code === "arena_limit") {
+          onCapHit?.(data.error ?? "You've used today's free Arena matches.");
+          setChallenging(false); return;
+        }
         setError(data.error ?? "Failed to start match."); setChallenging(false); return;
       }
+      onMatchStarted?.();
       router.push(`/room/${data.name}`);
     } catch {
       setError("Network error. Try again.");
@@ -587,21 +595,19 @@ function BotCard({ bot, autoOpen = false }: { bot: Bot; autoOpen?: boolean }) {
           <span className="ml-auto text-gray-500 dark:text-gray-400">{winRate}% win rate</span>
         </div>
 
-        {/* Challenge button */}
-        {limitHit ? (
-          <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
-            {error}{" "}
-            <button onClick={() => router.push("/pro")} className="font-semibold underline hover:no-underline">Upgrade →</button>
-          </div>
-        ) : error ? (
-          <p className="mt-2 text-[11px] text-red-600 dark:text-red-400">{error}</p>
-        ) : null}
+        {/* Challenge button. The cap message lives once at the page level, so a
+            card that's merely capped stays quiet — only real errors show here. */}
+        {error && <p className="mt-2 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
         <button
-          onClick={() => setModalOpen(true)}
+          onClick={() => capReached ? router.push("/pro") : setModalOpen(true)}
           disabled={challenging || !userId}
-          className={`mt-3 w-full rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100 ${c.btn}`}
+          title={capReached ? "You've used today's free Arena matches — Grounds Pro is unlimited" : undefined}
+          className={`mt-3 w-full rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100 ${
+            capReached
+              ? "bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+              : c.btn}`}
         >
-          {challenging ? (
+          {capReached ? "Upgrade to challenge" : challenging ? (
             <span className="flex items-center justify-center gap-2">
               <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -705,10 +711,41 @@ function ArenaLeaderboard() {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
+// The free Arena allowance, shared by every card. Held here rather than per-card
+// because the cap is an account-level fact: hitting it on one opponent used to
+// leave the other nine still advertising "Challenge".
+interface ArenaUsage { isPro: boolean; known: boolean; limit: number | null; used: number; remaining: number | null }
+
 function ArenaContent() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [usage, setUsage] = useState<ArenaUsage | null>(null);
+  const [capMessage, setCapMessage] = useState("");
   const searchParams = useSearchParams();
   const autoChallenge = searchParams.get("challenge");
+  const router = useRouter();
+
+  useEffect(() => {
+    let alive = true;
+    api(`${SERVER}/api/arena/usage`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive && d) setUsage(d as ArenaUsage); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Trust the server's 402 over our cached count, and spend optimistically on a
+  // successful start so the counter is right when they come back from the match.
+  const onCapHit = (message: string) => {
+    setCapMessage(message);
+    setUsage(u => (u ? { ...u, used: u.limit ?? u.used, remaining: 0 } : u));
+  };
+  const onMatchStarted = () => setUsage(u =>
+    u && !u.isPro && u.remaining != null ? { ...u, used: u.used + 1, remaining: Math.max(0, u.remaining - 1) } : u);
+
+  const free = !!usage && !usage.isPro && usage.known;
+  const remaining = free ? usage!.remaining ?? 0 : null;
+  const capReached = free && remaining === 0;
+
   return (
     <div className="flex h-full">
       <ArenaSidebar mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />
@@ -746,7 +783,7 @@ function ArenaContent() {
               Choose your opponent. Each bot has a unique debating style and difficulty level.
               Send the first message to open any topic — your opponent will respond.
             </p>
-            <div className="mt-5 flex items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
               <span className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-brand-green" />
                 10 opponents across 5 tiers
@@ -755,7 +792,28 @@ function ArenaContent() {
                 <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
                 1-on-1 private match
               </span>
+              {/* Say what's left BEFORE a match is burned. Silent for Pro (no cap
+                  to report) and when Redis couldn't be read (`known: false`). */}
+              {free && (
+                <span className="flex items-center gap-1.5">
+                  <span className={`h-1.5 w-1.5 rounded-full ${capReached ? "bg-amber-500" : "bg-gray-400 dark:bg-gray-500"}`} />
+                  <span className={capReached ? "font-semibold text-amber-700 dark:text-amber-400" : undefined}>
+                    {capReached
+                      ? "No free matches left today"
+                      : `${remaining} of ${usage!.limit} free matches left today`}
+                  </span>
+                </span>
+              )}
             </div>
+
+            {capReached && (
+              <div className="mx-auto mt-5 max-w-md rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+                {capMessage || `You've used all ${usage!.limit} free Arena matches today.`}{" "}
+                <button onClick={() => router.push("/pro")} className="font-semibold underline hover:no-underline">
+                  Upgrade for unlimited practice →
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -771,7 +829,8 @@ function ArenaContent() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-5">
             {BOTS.map((bot) => (
-              <BotCard key={bot.id} bot={bot} autoOpen={bot.id === autoChallenge} />
+              <BotCard key={bot.id} bot={bot} autoOpen={bot.id === autoChallenge}
+                capReached={capReached} onCapHit={onCapHit} onMatchStarted={onMatchStarted} />
             ))}
           </div>
 
