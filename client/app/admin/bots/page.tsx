@@ -42,13 +42,19 @@ export default function AdminBotsPage() {
   useEffect(() => { if (isAdmin) load(); else setLoading(false); }, [isAdmin, load]);
 
   async function setHidden(bot: AdminBot, hidden: boolean) {
-    setBusyId(bot.id);
+    setBusyId(bot.id); setErr("");
     try {
       const res = await api(`${SERVER}/api/admin/custom-bots/${bot.id}/hide`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hidden }),
       });
-      if (res.ok) load();
+      if (res.ok) { load(); return; }
+      // A moderation action that fails silently is the worst kind: the moderator
+      // believes the content is down and moves on, and it is still published.
+      const d = await res.json().catch(() => ({} as any));
+      setErr(d.error ?? `Couldn't ${hidden ? "hide" : "restore"} "${bot.name}". It is unchanged — try again.`);
+    } catch {
+      setErr(`Couldn't ${hidden ? "hide" : "restore"} "${bot.name}" — you may be offline. It is unchanged.`);
     } finally { setBusyId(null); }
   }
 
@@ -80,7 +86,11 @@ export default function AdminBotsPage() {
           </p>
         </header>
 
-        {err && <p className="mb-4 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-red-600 shadow-card dark:border-gray-800 dark:bg-gray-900 dark:text-red-400">{err}</p>}
+        {err && (
+          <p role="alert" className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-800 shadow-card dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {err}
+          </p>
+        )}
 
         <div className="mb-4 grid grid-cols-3 gap-3">
           {[

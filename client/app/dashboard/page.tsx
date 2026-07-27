@@ -153,7 +153,41 @@ export default function DashboardPage() {
   // proLoading matters: usePro starts as not-Pro while /api/billing/status is in
   // flight, so using isPro alone flashes the upsell chip at paying subscribers on
   // every load — and would flash the badge in late for them too.
-  const { isPro, loading: proLoading } = usePro();
+  const { isPro, loading: proLoading, refresh: refreshPro } = usePro();
+
+  // Returning from Stripe. Checkout sends the customer to /dashboard?pro=success
+  // and nothing read it, so a payment landed with no acknowledgement at all and
+  // the page still showed the upsell — usePro exposes `refresh` for exactly this
+  // and had no caller.
+  //
+  // The entitlement flips on an ASYNCHRONOUS webhook, so it usually isn't live
+  // the instant Stripe redirects. Re-pull a few times before saying anything
+  // final, rather than telling someone who just paid that nothing happened.
+  //
+  // Reads location directly instead of useSearchParams: that hook forces a
+  // client-render bailout which must be wrapped in Suspense, or `next build`
+  // fails and blocks every Vercel deploy.
+  const [postCheckout, setPostCheckout] = useState<"idle" | "confirming" | "done">("idle");
+  // State, not a ref: the retry effect re-runs off its deps, so a ref counter
+  // changes nothing and the poll fires exactly once and then hangs on
+  // "activating…" forever.
+  const [proPolls, setProPolls] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("pro") !== "success") return;
+    // Drop the param so a reload or a Back doesn't replay the banner.
+    window.history.replaceState({}, "", window.location.pathname);
+    setPostCheckout("confirming");
+  }, []);
+
+  useEffect(() => {
+    if (postCheckout !== "confirming") return;
+    if (isPro) { setPostCheckout("done"); return; }
+    if (proPolls >= 6) { setPostCheckout("done"); return; }
+    const t = setTimeout(() => { setProPolls(n => n + 1); refreshPro(); }, 1500);
+    return () => clearTimeout(t);
+  }, [postCheckout, isPro, proPolls, refreshPro]);
 
   const [dataOpen, setDataOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -301,6 +335,39 @@ export default function DashboardPage() {
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-2xl px-4 py-8 space-y-6 animate-fadeInUp">
+
+            {postCheckout !== "idle" && (
+              <div role="status" aria-live="polite"
+                className={`rounded-2xl border p-4 shadow-card ${postCheckout === "done" && isPro
+                  ? "border-emerald-300 bg-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-950/30"
+                  : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"}`}>
+                {postCheckout === "confirming" ? (
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Payment received — activating your subscription&hellip;
+                  </p>
+                ) : isPro ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                      You&rsquo;re on Grounds Pro. Thanks for backing the site.
+                    </p>
+                    <button onClick={() => setPostCheckout("idle")}
+                      className="shrink-0 text-xs font-semibold text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                      Dismiss
+                    </button>
+                  </div>
+                ) : (
+                  // Honest rather than reassuring: the money is taken but the
+                  // entitlement hasn't arrived, and pretending otherwise would
+                  // send them looking for features that aren't unlocked yet.
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    Payment received. Your subscription is still activating &mdash; reload in a moment,
+                    and if it hasn&rsquo;t appeared shortly, open{" "}
+                    <Link href="/pro" className="font-semibold text-orange-800 underline-offset-2 hover:underline dark:text-orange-300">Grounds Pro</Link>{" "}
+                    to check.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* ── Profile card ── */}
             <div className="rounded-2xl border border-gray-200 bg-white shadow-elevated dark:border-gray-800 dark:bg-gray-900 p-5">

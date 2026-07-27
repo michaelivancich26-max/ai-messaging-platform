@@ -219,7 +219,12 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
   const [editing, setEditing] = useState<CustomBot | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [notice, setNotice] = useState("");
+  // The notice line carries both confirmations and failures, so the kind is
+  // tracked explicitly. Sniffing the text for a prefix looked fine until a server
+  // error ("Opponent not found.") rendered in the neutral style.
+  const [notice, setNotice] = useState<{ text: string; kind: "info" | "error" } | null>(null);
+  const say = (text: string, kind: "info" | "error" = "info") => setNotice({ text, kind });
+  const clearNotice = () => setNotice(null);
 
   const load = useCallback(() => {
     api(`${SERVER}/api/custom-bots`).then(r => (r.ok ? r.json() : null))
@@ -229,24 +234,52 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Every mutation reports failure. These used to be `if (res.ok) load()` with no
+  // else, so a 403, a 409 or a dropped connection left the card exactly as it was
+  // — indistinguishable from a button that isn't wired up.
+  async function mutate(label: string, run: () => Promise<Response>) {
+    clearNotice();
+    try {
+      const res = await run();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as any));
+        say(data.error ?? `Couldn't ${label}. Try again.`, "error");
+        return false;
+      }
+      load();
+      return true;
+    } catch {
+      say(`Couldn't ${label} — you may be offline.`, "error");
+      return false;
+    }
+  }
+
   async function challenge(botId: string) {
-    setBusyId(botId); setNotice("");
-    const err = await onChallenge(botId);
-    if (err) { setNotice(err); setBusyId(null); }
+    setBusyId(botId); clearNotice();
+    try {
+      const err = await onChallenge(botId);
+      if (err) say(err, "error");
+    } finally {
+      // Always clear. Cancelling the match-setup modal resolves the same way a
+      // successful start does, and only the error path used to reset this — so
+      // backing out of the modal left the card stuck on "Starting…" forever.
+      // On a real start the page navigates away, so clearing is harmless there.
+      setBusyId(null);
+    }
   }
 
   async function togglePublic(bot: CustomBot) {
-    const res = await api(`${SERVER}/api/custom-bots/${bot.id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isPublic: !bot.isPublic }),
-    });
-    if (res.ok) load();
+    await mutate(bot.isPublic ? "unshare that opponent" : "share that opponent", () =>
+      api(`${SERVER}/api/custom-bots/${bot.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: !bot.isPublic }),
+      }));
   }
 
   async function remove(bot: CustomBot) {
     if (!window.confirm(`Delete "${bot.name}"? This can't be undone.`)) return;
-    const res = await api(`${SERVER}/api/custom-bots/${bot.id}`, { method: "DELETE" });
-    if (res.ok) load();
+    await mutate("delete that opponent", () =>
+      api(`${SERVER}/api/custom-bots/${bot.id}`, { method: "DELETE" }));
   }
 
   async function report(bot: CustomBot) {
@@ -257,13 +290,14 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reason }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { setNotice(data.error ?? "Couldn't submit the report."); return; }
-    setNotice(data.autoHidden
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok) { say(data.error ?? "Couldn't submit the report.", "error"); return; }
+    say(data.autoHidden
       ? "Thanks — that opponent has been pulled from the library pending review."
       : "Thanks — a moderator will take a look.");
     load();
   }
+
 
   const atLimit = mine.length >= limit;
   const shown = tab === "mine" ? mine : library;
@@ -306,8 +340,11 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
       </div>
 
       {notice && (
-        <p className="mb-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs text-gray-700 shadow-card dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-          {notice}
+        <p role="status" aria-live="polite"
+          className={`mb-3 rounded-xl border px-4 py-2.5 text-xs shadow-card ${notice.kind === "error"
+            ? "border-red-300 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+            : "border-gray-200 bg-white text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"}`}>
+          {notice.text}
         </p>
       )}
 
