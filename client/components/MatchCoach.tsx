@@ -59,7 +59,26 @@ export default function MatchCoach({ roomName }: { roomName: string }) {
     } catch { setErr("Network error. Try again."); setState("error"); }
   }
 
-  if (proLoading || state === "none") return null;
+  if (proLoading) return null;
+
+  // Too little of the user's own argument to coach (the endpoint's 422). This
+  // used to return null, which meant the card the user had just clicked simply
+  // vanished — indistinguishable from a broken button. It bites Rapid hardest,
+  // since a fast round can end with one message each and the coach needs two.
+  if (state === "none") {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-card dark:border-gray-800 dark:bg-gray-900">
+        <div className="flex items-center gap-2">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"><Sparkles className="h-4 w-4" /></span>
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">AI coach</h3>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+          That round was too short to coach — there needs to be a couple of your own
+          arguments to work from. Play a longer one and the breakdown will be here.
+        </p>
+      </div>
+    );
+  }
 
   // Non-Pro: upsell.
   if (!isPro) {
