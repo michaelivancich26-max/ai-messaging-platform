@@ -24,7 +24,9 @@ export interface ChatMessage {
   userId: string | null;
   roomId: string;
   channelId?: string | null;
-  user?: { username: string } | null;
+  // The server sends only this projection of the author — never the full User
+  // row, which used to include the password hash and email.
+  user?: { id?: string; username: string; avatarUrl?: string | null; isPro?: boolean } | null;
   reactions?: Reaction[];
   editedAt?: string | null;
   deletedAt?: string | null;

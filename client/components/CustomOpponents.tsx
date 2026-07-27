@@ -289,8 +289,12 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
             ))}
           </div>
           <button
-            onClick={() => (isPro ? setCreating(true) : router.push("/pro"))}
-            disabled={isPro && atLimit}
+            // Wait for the entitlement before acting on it. The badge below already
+            // waits for !proLoading; this handler did not, so during the in-flight
+            // /api/billing/status a subscriber who clicked Create was bounced off
+            // Training Grounds to the upsell page.
+            onClick={() => { if (proLoading) return; isPro ? setCreating(true) : router.push("/pro"); }}
+            disabled={proLoading || (isPro && atLimit)}
             title={isPro && atLimit ? `You can keep up to ${limit} opponents` : undefined}
             className="inline-flex items-center gap-1.5 rounded-xl bg-orange-700 px-3 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40">
             <Plus className="h-3.5 w-3.5" /> Create

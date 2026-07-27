@@ -5078,7 +5078,7 @@ async function buildProfilePayload(
 ) {
   const uid = user.id;
   const uRows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT elo, "arenaElo", "rapidElo", "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
+    `SELECT elo, "arenaElo", "rapidElo", "isPro", "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
             "claimsRated", "dailyStreak", "longestStreak", "featuredMedals"
      FROM "User" WHERE id = $1`, uid,
   ).catch(() => [] as any[]);
@@ -5240,7 +5240,10 @@ async function buildProfilePayload(
   const rapidRank = rapidRankRows[0]?.rank != null
     ? { rank: Number(rapidRankRows[0].rank), total: Number(rapidRankRows[0].total) } : null;
 
-  return { ...publicUser, elo, arenaElo, rapidElo, stats, claimAverages, medals, featuredMedals, competitiveRank, arenaRank, rapidRank, ...(cred ? { cred } : {}) };
+  // isPro is public by design — the badge is worn, and status is the one thing
+  // Pro is allowed to sell. Read from the same row the rest of this payload uses.
+  const isPro = !!(u0 as any).isPro;
+  return { ...publicUser, isPro, elo, arenaElo, rapidElo, stats, claimAverages, medals, featuredMedals, competitiveRank, arenaRank, rapidRank, ...(cred ? { cred } : {}) };
 }
 
 // GET /api/users/:id/profile — profile; account fields only for the owner

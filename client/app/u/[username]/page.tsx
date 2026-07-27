@@ -8,6 +8,7 @@ import type { CredScore } from "@/lib/types";
 import { api } from "@/lib/api";
 import FriendButton from "@/components/FriendButton";
 import { RankingsCard, type Rank } from "@/components/RankingsCard";
+import { ProBadge } from "@/components/ProBadge";
 import { Flame, Zap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
@@ -21,6 +22,7 @@ interface ProfileData {
   elo: number;
   arenaElo: number;
   rapidElo?: number;
+  isPro?: boolean;
   competitiveRank: Rank | null;
   arenaRank: Rank | null;
   rapidRank?: Rank | null;
@@ -174,6 +176,7 @@ export default function PublicProfilePage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h1 className="font-display text-xl font-bold tracking-tight text-gray-900 dark:text-white">{data.username}</h1>
+                        {data.isPro && <ProBadge />}
                         <EloBadge elo={data.elo} />
                         {isMe && (
                           <button onClick={() => router.push("/dashboard")} className="text-[11px] font-semibold text-orange-700 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300">Edit on dashboard →</button>

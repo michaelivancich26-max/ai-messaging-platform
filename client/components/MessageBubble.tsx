@@ -5,6 +5,7 @@ import type { ChatMessage, ClaimInfo, CredScore, Reaction } from "@/lib/types";
 import { getStancePalette, NEUTRAL_PALETTE } from "@/lib/stances";
 import CredibilityBadge from "./CredibilityBadge";
 import ClaimBadge from "./ClaimBadge";
+import { ProBadge } from "./ProBadge";
 import { api } from "@/lib/api";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "🔥", "👎", "🤔"];
@@ -414,7 +415,9 @@ export default function MessageBubble({ message, isSelf, highlighted, claim, cre
 
       <div className={`flex flex-col ${isSelf ? "items-end" : "items-start"}`}>
         <span className="mb-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-          {isSelf ? "You" : username} · {time}
+          {isSelf ? "You" : username}
+          {message.user?.isPro && <ProBadge inline />}
+          · {time}
           {message.editedAt && <span className="text-[11px] text-gray-500 dark:text-gray-400 italic">edited</span>}
           {posConfig && senderPosition !== "NEUTRAL" && (
             <span className={`rounded-full px-1.5 py-0 text-[10px] font-bold ${posConfig.tag}`}>{senderPosition}</span>

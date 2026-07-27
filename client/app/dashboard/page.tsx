@@ -9,6 +9,7 @@ import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
 import { RankingsCard, type Rank } from "@/components/RankingsCard";
+import { ProBadge } from "@/components/ProBadge";
 import { api } from "@/lib/api";
 import { signOutEverywhere } from "@/lib/session";
 import { usePro } from "@/lib/usePro";
@@ -149,7 +150,10 @@ export default function DashboardPage() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  const { isPro } = usePro();
+  // proLoading matters: usePro starts as not-Pro while /api/billing/status is in
+  // flight, so using isPro alone flashes the upsell chip at paying subscribers on
+  // every load — and would flash the badge in late for them too.
+  const { isPro, loading: proLoading } = usePro();
 
   const [dataOpen, setDataOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -316,6 +320,7 @@ export default function DashboardPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <h1 className="font-display text-xl font-bold tracking-tight text-gray-900 dark:text-white">{username}</h1>
+                      {!proLoading && isPro && <ProBadge />}
                       {memberSince && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Member since {memberSince}</p>}
                     </div>
                     {avatarUrl && (
@@ -370,7 +375,7 @@ export default function DashboardPage() {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Belief Map</span>
-                  {!isPro && (
+                  {!proLoading && !isPro && (
                     <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-800 dark:text-orange-300">Pro</span>
                   )}
                 </span>
@@ -390,7 +395,7 @@ export default function DashboardPage() {
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Analytics</span>
-                  {!isPro && (
+                  {!proLoading && !isPro && (
                     <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-800 dark:text-orange-300">Pro</span>
                   )}
                 </span>
