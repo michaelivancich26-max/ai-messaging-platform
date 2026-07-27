@@ -1905,6 +1905,11 @@ export default function RoomPage() {
                       {matchResult.scoreImpact > 0 ? "+" : ""}{matchResult.scoreImpact.toFixed(1)}
                     </p>
                   </div>
+                  {/* Coaching is most useful on practice matches, and Arena was the
+                      one result screen missing it. Note the transcript this reads is
+                      pruned once the user is 5 matches past this one (arena-judge),
+                      so an old match can 422 — MatchCoach renders nothing in that case. */}
+                  {!isSpectator && <MatchCoach roomName={roomId} />}
                   <div className="flex gap-2">
                     <button
                       onClick={() => router.push("/arena")}
