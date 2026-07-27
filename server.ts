@@ -11,7 +11,8 @@ import { evaluateClaim, computeCredibility, SCORE_WEIGHTS } from "./services/cla
 import { summarizeConversation } from "./services/summarizer";
 import { coachMatch } from "./services/coach";
 import { containsSlur } from "./services/contentFilter";
-import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch } from "./services/debateBot";
+import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch, isBuiltinBot, CUSTOM_NAME_MAX, CUSTOM_PERSONA_MAX } from "./services/debateBot";
+import { randomUUID } from "crypto";
 import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId, categoryLabel } from "./services/topics";
 import { getDeck, beliefCount, recordBelief, seedFromCatalog, type Stance } from "./services/propositions";
@@ -5529,6 +5530,200 @@ app.get("/api/coach/:roomName", aiRouteLimiter, async (req, res) => {
   }
 });
 
+// ─── Custom AI opponents (Grounds Pro) ───────────────────────────────────────
+// Authoring a sparring partner is the Pro feature. PLAYING one from the community
+// library is free and just spends an ordinary Arena match, so the library keeps
+// its network effect and doubles as the funnel toward the authoring tool.
+//
+// Custom matches are always unranked (enforced in POST /api/bot-rooms), so none
+// of this can touch arena ELO.
+
+const CUSTOM_BOT_LIMIT = 12;   // per owner; keeps one account from filling the library
+
+function cleanBotName(v: unknown): string {
+  // All control characters collapse to spaces: a name is interpolated into the
+  // bot's system prompt and into its username, so it must not carry newlines
+  // that could fake a new instruction line or break the transcript.
+  return String(v ?? "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, CUSTOM_NAME_MAX);
+}
+function cleanPersona(v: unknown): string {
+  // Newlines are legitimate here (people write multi-line descriptions), so only
+  // the other control characters go. The persona is fenced as DATA in the prompt
+  // rather than filtered for intent — see CUSTOM_BOT_FRAMING.
+  return String(v ?? "")
+    .replace(/[\u0000-\u0009\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim()
+    .slice(0, CUSTOM_PERSONA_MAX);
+}
+
+// The User row a custom bot posts as. The username carries a random suffix and is
+// verified free before use: usernames have no validation at registration, so a
+// bare persona name could collide with — and then post as — a real account.
+async function createBotUser(displayName: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const suffix = randomUUID().slice(0, 6);
+    const username = `${displayName} #${suffix}`;
+    try {
+      const existing = await prisma.user.findUnique({ where: { username }, select: { id: true } });
+      if (existing) continue;
+      const created = await prisma.user.create({
+        data: { username, email: `custombot.${suffix}.${Date.now()}@veritas.internal`, password: "__bot__" },
+        select: { id: true },
+      });
+      return created.id;
+    } catch { /* collision or transient — try another suffix */ }
+  }
+  return null;
+}
+
+// Your own opponents.
+app.get("/api/custom-bots", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT id, name, persona, tier, "isPublic", hidden, uses, "createdAt"
+         FROM "CustomBot" WHERE "ownerId" = $1 ORDER BY "createdAt" DESC`, userId);
+    res.json({ bots: rows, limit: CUSTOM_BOT_LIMIT });
+  } catch (e) {
+    console.error("[GET /api/custom-bots]", e);
+    res.status(500).json({ error: "Couldn't load your opponents." });
+  }
+});
+
+// The community library — public, not taken down, most-used first.
+app.get("/api/custom-bots/library", heavyReadLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT b.id, b.name, b.persona, b.tier, b.uses::int AS uses, b."createdAt",
+              u.username AS "authorName", (b."ownerId" = $1) AS mine
+         FROM "CustomBot" b
+         LEFT JOIN "User" u ON u.id = b."ownerId"
+        WHERE b."isPublic" = true AND b.hidden = false
+        ORDER BY b.uses DESC, b."createdAt" DESC
+        LIMIT 60`, userId);
+    res.json({ bots: rows });
+  } catch (e) {
+    console.error("[GET /api/custom-bots/library]", e);
+    res.status(500).json({ error: "Couldn't load the library." });
+  }
+});
+
+// Create — Pro-gated (this is the feature that's sold).
+app.post("/api/custom-bots", createLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    if (!(await userIsPro(userId))) {
+      return res.status(402).json({ error: "Creating your own opponents is a Grounds Pro feature.", code: "pro_only" });
+    }
+    const name = cleanBotName(req.body?.name);
+    const persona = cleanPersona(req.body?.persona);
+    const tier = Math.min(5, Math.max(1, Number(req.body?.tier) || 3));
+    const isPublic = req.body?.isPublic === true;
+    if (name.length < 2) return res.status(400).json({ error: "Give your opponent a name." });
+    if (persona.length < 20) {
+      return res.status(400).json({ error: "Describe the opponent in a bit more detail — at least 20 characters." });
+    }
+
+    const countRows = await prisma.$queryRawUnsafe<{ n: number }[]>(
+      `SELECT COUNT(*)::int AS n FROM "CustomBot" WHERE "ownerId" = $1`, userId);
+    if ((countRows[0]?.n ?? 0) >= CUSTOM_BOT_LIMIT) {
+      return res.status(409).json({ error: `You can keep up to ${CUSTOM_BOT_LIMIT} custom opponents. Delete one to make room.` });
+    }
+
+    const botUserId = await createBotUser(name);
+    if (!botUserId) return res.status(500).json({ error: "Couldn't create the opponent. Try again." });
+
+    const rows = await prisma.$queryRawUnsafe(
+      `INSERT INTO "CustomBot" ("ownerId","name","persona","tier","botUserId","isPublic")
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, name, persona, tier, "isPublic", hidden, uses, "createdAt"`,
+      userId, name, persona, tier, botUserId, isPublic);
+    res.json({ bot: (rows as any[])[0] });
+  } catch (e) {
+    console.error("[POST /api/custom-bots]", e);
+    res.status(500).json({ error: "Couldn't create the opponent." });
+  }
+});
+
+// Edit / publish / unpublish — owner only. `hidden` is admin-only and not settable here.
+app.patch("/api/custom-bots/:id", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const owned = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM "CustomBot" WHERE id = $1 AND "ownerId" = $2 LIMIT 1`, req.params.id, userId);
+    if (!owned[0]) return res.status(404).json({ error: "Opponent not found." });
+
+    const sets: string[] = [];
+    const args: unknown[] = [req.params.id];
+    if (req.body?.name !== undefined) {
+      const name = cleanBotName(req.body.name);
+      if (name.length < 2) return res.status(400).json({ error: "Give your opponent a name." });
+      args.push(name); sets.push(`"name" = $${args.length}`);
+    }
+    if (req.body?.persona !== undefined) {
+      const persona = cleanPersona(req.body.persona);
+      if (persona.length < 20) return res.status(400).json({ error: "Describe the opponent in a bit more detail." });
+      args.push(persona); sets.push(`"persona" = $${args.length}`);
+    }
+    if (req.body?.tier !== undefined) {
+      args.push(Math.min(5, Math.max(1, Number(req.body.tier) || 3))); sets.push(`"tier" = $${args.length}`);
+    }
+    if (req.body?.isPublic !== undefined) {
+      args.push(req.body.isPublic === true); sets.push(`"isPublic" = $${args.length}`);
+    }
+    if (!sets.length) return res.status(400).json({ error: "Nothing to update." });
+
+    const rows = await prisma.$queryRawUnsafe(
+      `UPDATE "CustomBot" SET ${sets.join(", ")}, "updatedAt" = NOW() WHERE id = $1
+       RETURNING id, name, persona, tier, "isPublic", hidden, uses, "createdAt"`, ...args);
+    res.json({ bot: (rows as any[])[0] });
+  } catch (e) {
+    console.error("[PATCH /api/custom-bots]", e);
+    res.status(500).json({ error: "Couldn't update the opponent." });
+  }
+});
+
+app.delete("/api/custom-bots/:id", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    // The bot's User row is deliberately left behind: its past messages reference
+    // it, and deleting it would orphan the transcripts of anyone who played it.
+    const n = await prisma.$executeRawUnsafe(
+      `DELETE FROM "CustomBot" WHERE id = $1 AND "ownerId" = $2`, req.params.id, userId);
+    if (!n) return res.status(404).json({ error: "Opponent not found." });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[DELETE /api/custom-bots]", e);
+    res.status(500).json({ error: "Couldn't delete the opponent." });
+  }
+});
+
+// Admin takedown for a published persona. Outranks the owner's isPublic, so an
+// author can't re-publish something that's been pulled.
+app.post("/api/admin/custom-bots/:id/hide", async (req, res) => {
+  const userId = actorId(req);
+  if (!(await isAdmin(userId))) return res.status(403).json({ error: "Admins only" });
+  try {
+    const hidden = req.body?.hidden !== false;
+    await prisma.$executeRawUnsafe(
+      `UPDATE "CustomBot" SET hidden = $2, "updatedAt" = NOW() WHERE id = $1`, req.params.id, hidden);
+    res.json({ ok: true, hidden });
+  } catch (e) {
+    console.error("[POST /api/admin/custom-bots/hide]", e);
+    res.status(500).json({ error: "Couldn't update the opponent." });
+  }
+});
+
 // How much of the free daily Arena allowance is left, so the UI can say so
 // BEFORE a match is burned rather than only after the 402. Read-only: this
 // uses GET, never INCR — reserving a slot is POST /api/bot-rooms' job alone.
@@ -5567,12 +5762,26 @@ app.post("/api/bot-rooms", createLimiter, async (req, res) => {
     botId: string; winCondition?: { topic?: string; propositionId?: string; [k: string]: unknown };
   };
   if (!botId) return res.status(400).json({ error: "botId required" });
-  if (!BOT_IDS.includes(botId)) return res.status(400).json({ error: "Unknown bot" });
 
   let arenaReserved = false;
+  let customBot: { id: string; ownerId: string; isPublic: boolean; hidden: boolean } | null = null;
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: "User not found" });
+
+    // A bot id is either one of the curated roster or a custom opponent the caller
+    // is allowed to use: their own, or one published to the library and not taken
+    // down. Anything else is rejected before a room exists — this is the gate that
+    // stops a guessed id from running someone's private persona.
+    if (!isBuiltinBot(botId)) {
+      const rows = await prisma.$queryRawUnsafe<{ id: string; ownerId: string; isPublic: boolean; hidden: boolean }[]>(
+        `SELECT id, "ownerId", "isPublic", hidden FROM "CustomBot" WHERE id = $1 LIMIT 1`, botId);
+      const cb = rows[0];
+      if (!cb) return res.status(400).json({ error: "Unknown bot" });
+      const mine = cb.ownerId === userId;
+      if (!mine && (!cb.isPublic || cb.hidden)) return res.status(403).json({ error: "That opponent isn't available." });
+      customBot = cb;
+    }
 
     // Free-tier Arena cap — 5 matches/day; Pro is unlimited. Reserve a slot ATOMICALLY
     // (INCR + gate on the returned count) before creating the room, so concurrent starts
@@ -5610,12 +5819,21 @@ app.post("/api/bot-rooms", createLimiter, async (req, res) => {
       );
       if (rows[0]) liveClaim = rows[0];
     }
-    wc.ranked = !!liveClaim;
+    // Custom opponents are NEVER ranked, whatever the claim. Their difficulty tier
+    // is self-assigned and their persona is user-written, so a ranked custom match
+    // would be an ELO faucet: pick tier 5, describe a pushover, bank the rating.
+    wc.ranked = !!liveClaim && !customBot;
     if (liveClaim) { wc.topic = liveClaim.text; wc.propositionId = liveClaim.id; }
     else { delete wc.propositionId; }
+    if (customBot) wc.customBotId = botId;
 
+    // The bot id used to be recoverable by parsing this name (split on "-"), so a
+    // custom uuid segment would be truncated to its first block. Custom rooms use a
+    // fixed "custom" segment instead and the authoritative id lives in Room.botId,
+    // which every read path already prefers.
     const shortId = Date.now().toString(36).slice(-5);
-    const name = `arena-${botId}-${userId.slice(-5)}-${shortId}`;
+    const nameSegment = customBot ? "custom" : botId;
+    const name = `arena-${nameSegment}-${userId.slice(-5)}-${shortId}`;
 
     const room = await prisma.room.create({
       data: { name, isPrivate: false, creatorId: userId },
@@ -5627,6 +5845,14 @@ app.post("/api/bot-rooms", createLimiter, async (req, res) => {
     );
 
     await prisma.roomMember.create({ data: { userId, roomId: room.id } } as any);
+
+    // Library popularity counts other people's matches only — replaying your own
+    // creation shouldn't climb the rankings. Best-effort: a failed counter must
+    // never fail the match that's already been created.
+    if (customBot && customBot.ownerId !== userId) {
+      prisma.$executeRawUnsafe(`UPDATE "CustomBot" SET uses = uses + 1 WHERE id = $1`, botId)
+        .catch(() => { /* non-critical */ });
+    }
 
     res.json({ name, id: room.id });
   } catch (e) {
@@ -6852,6 +7078,49 @@ async function start() {
     console.log("[DB] ArenaMatch table ready");
   } catch (e) {
     console.error("[DB] ArenaMatch table setup failed:", e);
+  }
+
+  // ── Custom AI opponents (Grounds Pro) ────────────────────────────────────────
+  // A user-authored sparring partner: a name plus a free-text persona, run through
+  // the same Arena engine as the curated roster.
+  //
+  // `botUserId` is the User row this bot posts as, minted once at creation with a
+  // uniquely-suffixed username. It exists because the engine used to find a bot's
+  // account by `username = <bot name>`, and registration validates nothing — so a
+  // custom bot named after a real account would have upserted onto that person's
+  // row and posted as them. Custom bots resolve by this id and never by name.
+  //
+  // `tier` drives length/think-time only. These matches are always unranked, so a
+  // self-assigned tier can't be used to inflate arena ELO.
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "CustomBot" (
+        "id"        TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "ownerId"   TEXT NOT NULL,
+        "name"      TEXT NOT NULL,
+        "persona"   TEXT NOT NULL,
+        "tier"      SMALLINT NOT NULL DEFAULT 3,
+        "botUserId" TEXT,
+        "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+        "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CustomBot_ownerId_idx" ON "CustomBot"("ownerId","createdAt")`);
+
+    // ── Community library ──
+    // Publishing is OPT-IN and off by default: a persona is free text one user
+    // wrote, and sharing it puts that text in front of strangers AND drives an
+    // LLM on their behalf, so it should never happen by accident.
+    // `hidden` is an admin takedown that outranks the owner's isPublic.
+    // `uses` counts starts by people OTHER than the author, so "popular" can't be
+    // farmed by replaying your own bot.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomBot" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomBot" ADD COLUMN IF NOT EXISTS "hidden" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CustomBot" ADD COLUMN IF NOT EXISTS "uses" INTEGER NOT NULL DEFAULT 0`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CustomBot_library_idx" ON "CustomBot"("isPublic","hidden","uses" DESC)`);
+    console.log("[DB] CustomBot table ready");
+  } catch (e) {
+    console.error("[DB] CustomBot table setup failed:", e);
   }
 
   try {
