@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { SenderType } from "@prisma/client";
 import { evaluateClaim, computeCredibility } from "./claimEvaluator";
 import { transcriptText } from "./transcript";
+import { publicAuthor } from "./publicUser";
 
 const anthropic = new Anthropic();
 
@@ -365,7 +366,9 @@ export async function respondAsBot(
       },
       include: { user: true },
     });
-    io.to(emitTarget).emit("message", { ...msg, type: "human" });
+    // Same author projection as every other message path — a bot's row is a real
+    // User row, password column and internal email included.
+    io.to(emitTarget).emit("message", { ...msg, user: publicAuthor((msg as any).user), type: "human" });
 
     // Fire-and-forget claim stake so rubric scores accumulate for judging
     ;(async () => {

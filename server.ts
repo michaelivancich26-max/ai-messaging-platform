@@ -13,6 +13,7 @@ import { coachMatch } from "./services/coach";
 import { containsSlur } from "./services/contentFilter";
 import { respondAsBot, BOT_IDS, BOT_TIER, judgeMatch, scoreMatch, isBuiltinBot, CUSTOM_NAME_MAX, CUSTOM_PERSONA_MAX } from "./services/debateBot";
 import { randomUUID } from "crypto";
+import { publicAuthor } from "./services/publicUser";
 import { computeMedals, type MedalStats } from "./services/medals";
 import { TOPIC_CATALOG, isCategoryId, categoryLabel } from "./services/topics";
 import { getDeck, beliefCount, recordBelief, seedFromCatalog, type Stance } from "./services/propositions";
@@ -297,7 +298,7 @@ const WINDOW_SIZE = 6;
 
 function mapMessages(messages: any[]) {
   return messages.map((m) => {
-    if (m.deletedAt) return { ...m, content: "", type: "deleted" };
+    if (m.deletedAt) return { ...m, user: publicAuthor(m.user), content: "", type: "deleted" };
     let type: string = "human";
     let content = m.content;
     if (m.senderType === "AI") {
@@ -310,7 +311,7 @@ function mapMessages(messages: any[]) {
         content = JSON.stringify({ type: "image", src: null, filename: p.filename, messageId: m.id });
       } catch {}
     }
-    return { ...m, content, type };
+    return { ...m, user: publicAuthor(m.user), content, type };
   });
 }
 
@@ -1455,7 +1456,9 @@ io.on("connection", (socket) => {
         });
 
         const emitTarget = channelId ? `channel:${channelId}` : roomId;
-        io.to(emitTarget).emit("message", { ...message, type: "human" });
+        // Live broadcast doesn't pass through mapMessages, so it needs the same
+        // author projection — this is the hottest path in the app.
+        io.to(emitTarget).emit("message", { ...message, user: publicAuthor((message as any).user), type: "human" });
 
         // Auto-advance this channel's structured debate turn after speaking (not for
         // sidebar/spectator messages).
