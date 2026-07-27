@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ArenaSidebar from "@/components/ArenaSidebar";
 import TrainingTabs from "@/components/TrainingTabs";
+import CustomOpponents from "@/components/CustomOpponents";
 import { BOTS, BOT_COLORS, botWinRate, type Bot } from "@/lib/bots";
 import { api } from "@/lib/api";
 import { Trophy, Medal, Zap, Star } from "@/lib/icons";
@@ -720,6 +721,10 @@ function ArenaContent() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [usage, setUsage] = useState<ArenaUsage | null>(null);
   const [capMessage, setCapMessage] = useState("");
+  // A custom-opponent challenge waiting on the shared match-setup modal. The
+  // promise resolves with an error string (or null once we've navigated away),
+  // so the card that started it can show its own spinner and failure.
+  const [customChallenge, setCustomChallenge] = useState<{ botId: string; resolve: (e: string | null) => void } | null>(null);
   const searchParams = useSearchParams();
   const autoChallenge = searchParams.get("challenge");
   const router = useRouter();
@@ -839,6 +844,46 @@ function ArenaContent() {
             Bot rooms are private and only visible to you. Win rates are illustrative.
           </p>
         </div>
+
+        {/* Custom opponents + the community library. Goes through the same match
+            setup as the curated roster so the topic/win-condition flow is identical. */}
+        <CustomOpponents onChallenge={(botId) => new Promise<string | null>(resolve => {
+          setCustomChallenge({ botId, resolve });
+        })} />
+
+        {/* Shared match setup for a custom opponent. Mounted here rather than in
+            CustomOpponents so it reuses the exact topic/win-condition flow the
+            curated roster uses — including the ranked-claim picker, which the
+            server will override to unranked for a custom bot. */}
+        {customChallenge && typeof document !== "undefined" && createPortal(
+          <MatchSetupModal
+            bot={{
+              id: customChallenge.botId, name: "Custom opponent", title: "Your persona",
+              tier: 3, tierName: "Debater", color: "zinc", bio: "", flaw: "", specialty: "",
+              wins: 0, losses: 0,
+            } as Bot}
+            onClose={() => { customChallenge.resolve(null); setCustomChallenge(null); }}
+            onConfirm={async (winCondition) => {
+              const { botId, resolve } = customChallenge;
+              setCustomChallenge(null);
+              try {
+                const res = await api(`${SERVER}/api/bot-rooms`, {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ botId, winCondition }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  if (res.status === 402 || data.code === "arena_limit") onCapHit(data.error ?? "");
+                  resolve(data.error ?? "Couldn't start that match."); return;
+                }
+                onMatchStarted();
+                resolve(null);
+                router.push(`/room/${data.name}`);
+              } catch { resolve("Network error. Try again."); }
+            }}
+          />,
+          document.body,
+        )}
 
         {/* Arena leaderboard */}
         <ArenaLeaderboard />

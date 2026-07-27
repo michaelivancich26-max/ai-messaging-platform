@@ -4843,13 +4843,27 @@ app.get("/api/live-matches", async (_req, res) => {
 // GET /api/arena-result/:roomName
 app.get("/api/arena-result/:roomName", async (req, res) => {
   try {
+    const userId = actorId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated." });
     const rows = await prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "ArenaMatch" WHERE "roomName" = $1 LIMIT 1`,
       req.params.roomName,
     );
     if (rows.length === 0) return res.status(404).json({ error: "No result" });
     const row = rows[0];
-    res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId });
+    // Arena rooms are one-player and private; this used to return any match to
+    // anyone who knew (or guessed) a room name. Same "authenticated but never
+    // checked ownership" shape as the holes found in the authz review.
+    if (row.userId !== userId) return res.status(403).json({ error: "Not your match." });
+    // Custom opponents aren't in the client's static BOTS list, so the result
+    // screen can't name them by id — send the name along.
+    let botName: string | null = null;
+    if (!isBuiltinBot(row.botId)) {
+      const b = await prisma.$queryRawUnsafe<{ name: string }[]>(
+        `SELECT name FROM "CustomBot" WHERE id = $1 LIMIT 1`, row.botId);
+      botName = b[0]?.name ?? "Custom opponent";
+    }
+    res.json({ winner: row.winner, verdict: row.verdict, scoreImpact: Number(row.scoreImpact), botId: row.botId, botName });
   } catch {
     res.status(500).json({ error: "Server error" });
   }
@@ -4939,7 +4953,15 @@ app.post("/api/arena-judge", aiRouteLimiter, async (req, res) => {
       await prisma.$executeRawUnsafe(`DELETE FROM "Message" WHERE "roomId" = $1`, roomDbId);
     }
 
-    res.json({ ...result, ranked });
+    // Custom opponents have no entry in the client's static BOTS list, so the
+    // result screen needs the name from here to avoid rendering an unnamed match.
+    let botName: string | null = null;
+    if (!isBuiltinBot(result.botId)) {
+      const b = await prisma.$queryRawUnsafe<{ name: string }[]>(
+        `SELECT name FROM "CustomBot" WHERE id = $1 LIMIT 1`, result.botId);
+      botName = b[0]?.name ?? "Custom opponent";
+    }
+    res.json({ ...result, ranked, botName });
   } catch (e) {
     console.error("[arena-judge]", e);
     res.status(500).json({ error: "Server error" });
@@ -5708,6 +5730,74 @@ app.delete("/api/custom-bots/:id", async (req, res) => {
   }
 });
 
+// Distinct reporters needed before a persona is pulled from the library
+// automatically. Deliberately low: hiding is reversible and only affects the
+// PUBLIC listing (the author keeps their bot and can still play it), so the cost
+// of a wrong auto-hide is small next to leaving flagged content in front of
+// strangers while it waits on a human.
+const AUTO_HIDE_REPORTS = 3;
+
+// Report a published persona. Any authenticated user, once per persona.
+app.post("/api/custom-bots/:id/report", createLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ id: string; ownerId: string; isPublic: boolean }[]>(
+      `SELECT id, "ownerId", "isPublic" FROM "CustomBot" WHERE id = $1 LIMIT 1`, req.params.id);
+    const bot = rows[0];
+    if (!bot) return res.status(404).json({ error: "Opponent not found." });
+    // Nothing to report on something that was never published to anyone.
+    if (!bot.isPublic) return res.status(400).json({ error: "That opponent isn't in the library." });
+    if (bot.ownerId === userId) return res.status(400).json({ error: "You can't report your own opponent." });
+
+    const reason = String(req.body?.reason ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, 300);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "CustomBotReport" ("botId","reporterId","reason") VALUES ($1,$2,$3)
+       ON CONFLICT ("botId","reporterId") DO UPDATE SET "reason" = EXCLUDED."reason"`,
+      req.params.id, userId, reason);
+
+    const cnt = await prisma.$queryRawUnsafe<{ n: number }[]>(
+      `SELECT COUNT(*)::int AS n FROM "CustomBotReport" WHERE "botId" = $1`, req.params.id);
+    const reports = cnt[0]?.n ?? 0;
+    let autoHidden = false;
+    if (reports >= AUTO_HIDE_REPORTS) {
+      await prisma.$executeRawUnsafe(`UPDATE "CustomBot" SET hidden = true, "updatedAt" = NOW() WHERE id = $1`, req.params.id);
+      autoHidden = true;
+    }
+    res.json({ ok: true, reports, autoHidden });
+  } catch (e) {
+    console.error("[POST /api/custom-bots/report]", e);
+    res.status(500).json({ error: "Couldn't submit the report." });
+  }
+});
+
+// Admin review queue — reported first, then everything published.
+app.get("/api/admin/custom-bots", async (req, res) => {
+  const userId = actorId(req);
+  if (!(await isAdmin(userId))) return res.status(403).json({ error: "Admins only" });
+  try {
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT b.id, b.name, b.persona, b.tier, b."isPublic", b.hidden, b.uses::int AS uses, b."createdAt",
+              u.username AS "authorName",
+              COALESCE(r.n, 0)::int AS reports,
+              r.reasons
+         FROM "CustomBot" b
+         LEFT JOIN "User" u ON u.id = b."ownerId"
+         LEFT JOIN (
+           SELECT "botId", COUNT(*)::int AS n,
+                  array_remove(array_agg(NULLIF("reason", '') ORDER BY "createdAt" DESC), NULL) AS reasons
+             FROM "CustomBotReport" GROUP BY "botId"
+         ) r ON r."botId" = b.id
+        WHERE b."isPublic" = true OR COALESCE(r.n, 0) > 0
+        ORDER BY COALESCE(r.n, 0) DESC, b."createdAt" DESC
+        LIMIT 200`);
+    res.json({ bots: rows, autoHideAt: AUTO_HIDE_REPORTS });
+  } catch (e) {
+    console.error("[GET /api/admin/custom-bots]", e);
+    res.status(500).json({ error: "Couldn't load the review queue." });
+  }
+});
+
 // Admin takedown for a published persona. Outranks the owner's isPublic, so an
 // author can't re-publish something that's been pulled.
 app.post("/api/admin/custom-bots/:id/hide", async (req, res) => {
@@ -5717,6 +5807,9 @@ app.post("/api/admin/custom-bots/:id/hide", async (req, res) => {
     const hidden = req.body?.hidden !== false;
     await prisma.$executeRawUnsafe(
       `UPDATE "CustomBot" SET hidden = $2, "updatedAt" = NOW() WHERE id = $1`, req.params.id, hidden);
+    // Un-hiding clears the reports that triggered it, otherwise the next single
+    // report re-trips the threshold and undoes the admin's decision immediately.
+    if (!hidden) await prisma.$executeRawUnsafe(`DELETE FROM "CustomBotReport" WHERE "botId" = $1`, req.params.id);
     res.json({ ok: true, hidden });
   } catch (e) {
     console.error("[POST /api/admin/custom-bots/hide]", e);
@@ -7118,6 +7211,21 @@ async function start() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "CustomBot" ADD COLUMN IF NOT EXISTS "hidden" BOOLEAN NOT NULL DEFAULT false`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "CustomBot" ADD COLUMN IF NOT EXISTS "uses" INTEGER NOT NULL DEFAULT 0`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CustomBot_library_idx" ON "CustomBot"("isPublic","hidden","uses" DESC)`);
+
+    // One report per person per persona — the PK makes re-reporting a no-op, so
+    // the count is "how many DISTINCT people objected" rather than how many times
+    // one person clicked. That's the only version of the number worth auto-acting
+    // on (see AUTO_HIDE_REPORTS).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "CustomBotReport" (
+        "botId"      TEXT NOT NULL,
+        "reporterId" TEXT NOT NULL,
+        "reason"     TEXT NOT NULL DEFAULT '',
+        "createdAt"  TIMESTAMP NOT NULL DEFAULT NOW(),
+        PRIMARY KEY ("botId","reporterId")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CustomBotReport_botId_idx" ON "CustomBotReport"("botId")`);
     console.log("[DB] CustomBot table ready");
   } catch (e) {
     console.error("[DB] CustomBot table setup failed:", e);

@@ -126,6 +126,7 @@ export default function RoomPage() {
     verdict: string;
     scoreImpact: number;
     botId: string;
+    botName?: string | null;   // custom opponents aren't in the static BOTS list
     // competitive fields
     isCompetitive?: boolean;
     winnerId?: string;
@@ -1896,7 +1897,11 @@ export default function RoomPage() {
                     <h2 className={`font-display text-2xl font-bold tracking-tight ${won ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"}`}>
                       {won ? "You Won!" : "You Lost"}
                     </h2>
-                    {bot && <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">vs. {bot.name} — {bot.title}</p>}
+                    {bot
+                      ? <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">vs. {bot.name} — {bot.title}</p>
+                      : matchResult.botName
+                        ? <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">vs. {matchResult.botName} — custom opponent</p>
+                        : null}
                   </div>
                   <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-300 italic">"{matchResult.verdict}"</p>
                   <div className={`rounded-xl px-4 py-2.5 ring-1 ${won ? "bg-emerald-100 dark:bg-emerald-950/40 ring-emerald-900/40" : "bg-red-100 dark:bg-red-950/30 ring-red-900/30"}`}>

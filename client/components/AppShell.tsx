@@ -209,11 +209,18 @@ export default function AppShell({ children }: { children: ReactNode }) {
             Grounds Pro
           </button>
           {isAdmin && (
-            <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/admin/pro"); }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
-              <Shield className="h-4 w-4" />
-              Admin
-            </button>
+            <>
+              <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/admin/pro"); }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+                <Shield className="h-4 w-4" />
+                Admin
+              </button>
+              <button role="menuitem" onClick={() => { setSettingsOpen(false); go("/admin/bots"); }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors">
+                <Shield className="h-4 w-4" />
+                Review opponents
+              </button>
+            </>
           )}
           <div className="my-1 border-t border-gray-200 dark:border-gray-800" />
           <button role="menuitem" onClick={() => signOutEverywhere()}
