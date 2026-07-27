@@ -343,9 +343,12 @@ export default function RoomPage() {
     // Skip for spectators so watching stays read-only and doesn't add them as a member.
     const spectating = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("spectate") === "1";
     if (userId && !roomId.startsWith("dm-") && !spectating) {
+      // Send the password this session already cleared at /auth — the join
+      // endpoint now gates private rooms, so the backfill has to prove access
+      // the same way the socket does.
       api(`${SERVER}/api/rooms/${roomId}/join`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, password: sessionStorage.getItem(`room-pw:${roomId}`) ?? undefined }),
       }).catch(() => {});
     }
 

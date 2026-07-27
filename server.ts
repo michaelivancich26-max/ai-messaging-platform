@@ -2364,6 +2364,31 @@ app.post("/api/rooms/:name/join", async (req, res) => {
       where: { userId_roomId: { userId, roomId: room.id } },
     });
 
+    // Membership is access, so this has to gate exactly like the socket's
+    // joinRoom does. It used to gate on nothing at all: any signed-in user could
+    // POST any room name — DM or private — and be handed a PARTICIPANT row.
+    // An existing member passes through, so a user who already cleared the
+    // password keeps working when the client backfills their membership.
+    if (!existing) {
+      if (room.isDM) {
+        const mine = room.participant1Id === userId || room.participant2Id === userId;
+        if (!mine) return res.status(403).json({ error: "Not your conversation." });
+      }
+      if (room.isPrivate && room.password && room.creatorId !== userId) {
+        const u = await prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } });
+        if (!u?.isAdmin) {
+          const password = typeof req.body?.password === "string" ? req.body.password : "";
+          if (!password) return res.status(401).json({ error: "Password required.", code: "password_required" });
+          if (pwBlocked(userId, room.name)) {
+            return res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
+          }
+          const valid = await bcrypt.compare(password, room.password);
+          if (!valid) { pwRecordFail(userId, room.name); return res.status(403).json({ error: "Incorrect password." }); }
+          pwClear(userId, room.name);
+        }
+      }
+    }
+
     let role = "PARTICIPANT";
     if (!existing) {
       if ((room as any).isFishbowl && room.creatorId !== userId) {

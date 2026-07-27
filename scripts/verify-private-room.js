@@ -95,6 +95,32 @@ async function main() {
   check("attacker CANNOT write into private room", (wrote[0]?.n ?? 0) === 0, `rows=${wrote[0]?.n}`);
 
   ownerSock.close(); attackerSock.close();
+
+  // REST path: POST /api/rooms/:name/join used to hand a PARTICIPANT row to any
+  // signed-in caller for any room name, private or DM, with no check at all.
+  const attackerToken = await tokenFor(ATTACKER, ATTACKER);
+  const post = (name, body) => fetch(`${SERVER}/api/rooms/${name}/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${attackerToken}` },
+    body: JSON.stringify(body),
+  });
+
+  const noPw = await post(PRIVATE_ROOM, {});
+  check("REST join refuses a private room with no password", noPw.status === 401, `status=${noPw.status}`);
+
+  const wrongPw = await post(PRIVATE_ROOM, { password: "not-the-password" });
+  check("REST join refuses a private room with a wrong password", wrongPw.status === 403, `status=${wrongPw.status}`);
+
+  const members = await prisma.$queryRawUnsafe(
+    `SELECT COUNT(*)::int AS n FROM "RoomMember" WHERE "roomId"=$1 AND "userId"=$2`, PRIVATE_ROOM, ATTACKER);
+  check("REST join created no membership row", (members[0]?.n ?? 0) === 0, `rows=${members[0]?.n}`);
+
+  const rightPw = await post(PRIVATE_ROOM, { password: "hunter2" });
+  check("REST join still admits the correct password", rightPw.status === 200, `status=${rightPw.status}`);
+
+  const publicOk = await post(PUBLIC_ROOM, {});
+  check("REST join still admits a public room freely", publicOk.status === 200, `status=${publicOk.status}`);
+
   await clean();
   console.log(failures ? `\n${failures} FAILURE(S) — bypass is OPEN` : "\nprivate-room boundary holds");
   await prisma.$disconnect();
