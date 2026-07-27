@@ -870,10 +870,22 @@ io.on("connection", (socket) => {
   });
 
   socket.on("joinRoom", async (payload: { roomId: string; roomName: string; password?: string }) => {
-    const { roomId, roomName, password } = payload;
+    const { roomName, password } = payload;
     try {
       const room = await prisma.room.findUnique({ where: { name: roomName } });
       if (!room) { socket.emit("roomDeleted"); return; }
+
+      // The socket channel is derived from the room we are about to AUTHORISE,
+      // never from payload.roomId. These are the same string for any honest
+      // client (the client's "roomId" is the room name), but they are two
+      // separate payload fields, and joining the one we didn't check was a full
+      // private-room bypass: authorise `roomName` = some public room, then
+      // socket.join(payload.roomId) = a private room's channel. That put the
+      // private room into socket.rooms, which is exactly what
+      // userMayAccessRoom() accepts as proof the password was cleared — so it
+      // granted both read (broadcasts target this string) and write
+      // (sendMessage/createPoll/votePoll/joinChannel/sendInvite all gate on it).
+      const roomId = room.name;
 
       if (room.isDM && room.participant1Id !== socketUser.id && room.participant2Id !== socketUser.id) {
         socket.emit("roomDeleted"); return;
