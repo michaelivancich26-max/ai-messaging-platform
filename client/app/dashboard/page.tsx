@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Layers, ChevronRight } from "lucide-react";
+import { Layers, ChevronRight, BarChart3 } from "lucide-react";
 import type { CredScore } from "@/lib/types";
 import { BOTS } from "@/lib/bots";
 import { MedalsPanel, MedalShowcase, RubricAverages, type Medal, type ClaimAverages } from "@/components/MedalsPanel";
@@ -126,8 +126,10 @@ export default function DashboardPage() {
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [elo, setElo] = useState(1200);
   const [arenaElo, setArenaElo] = useState(1200);
+  const [rapidElo, setRapidElo] = useState(1200);
   const [competitiveRank, setCompetitiveRank] = useState<Rank | null>(null);
   const [arenaRank, setArenaRank] = useState<Rank | null>(null);
+  const [rapidRank, setRapidRank] = useState<Rank | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -172,8 +174,10 @@ export default function DashboardPage() {
         if (data.claimAverages) setClaimAverages(data.claimAverages);
         if (typeof data.elo === "number") setElo(data.elo);
         if (typeof data.arenaElo === "number") setArenaElo(data.arenaElo);
+        if (typeof data.rapidElo === "number") setRapidElo(data.rapidElo);
         setCompetitiveRank(data.competitiveRank ?? null);
         setArenaRank(data.arenaRank ?? null);
+        setRapidRank(data.rapidRank ?? null);
       })
       .catch(() => {});
   }, [status, userId]);
@@ -377,9 +381,29 @@ export default function DashboardPage() {
               <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-gray-500" />
             </Link>
 
+            {/* ── Analytics ── Same card idiom as the Belief Map above it. */}
+            <Link href="/analytics"
+              className="group flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                <BarChart3 className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Analytics</span>
+                  {!isPro && (
+                    <span className="rounded-full bg-orange-600/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-orange-800 dark:text-orange-300">Pro</span>
+                  )}
+                </span>
+                <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                  How your arguments have scored over time, and where you win.
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-gray-500" />
+            </Link>
+
             {/* ── Rankings ── (gated on loaded profile data so a ranked user never
                 flashes "Unranked" while the fetch is still in flight) */}
-            {stats && <RankingsCard elo={elo} arenaElo={arenaElo} competitiveRank={competitiveRank} arenaRank={arenaRank} />}
+            {stats && <RankingsCard elo={elo} arenaElo={arenaElo} rapidElo={rapidElo} competitiveRank={competitiveRank} arenaRank={arenaRank} rapidRank={rapidRank} />}
 
             {/* ── Veritas Score ── */}
             {cred && <VeritasScorePanel cred={cred} arenaBonus={stats?.arenaBonus ?? 0} />}

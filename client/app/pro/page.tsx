@@ -16,7 +16,7 @@ const BENEFITS: { Icon: LucideIcon; title: string; blurb: string; live: boolean 
   { Icon: Sparkles, title: "AI post-match coach", blurb: "A breakdown after every match — what landed, what to fix, the rebuttal you missed.", live: true },
   { Icon: Layers, title: "Belief Map", blurb: "See where you stand across topics, and how your positions have shifted over time.", live: true },
   { Icon: Bot, title: "Custom AI opponents", blurb: "Describe an opponent and the AI plays that persona — or debate one from the community library.", live: true },
-  { Icon: BarChart3, title: "Advanced analytics", blurb: "Rubric trends, win-rate by topic, head-to-head records, rank history.", live: false },
+  { Icon: BarChart3, title: "Advanced analytics", blurb: "Rubric trends over time, win rate by format and topic, head-to-head records, rating curves.", live: true },
   { Icon: Trophy, title: "Tournaments & private rooms", blurb: "Host bracketed tournaments and large or private debate rooms.", live: false },
   { Icon: BadgeCheck, title: "Pro badge", blurb: "A mark on your profile and in chat.", live: false },
 ];

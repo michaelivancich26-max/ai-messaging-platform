@@ -1,4 +1,4 @@
-import { Trophy, Dumbbell, type LucideIcon } from "lucide-react";
+import { Trophy, Dumbbell, Zap, type LucideIcon } from "lucide-react";
 
 export interface Rank { rank: number; total: number }
 
@@ -32,11 +32,12 @@ function RankRow({ Icon, label, sub, elo, rank, hint, accent }: {
   );
 }
 
-// Where the user sits on the two rating ladders. `null` rank means they're not on
-// the board yet (no ranked matches). Shared by the dashboard and public profile.
-export function RankingsCard({ elo, arenaElo, competitiveRank, arenaRank }: {
-  elo: number; arenaElo: number;
-  competitiveRank: Rank | null; arenaRank: Rank | null;
+// Where the user sits on the three rating ladders. `null` rank means they're not
+// on the board yet (no ranked matches). Shared by the dashboard and public profile.
+// Rapid is optional so an older cached payload without it still renders.
+export function RankingsCard({ elo, arenaElo, rapidElo, competitiveRank, arenaRank, rapidRank }: {
+  elo: number; arenaElo: number; rapidElo?: number;
+  competitiveRank: Rank | null; arenaRank: Rank | null; rapidRank?: Rank | null;
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-card dark:border-gray-800 dark:bg-gray-900">
@@ -45,6 +46,9 @@ export function RankingsCard({ elo, arenaElo, competitiveRank, arenaRank }: {
         <RankRow Icon={Trophy} label="Battle Grounds" sub="Ranked 1v1" elo={elo} rank={competitiveRank}
           hint="Win a ranked 1v1 to rank"
           accent="bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" />
+        <RankRow Icon={Zap} label="Rapid Fire" sub="Matched on disagreement" elo={rapidElo ?? 1200} rank={rapidRank ?? null}
+          hint="Finish a Rapid round to rank"
+          accent="bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" />
         <RankRow Icon={Dumbbell} label="Arena" sub="vs AI opponents" elo={arenaElo} rank={arenaRank}
           hint="Beat a ranked bot to rank"
           accent="bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" />

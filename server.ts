@@ -3351,10 +3351,14 @@ async function startRapidMatch(p: RapidPairing): Promise<void> {
   await prisma.roomMember.createMany({ data: ids.map((userId) => ({ userId, roomId: room.id })) } as any);
 
   await prisma.$executeRawUnsafe(
+    // categoryId/propositionId are denormalised here, not read back from
+    // matchConfig later: deleting the room destroys matchConfig while this row
+    // survives, which would silently erase the category history.
     `INSERT INTO "CompetitiveMatch"
-       ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance","roomName","challengerEloBefore","challengedEloBefore","isRapid")
-     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,TRUE)`,
+       ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance","roomName","challengerEloBefore","challengedEloBefore","isRapid","categoryId","propositionId")
+     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,$10)`,
     null, p.a.userId, p.b.userId, p.a.stance, p.b.stance, p.roomName, eloOf(p.a.userId), eloOf(p.b.userId),
+    p.categoryId ?? null, p.propositionId ?? null,
   );
 
   try {
@@ -4942,7 +4946,21 @@ app.post("/api/arena-judge", aiRouteLimiter, async (req, res) => {
     // Ranked was decided at room creation (server-authoritative): true only for a
     // vetted live claim. Unranked practice never touches ELO or the leaderboard.
     let ranked = false;
-    try { ranked = !!JSON.parse(roomRows[0].matchConfig ?? "{}").ranked; } catch { /* unranked */ }
+    let mcPropositionId: string | null = null;
+    try {
+      const mc = JSON.parse(roomRows[0].matchConfig ?? "{}");
+      ranked = !!mc.ranked;
+      // Denormalised onto the match row so the category survives room deletion,
+      // which destroys matchConfig and leaves this row orphaned.
+      mcPropositionId = typeof mc.propositionId === "string" ? mc.propositionId : null;
+    } catch { /* unranked */ }
+    let mcCategoryId: string | null = null;
+    if (mcPropositionId) {
+      const pr = await prisma.$queryRawUnsafe<{ categoryId: string }[]>(
+        `SELECT "categoryId" FROM "Proposition" WHERE id = $1 LIMIT 1`, mcPropositionId,
+      ).catch(() => [] as any[]);
+      mcCategoryId = pr[0]?.categoryId ?? null;
+    }
 
     // A ranked outcome must reflect the actual transcript, never a client's word.
     // The client hands us forcedWinner:"human" when the (server-computed) bar
@@ -4956,10 +4974,10 @@ app.post("/api/arena-judge", aiRouteLimiter, async (req, res) => {
     const result = await judgeMatch(roomDbId, roomName, userId, botId, prisma, forfeit, effectiveForcedWinner);
 
     await prisma.$executeRawUnsafe(
-      `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact","ranked")
-       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO "ArenaMatch" ("id","roomName","userId","botId","winner","verdict","scoreImpact","ranked","categoryId","propositionId")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT ("roomName") DO NOTHING`,
-      roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact, ranked,
+      roomName, userId, result.botId, result.winner, result.verdict, result.scoreImpact, ranked, mcCategoryId, mcPropositionId,
     );
 
     // Training counts toward the daily streak, not just chatting.
@@ -4978,6 +4996,14 @@ app.post("/api/arena-judge", aiRouteLimiter, async (req, res) => {
         const cur = Number(aeRows[0]?.arenaElo ?? 1200);
         const { newA } = calcElo(cur, botRating, result.winner === "human");
         await prisma.$executeRawUnsafe(`UPDATE "User" SET "arenaElo" = $1 WHERE id = $2`, newA, userId);
+        // Stamp the rating either side of this match. This is the ONLY record of
+        // arena rating over time — nothing else stores it — so the curve can only
+        // ever start from the first match after this shipped. Inside the existing
+        // try/catch on purpose: an analytics write must never fail a played match.
+        await prisma.$executeRawUnsafe(
+          `UPDATE "ArenaMatch" SET "arenaEloBefore" = $2, "arenaEloAfter" = $3 WHERE "roomName" = $1`,
+          roomName, cur, newA,
+        );
       } catch (e) { console.error("[arena elo]", e); }
     }
 
@@ -5013,13 +5039,18 @@ async function buildProfilePayload(
 ) {
   const uid = user.id;
   const uRows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT elo, "arenaElo", "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
+    `SELECT elo, "arenaElo", "rapidElo", "avgClaimScore", "avgAccuracy", "avgRelevance", "avgEvidence", "avgLogic", "avgImpact",
             "claimsRated", "dailyStreak", "longestStreak", "featuredMedals"
      FROM "User" WHERE id = $1`, uid,
   ).catch(() => [] as any[]);
   const u0 = uRows[0] ?? {};
   const elo = Number(u0.elo ?? 1200);
   const arenaElo = Number(u0.arenaElo ?? 1200);
+  // Rapid has had its own ladder and its own leaderboard for a while, but this
+  // payload never returned it, so the number was invisible everywhere in the
+  // client. It ships here, free, on the same card as the other two — a rating
+  // the user already earned must never make its debut behind the Pro gate.
+  const rapidElo = Number(u0.rapidElo ?? 1200);
   const claimAverages = {
     score:     Math.round(Number(u0.avgClaimScore ?? 0) * 10) / 10,
     accuracy:  Math.round(Number(u0.avgAccuracy   ?? 0) * 10) / 10,
@@ -5032,7 +5063,7 @@ async function buildProfilePayload(
   const dailyStreak = Number(u0.dailyStreak ?? 0);
   const longestStreak = Number(u0.longestStreak ?? 0);
 
-  const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows, compRankRows, arenaRankRows] = await Promise.all([
+  const [cred, debateRows, messageRows, arenaRows, arenaStats, botsRows, teamWinRows, compWinRows, compRankRows, arenaRankRows, rapidRankRows] = await Promise.all([
     computeCredibility(uid, prisma).catch(() => null),
     prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `SELECT COUNT(*) AS count FROM "RoomMember" rm JOIN "Room" r ON r.id = rm."roomId" WHERE rm."userId" = $1 AND r."isDM" = false AND r."isBotRoom" = false`,
@@ -5086,6 +5117,20 @@ async function buildProfilePayload(
       `WITH cohort AS (
          SELECT u.id, u."arenaElo" AS elo FROM "User" u
          WHERE EXISTS (SELECT 1 FROM "ArenaMatch" am WHERE am."userId" = u.id AND am."ranked" = true)
+       ),
+       r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
+       SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
+    ).catch(() => [] as any[]),
+    // Rapid rank, over players who have finished at least one Rapid round —
+    // the same cohort the Rapid leaderboard already uses.
+    prisma.$queryRawUnsafe<any[]>(
+      `WITH cohort AS (
+         SELECT u.id, u."rapidElo" AS elo FROM "User" u
+         WHERE EXISTS (
+           SELECT 1 FROM "CompetitiveMatch" cm
+            WHERE cm.status = 'complete' AND cm."isRapid" = true
+              AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)
+         )
        ),
        r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
        SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
@@ -5146,8 +5191,10 @@ async function buildProfilePayload(
     ? { rank: Number(compRankRows[0].rank), total: Number(compRankRows[0].total) } : null;
   const arenaRank = arenaRankRows[0]?.rank != null
     ? { rank: Number(arenaRankRows[0].rank), total: Number(arenaRankRows[0].total) } : null;
+  const rapidRank = rapidRankRows[0]?.rank != null
+    ? { rank: Number(rapidRankRows[0].rank), total: Number(rapidRankRows[0].total) } : null;
 
-  return { ...publicUser, elo, arenaElo, stats, claimAverages, medals, featuredMedals, competitiveRank, arenaRank, ...(cred ? { cred } : {}) };
+  return { ...publicUser, elo, arenaElo, rapidElo, stats, claimAverages, medals, featuredMedals, competitiveRank, arenaRank, rapidRank, ...(cred ? { cred } : {}) };
 }
 
 // GET /api/users/:id/profile — profile; account fields only for the owner
@@ -5586,6 +5633,235 @@ app.get("/api/coach/:roomName", aiRouteLimiter, async (req, res) => {
   } catch (e) {
     console.error("[coach]", e);
     res.status(500).json({ error: "Couldn't generate coaching. Try again." });
+  }
+});
+
+// ─── Advanced analytics (Grounds Pro) ────────────────────────────────────────
+// Descriptive statistics over data the user already earned. No AI call is made
+// here and none should ever be added: MatchCoach stays the only AI analysis
+// surface, and it stays post-match.
+//
+// SELF-ONLY BY CONSTRUCTION — there is no :id, no ?userId and no body. Every
+// query is keyed on actorId(req), so there is nothing to tamper with. That is
+// deliberate and stricter than the profile routes, which serve any id: per
+// opponent and per topic, this is scouting material.
+//
+// The opponent axis and the topic axis never appear in the same query, and Rapid
+// is excluded from head-to-head entirely. Rapid pairs people on a named live
+// Proposition they genuinely disagree about, so "you played Bob six times on
+// climate" would reconstruct Bob's private belief deck — the exact data the
+// Belief Map keeps self-only.
+//
+// What Pro buys is the TIME dimension and the segmentation. Every current number
+// (elo, arenaElo, rapidElo, Grounds Score, W/L, rubric averages) stays free on
+// the dashboard and the public profile.
+const ANALYTICS_MIN_RATE_N = 5;   // below this, a win rate is null rather than a headline
+
+app.get("/api/analytics/me", heavyReadLimiter, async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Not authenticated." });
+  try {
+    if (!(await userIsPro(userId))) {
+      return res.status(402).json({ error: "Advanced analytics is a Grounds Pro feature.", code: "pro_only" });
+    }
+    const refresh = req.query.refresh === "1";
+    const cacheKey = `analytics:${userId}`;
+    if (!refresh) {
+      try { const c = await redis.get(cacheKey); if (c) return res.json(JSON.parse(c)); } catch { /* redis down */ }
+    }
+
+    // No per-query .catch(): a failed query must not render as a chart of zeros
+    // on a paid page. The outer catch 500s and the client shows its error branch.
+    const [ratingRows, rubricLifetime, rubricWeeks, fmtComp, fmtTeam, fmtArena, byCat, h2h, botRows, arenaCurve] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT elo::int AS elo, "arenaElo"::int AS "arenaElo", "rapidElo"::int AS "rapidElo" FROM "User" WHERE id = $1`, userId),
+
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "avgClaimScore"::float8 AS score, "avgAccuracy"::float8 AS accuracy, "avgRelevance"::float8 AS relevance,
+                "avgEvidence"::float8 AS evidence, "avgLogic"::float8 AS logic, "avgImpact"::float8 AS impact,
+                "claimsRated"::int AS rated
+           FROM "User" WHERE id = $1`, userId),
+
+      // Rubric over time. Scales match updateUserClaimStats so the chart reconciles
+      // with the free lifetime card instead of contradicting it.
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT to_char(date_trunc('week', "createdAt"), 'YYYY-MM-DD') AS week,
+                COUNT(*)::int AS n,
+                ROUND(AVG("score")::numeric, 1)::float8 AS score,
+                ROUND(AVG(CASE status WHEN 'SUPPORTED' THEN 10 WHEN 'CONTESTED' THEN 5 ELSE 0 END)::numeric, 2)::float8 AS accuracy,
+                ROUND(AVG("relevance" * 10)::numeric, 2)::float8 AS relevance,
+                ROUND(AVG("evidence")::numeric, 2)::float8 AS evidence,
+                ROUND(AVG("logic")::numeric, 2)::float8 AS logic,
+                ROUND(AVG("impact")::numeric, 2)::float8 AS impact
+           FROM "Claim"
+          WHERE "claimantId" = $1 AND status <> 'PENDING' AND "score" IS NOT NULL
+          GROUP BY 1 ORDER BY 1`, userId),
+
+      // Battle Grounds and Rapid are separate ladders and separate rows — the
+      // existing match feed blends them, which makes both numbers meaningless.
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT ("isRapid" IS TRUE) AS rapid,
+                COUNT(*)::int AS played,
+                COUNT(*) FILTER (WHERE "winnerId" = $1)::int AS wins
+           FROM "CompetitiveMatch"
+          WHERE status = 'complete' AND ("challengerId" = $1 OR "challengedId" = $1)
+          GROUP BY 1`, userId),
+
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT COUNT(*)::int AS played,
+                COUNT(*) FILTER (WHERE (jsonb_exists("teamA"::jsonb, $1) AND "winningSide" = 'A')
+                                    OR (jsonb_exists("teamB"::jsonb, $1) AND "winningSide" = 'B'))::int AS wins
+           FROM "TeamMatch"
+          WHERE status = 'complete' AND (jsonb_exists("teamA"::jsonb, $1) OR jsonb_exists("teamB"::jsonb, $1))`, userId),
+
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT ("ranked" IS TRUE) AS ranked, COUNT(*)::int AS played,
+                COUNT(*) FILTER (WHERE winner = 'human')::int AS wins
+           FROM "ArenaMatch" WHERE "userId" = $1 GROUP BY 1`, userId),
+
+      // Category only covers Rapid and ranked Arena — the only two paths that
+      // carry a proposition. Everything else is reported as uncategorised rather
+      // than silently dropped.
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "categoryId", SUM(played)::int AS played, SUM(wins)::int AS wins,
+                SUM(from_rapid)::int AS "fromRapid", SUM(from_arena)::int AS "fromArena"
+           FROM (
+             SELECT "categoryId", COUNT(*) AS played,
+                    COUNT(*) FILTER (WHERE "winnerId" = $1) AS wins,
+                    COUNT(*) AS from_rapid, 0 AS from_arena
+               FROM "CompetitiveMatch"
+              WHERE status = 'complete' AND "isRapid" = TRUE AND "categoryId" IS NOT NULL
+                AND ("challengerId" = $1 OR "challengedId" = $1)
+              GROUP BY 1
+             UNION ALL
+             SELECT "categoryId", COUNT(*) AS played,
+                    COUNT(*) FILTER (WHERE winner = 'human') AS wins,
+                    0 AS from_rapid, COUNT(*) AS from_arena
+               FROM "ArenaMatch"
+              WHERE "userId" = $1 AND "ranked" = TRUE AND "categoryId" IS NOT NULL
+              GROUP BY 1
+           ) u GROUP BY 1 ORDER BY played DESC`, userId),
+
+      // Battle Grounds only. A deleted account collapses to "Former member" with
+      // the id withheld — nothing else in the app filters deletedAt, and a paid
+      // surface must not re-identify someone who deleted their account.
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT opp AS "opponentId",
+                COUNT(*)::int AS played,
+                COUNT(*) FILTER (WHERE "winnerId" = $1)::int AS wins,
+                MAX("completedAt") AS "lastPlayedAt"
+           FROM (
+             SELECT CASE WHEN "challengerId" = $1 THEN "challengedId" ELSE "challengerId" END AS opp,
+                    "winnerId", "completedAt"
+               FROM "CompetitiveMatch"
+              WHERE status = 'complete' AND "isRapid" IS NOT TRUE
+                AND ("challengerId" = $1 OR "challengedId" = $1)
+           ) m GROUP BY opp ORDER BY played DESC, "lastPlayedAt" DESC LIMIT 15`, userId),
+
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "botId", COUNT(*)::int AS played,
+                COUNT(*) FILTER (WHERE winner = 'human')::int AS wins,
+                COUNT(*) FILTER (WHERE "ranked" IS TRUE)::int AS ranked
+           FROM "ArenaMatch" WHERE "userId" = $1 GROUP BY 1 ORDER BY played DESC`, userId),
+
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "createdAt" AS at, "arenaEloAfter"::int AS elo,
+                ("arenaEloAfter" - "arenaEloBefore")::int AS delta, "botId"
+           FROM "ArenaMatch"
+          WHERE "userId" = $1 AND "arenaEloAfter" IS NOT NULL
+          ORDER BY "createdAt" ASC LIMIT 300`, userId),
+    ]);
+
+    // Rating curves for the two human ladders, reconstructed from the elo columns
+    // each match already stores. Team completions move the SAME "elo" column
+    // without leaving a CompetitiveMatch row, so the Battle Grounds curve unions
+    // them — omit that and the chart shows unexplained jumps.
+    const compCurve = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "completedAt" AS at, ("isRapid" IS TRUE) AS rapid,
+              (CASE WHEN "challengerId" = $1 THEN "challengerEloAfter" ELSE "challengedEloAfter" END)::int AS elo,
+              (CASE WHEN "challengerId" = $1 THEN "challengerEloAfter" - "challengerEloBefore"
+                    ELSE "challengedEloAfter" - "challengedEloBefore" END)::int AS delta
+         FROM "CompetitiveMatch"
+        WHERE status = 'complete' AND "completedAt" IS NOT NULL
+          AND ("challengerId" = $1 OR "challengedId" = $1)
+          AND (CASE WHEN "challengerId" = $1 THEN "challengerEloAfter" ELSE "challengedEloAfter" END) IS NOT NULL
+        ORDER BY "completedAt" ASC LIMIT 300`, userId);
+
+    const u = ratingRows[0] ?? {};
+    const rate = (wins: number, played: number) =>
+      played >= ANALYTICS_MIN_RATE_N ? Math.round((wins / played) * 1000) / 10 : null;
+
+    const compRapid = fmtComp.find(r => r.rapid) ?? { played: 0, wins: 0 };
+    const compBattle = fmtComp.find(r => !r.rapid) ?? { played: 0, wins: 0 };
+    const team = fmtTeam[0] ?? { played: 0, wins: 0 };
+    const arenaRanked = fmtArena.find(r => r.ranked) ?? { played: 0, wins: 0 };
+    const arenaPractice = fmtArena.find(r => !r.ranked) ?? { played: 0, wins: 0 };
+    const fmt = (key: string, label: string, r: any) => ({
+      format: key, label,
+      played: r.played, wins: r.wins, losses: r.played - r.wins, winRate: rate(r.wins, r.played),
+    });
+
+    // Opponent names resolved in one pass; deleted accounts are withheld.
+    const oppIds = h2h.map(r => r.opponentId).filter(Boolean);
+    const oppRows = oppIds.length
+      ? await prisma.$queryRawUnsafe<any[]>(
+          `SELECT id, username, "deletedAt" FROM "User" WHERE id = ANY($1::text[])`, oppIds)
+      : [];
+    const oppById = new Map(oppRows.map(o => [o.id, o]));
+
+    const payload = {
+      minRateN: ANALYTICS_MIN_RATE_N,
+      ratings: {
+        battle: { current: Number(u.elo ?? 1200), points: compCurve.filter(p => !p.rapid) },
+        rapid: { current: Number(u.rapidElo ?? 1200), points: compCurve.filter(p => p.rapid) },
+        arena: {
+          current: Number(u.arenaElo ?? 1200),
+          startedAt: arenaCurve[0]?.at ?? null,
+          points: arenaCurve,
+        },
+      },
+      rubric: {
+        lifetime: rubricLifetime[0] ?? null,
+        weeks: rubricWeeks,
+        weeksWithData: rubricWeeks.length,
+        ratedTotal: rubricWeeks.reduce((s, w) => s + Number(w.n ?? 0), 0),
+      },
+      formats: [
+        fmt("battle", "Battle Grounds", compBattle),
+        fmt("rapid", "Rapid Fire", compRapid),
+        fmt("team", "Team", team),
+        fmt("arena_ranked", "Training Grounds (ranked)", arenaRanked),
+        fmt("arena_practice", "Training Grounds (practice)", arenaPractice),
+      ],
+      byCategory: byCat.map(c => ({
+        categoryId: c.categoryId, label: categoryLabel(c.categoryId),
+        played: c.played, wins: c.wins, winRate: rate(c.wins, c.played),
+        fromRapid: c.fromRapid, fromArena: c.fromArena,
+      })),
+      uncategorised: {
+        played: compBattle.played + team.played + arenaPractice.played,
+      },
+      headToHead: h2h.map(r => {
+        const o = oppById.get(r.opponentId);
+        const gone = !o || o.deletedAt;
+        return {
+          opponentId: gone ? null : r.opponentId,
+          opponentName: gone ? "Former member" : o.username,
+          played: r.played, wins: r.wins, losses: r.played - r.wins,
+          lastPlayedAt: r.lastPlayedAt,
+        };
+      }),
+      bots: botRows.map(b => ({
+        botId: b.botId, name: b.botId, played: b.played,
+        wins: b.wins, losses: b.played - b.wins, ranked: b.ranked,
+      })),
+    };
+
+    try { await redis.set(cacheKey, JSON.stringify(payload), { EX: 120 }); } catch { /* redis down */ }
+    res.json(payload);
+  } catch (e) {
+    console.error("[GET /api/analytics/me]", e);
+    res.status(500).json({ error: "Couldn't load your analytics." });
   }
 });
 
@@ -7596,6 +7872,66 @@ async function start() {
     console.log("[DB] Betting storage removed");
   } catch (e) {
     console.error("[DB] Betting teardown failed:", e);
+  }
+
+  // ── Analytics storage ────────────────────────────────────────────────────────
+  // Columns and indexes behind /api/analytics/me. Deliberately its OWN block with
+  // one statement per call: the neighbouring "Claim tables" block is a single
+  // multi-statement $executeRawUnsafe, which Postgres rejects with 42601 on every
+  // boot and its own catch swallows — anything appended there would never run.
+  //
+  // The arena ELO columns exist because that ladder's history is the one thing
+  // that cannot be reconstructed: ArenaMatch records scoreImpact and nothing about
+  // the rating. They stay NULL on every pre-deploy row forever, so the endpoint
+  // reports when collection started rather than drawing a curve that pretends to
+  // begin at signup. categoryId/propositionId are denormalised because the only
+  // category carrier today is Room.matchConfig, and deleting a room destroys it
+  // while the match row survives as an orphan.
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ArenaMatch" ADD COLUMN IF NOT EXISTS "arenaEloBefore" INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ArenaMatch" ADD COLUMN IF NOT EXISTS "arenaEloAfter" INTEGER`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ArenaMatch" ADD COLUMN IF NOT EXISTS "categoryId" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ArenaMatch" ADD COLUMN IF NOT EXISTS "propositionId" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ADD COLUMN IF NOT EXISTS "categoryId" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ADD COLUMN IF NOT EXISTS "propositionId" TEXT`);
+
+    // "Claim" is the largest table in the schema and had no index beyond its
+    // primary key, so the per-user rubric-trend GROUP BY was a sequential scan.
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Claim_claimant_created_idx" ON "Claim"("claimantId","createdAt")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CompetitiveMatch_completedAt_idx" ON "CompetitiveMatch"("completedAt")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CompetitiveMatch_pair_idx" ON "CompetitiveMatch"("challengerId","challengedId")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ArenaMatch_user_created_idx" ON "ArenaMatch"("userId","createdAt")`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TeamMatch_status_completed_idx" ON "TeamMatch"("status","completedAt")`);
+    console.log("[DB] Analytics columns ready");
+  } catch (e) {
+    console.error("[DB] Analytics setup failed:", e);
+  }
+
+  // One-shot backfill of the denormalised category, recovering history for rounds
+  // whose Room still exists. Its OWN try/catch and a shape guard on the cast: no
+  // query in this file has ever cast matchConfig to jsonb, most rows are NULL, and
+  // a single malformed value would abort the block above before its indexes ran.
+  // A failure here is acceptable — every read already treats NULL as uncategorised.
+  try {
+    await prisma.$executeRawUnsafe(`
+      UPDATE "CompetitiveMatch" cm
+         SET "categoryId"    = NULLIF(r."matchConfig"::jsonb->>'categoryId',''),
+             "propositionId" = NULLIF(r."matchConfig"::jsonb->>'propositionId','')
+        FROM "Room" r
+       WHERE r.name = cm."roomName" AND cm."categoryId" IS NULL AND cm."isRapid" = TRUE
+         AND r."matchConfig" IS NOT NULL AND left(btrim(r."matchConfig"), 1) = '{'
+    `);
+    await prisma.$executeRawUnsafe(`
+      UPDATE "ArenaMatch" am
+         SET "propositionId" = p.id, "categoryId" = p."categoryId"
+        FROM "Room" r
+        JOIN "Proposition" p ON p.id = NULLIF(r."matchConfig"::jsonb->>'propositionId','')
+       WHERE r.name = am."roomName" AND am."categoryId" IS NULL AND am."ranked" = TRUE
+         AND r."matchConfig" IS NOT NULL AND left(btrim(r."matchConfig"), 1) = '{'
+    `);
+    console.log("[DB] Analytics backfill ready");
+  } catch (e) {
+    console.error("[DB] Analytics backfill failed (non-fatal):", e);
   }
 
   httpServer.listen(PORT, () => {

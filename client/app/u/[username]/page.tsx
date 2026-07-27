@@ -20,8 +20,10 @@ interface ProfileData {
   createdAt: string;
   elo: number;
   arenaElo: number;
+  rapidElo?: number;
   competitiveRank: Rank | null;
   arenaRank: Rank | null;
+  rapidRank?: Rank | null;
   stats: {
     debateCount: number; messageCount: number; arenaMatchCount: number;
     arenaWins: number; arenaLosses: number; arenaBonus: number;
@@ -193,7 +195,7 @@ export default function PublicProfilePage() {
                 </div>
 
                 {/* Rankings */}
-                <RankingsCard elo={data.elo} arenaElo={data.arenaElo} competitiveRank={data.competitiveRank} arenaRank={data.arenaRank} />
+                <RankingsCard elo={data.elo} arenaElo={data.arenaElo} rapidElo={data.rapidElo} competitiveRank={data.competitiveRank} arenaRank={data.arenaRank} rapidRank={data.rapidRank} />
 
                 {/* Match history — completed 1v1 competitive matches */}
                 {matches.length > 0 && (
