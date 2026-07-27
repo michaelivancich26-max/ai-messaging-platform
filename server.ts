@@ -2857,12 +2857,27 @@ app.get("/api/challenges/mine", async (req, res) => {
 app.post("/api/challenges", async (req, res) => {
   try {
     const userId = actorId(req)!;
-    const { claim, stance, winCondition } = req.body as {
-    claim: string; stance: "affirmative" | "negative"; winCondition: object;
+    const { claim, stance, winCondition, propositionId } = req.body as {
+      claim?: string; stance: "affirmative" | "negative"; winCondition: object; propositionId?: string;
     };
-    if (!userId || !claim?.trim() || !stance || !winCondition) {
-      return res.status(400).json({ error: "userId, claim, stance, and winCondition required" });
+    if (!userId || !stance || !winCondition) {
+      return res.status(400).json({ error: "stance and winCondition required" });
     }
+
+    // A curated pick is resolved SERVER-SIDE from the id. The client sends the id,
+    // never the text — otherwise "curated" would just be a label anyone could put
+    // on arbitrary text, and the provenance column would lie.
+    let finalClaim = (claim ?? "").trim();
+    let curatedId: string | null = null;
+    if (typeof propositionId === "string" && propositionId) {
+      const p = await prisma.$queryRawUnsafe<{ id: string; text: string }[]>(
+        `SELECT id, text FROM "Proposition" WHERE id = $1 AND status = 'live' LIMIT 1`, propositionId);
+      if (!p[0]) return res.status(400).json({ error: "That claim is no longer available. Pick another." });
+      finalClaim = p[0].text;
+      curatedId = p[0].id;
+    }
+    if (!finalClaim) return res.status(400).json({ error: "Pick a claim or write your own." });
+    if (finalClaim.length > 300) return res.status(400).json({ error: "That claim is too long — keep it under 300 characters." });
     const elig = await battleEligibility(userId);
     if (!elig.eligible) {
       return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
@@ -2880,11 +2895,24 @@ app.post("/api/challenges", async (req, res) => {
       return res.status(409).json({ error: `You already have ${BG_MAX_OPEN_CHALLENGES} open challenges. Withdraw one or wait for one to be accepted.` });
     }
     const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `INSERT INTO "Challenge" ("id","userId","claim","stance","winCondition")
-       VALUES (gen_random_uuid()::text,$1,$2,$3,$4) RETURNING "id"`,
-      userId, claim.trim(), stance, JSON.stringify(winCondition),
+      `INSERT INTO "Challenge" ("id","userId","claim","stance","winCondition","propositionId")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5) RETURNING "id"`,
+      userId, finalClaim, stance, JSON.stringify(winCondition), curatedId,
     );
-    res.json({ id: rows[0].id });
+
+    // A user-written claim becomes a candidate for the curated set: the same
+    // draft queue the AI generator feeds, reviewed at /admin. This is how the
+    // standard set grows out of what people actually want to argue, instead of
+    // only what an admin thought of. Best-effort and de-duplicated by the table's
+    // UNIQUE(text) — a collision means the claim already exists, which is fine.
+    if (!curatedId) {
+      prisma.$executeRawUnsafe(
+        `INSERT INTO "Proposition" ("text","categoryId","status","source")
+         VALUES ($1,'society','draft','user') ON CONFLICT ("text") DO NOTHING`, finalClaim,
+      ).catch(() => { /* never block posting a challenge on the suggestion */ });
+    }
+
+    res.json({ id: rows[0].id, curated: !!curatedId });
   } catch (e) {
     console.error("[challenges POST]", e);
     res.status(500).json({ error: "Failed to post challenge" });
@@ -3599,6 +3627,37 @@ app.get("/api/topics", async (_req, res) => {
   } catch (e) {
     console.error("[GET /api/topics]", e);
     res.status(500).json({ error: "Failed to load categories" });
+  }
+});
+
+// Browse the curated claim set. Distinct from GET /api/deck, which deliberately
+// serves only claims you HAVEN'T answered — for picking a debate topic you want
+// the whole live catalogue, including ones you already hold a position on
+// (arguing a claim you've taken a side on is the point, not a conflict).
+//
+// Read-only over vetted public content, so it needs auth (the global /api wall)
+// but no ownership check: every live proposition is visible to every player.
+app.get("/api/propositions", heavyReadLimiter, async (req, res) => {
+  try {
+    const category = typeof req.query.category === "string" && isCategoryId(req.query.category)
+      ? req.query.category : null;
+    const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+
+    const where: string[] = [`status = 'live'`];
+    const args: unknown[] = [];
+    if (category) { args.push(category); where.push(`"categoryId" = $${args.length}`); }
+    if (q) { args.push(`%${q}%`); where.push(`text ILIKE $${args.length}`); }
+
+    const rows = await prisma.$queryRawUnsafe<{ id: string; text: string; categoryId: string }[]>(
+      `SELECT id, text, "categoryId" FROM "Proposition"
+        WHERE ${where.join(" AND ")}
+        ORDER BY "categoryId", text
+        LIMIT 200`, ...args);
+
+    res.json({ propositions: rows.map(r => ({ ...r, label: categoryLabel(r.categoryId) })) });
+  } catch (e) {
+    console.error("[GET /api/propositions]", e);
+    res.status(500).json({ error: "Couldn't load the claim library." });
   }
 });
 
@@ -7725,6 +7784,11 @@ async function start() {
     `);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Challenge_status_idx" ON "Challenge"("status")`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Challenge_userId_idx" ON "Challenge"("userId")`);
+    // Set when the challenger picked from the curated set rather than writing
+    // their own. The claim TEXT is still copied onto the row so a challenge stays
+    // readable if the proposition is later retired or reworded — this column is
+    // the provenance, not the source of truth for display.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Challenge" ADD COLUMN IF NOT EXISTS "propositionId" TEXT`);
     console.log("[DB] Challenge table ready");
   } catch (e) {
     console.error("[DB] Challenge table setup failed:", e);

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import TeamMatches from "@/components/TeamMatches";
 import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
 import { api } from "@/lib/api";
+import ClaimPicker, { type PickedClaim } from "@/components/ClaimPicker";
 import { useFocusTrap } from "@/lib/useFocusTrap";
 import { Zap, X, Trophy, Medal, Check, Lock, GraduationCap } from "@/lib/icons";
 
@@ -151,7 +152,7 @@ function PropositionThresholdPicker({ threshold, onChange }: { threshold: number
         type="range" min={50} max={90} step={5} value={threshold}
         onChange={e => onChange(+e.target.value)}
         aria-label={`Win threshold ${threshold} percent`}
-        className="mt-2 w-full accent-emerald-600"
+        className="mt-2 h-11 w-full accent-emerald-600"
       />
     </div>
   );
@@ -162,7 +163,7 @@ function PropositionThresholdPicker({ threshold, onChange }: { threshold: number
 function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () => void }) {
   const { data: session } = useSession();
   const userId = (session?.user as any)?.id ?? "";
-  const [claim, setClaim] = useState("");
+  const [picked, setPicked] = useState<PickedClaim | null>(null);
   const [stance, setStance] = useState<"affirmative" | "negative">("affirmative");
   const [wcType, setWcType] = useState<"exchanges" | "time" | "proposition">("exchanges");
   const [limit, setLimit] = useState(10);
@@ -184,14 +185,18 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
     { type: "proposition", threshold };
 
   async function submit() {
-    if (!claim.trim()) return;
+    if (!picked) return;
     setLoading(true);
     setError("");
     try {
       const res = await api(`${SERVER}/api/challenges`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, claim: claim.trim(), stance, winCondition: wc }),
+        // Curated picks send the ID only — the server resolves the text, so
+        // "from the library" can't be spoofed by sending matching text.
+        body: JSON.stringify(picked.propositionId
+          ? { userId, propositionId: picked.propositionId, stance, winCondition: wc }
+          : { userId, claim: picked.text, stance, winCondition: wc }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -212,16 +217,8 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="post-challenge-title" className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={e => e.stopPropagation()}>
         <h2 id="post-challenge-title" className="font-display text-lg font-bold tracking-tight text-gray-900 dark:text-white mb-4">Post a Challenge</h2>
 
-        {/* Claim */}
-        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Your claim</label>
-        <textarea
-          autoFocus
-          value={claim}
-          onChange={e => setClaim(e.target.value)}
-          placeholder="e.g. Universal basic income would reduce poverty"
-          rows={3}
-          className="w-full resize-none rounded-xl border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:border-brand-green focus:outline-none"
-        />
+        {/* Claim — library first, own claim behind a disclosure. */}
+        <ClaimPicker value={picked} onChange={setPicked} />
 
         {/* Stance */}
         <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-4 mb-1.5">You are arguing</label>
@@ -230,7 +227,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
             <button
               key={s}
               onClick={() => setStance(s)}
-              className={`flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${
+              className={`min-h-11 flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${
                 stance === s
                   ? s === "affirmative"
                     ? "border-emerald-500 bg-emerald-100 dark:border-emerald-600 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
@@ -250,7 +247,7 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
             <button
               key={t}
               onClick={() => setWcType(t)}
-              className={`flex-1 rounded-lg border py-2 text-xs font-semibold capitalize transition-colors ${
+              className={`min-h-11 flex-1 rounded-lg border py-2 text-xs font-semibold capitalize transition-colors ${
                 wcType === t ? "border-brand-green bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"
               }`}
             >
@@ -260,13 +257,15 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
         </div>
         {wcType === "exchanges" && (
           <div className="flex items-center gap-3">
-            <input type="range" min={4} max={20} value={limit} onChange={e => setLimit(+e.target.value)} className="flex-1 accent-brand-green" />
+            <input type="range" min={4} max={20} value={limit} onChange={e => setLimit(+e.target.value)}
+              aria-label={`Exchanges: ${limit}`} className="h-11 flex-1 accent-brand-green" />
             <span className="w-20 text-right text-xs text-gray-700 dark:text-gray-300">{limit} exchanges</span>
           </div>
         )}
         {wcType === "time" && (
           <div className="flex items-center gap-3">
-            <input type="range" min={3} max={30} value={minutes} onChange={e => setMinutes(+e.target.value)} className="flex-1 accent-brand-green" />
+            <input type="range" min={3} max={30} value={minutes} onChange={e => setMinutes(+e.target.value)}
+              aria-label={`Minutes: ${minutes}`} className="h-11 flex-1 accent-brand-green" />
             <span className="w-20 text-right text-xs text-gray-700 dark:text-gray-300">{minutes} minutes</span>
           </div>
         )}
@@ -285,13 +284,13 @@ function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () =>
 
         {/* Actions */}
         <div className="mt-6 flex gap-3">
-          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-300 dark:border-gray-700 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
+          <button onClick={onClose} className="min-h-11 flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50">
             Cancel
           </button>
           <button
             onClick={submit}
-            disabled={loading || !claim.trim()}
-            className="flex-1 rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100"
+            disabled={loading || !picked}
+            className="min-h-11 flex-1 rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100"
           >
             {loading ? "Posting…" : "Post Challenge"}
           </button>
