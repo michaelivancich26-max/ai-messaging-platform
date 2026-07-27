@@ -92,9 +92,45 @@ app.use(async (req, _res, next) => {
 const PUBLIC_API = [
   /^\/api\/topics$/,   // the category list; no user data
 ];
-app.use("/api", (req, res, next) => {
+// A deleted account must lose access immediately, not when its token expires.
+// Sessions are 30-day JWTs, so without this a user who deleted their account —
+// and whose Pro entitlement we just cancelled — keeps full authenticated access,
+// Pro included, for up to a month on the token already in their browser.
+//
+// Cached because this sits in front of every API call and deletions are rare:
+// one lookup per user per minute, not one per request. A tombstone is permanent,
+// so a positive result is cached forever; only the negative result expires.
+const DELETED_TTL_MS = 60_000;
+const deletedUsers = new Set<string>();             // confirmed tombstones — permanent
+const liveUntil = new Map<string, number>();        // userId -> verified-live expiry
+async function isDeletedAccount(userId: string): Promise<boolean> {
+  if (deletedUsers.has(userId)) return true;
+  if (Date.now() < (liveUntil.get(userId) ?? 0)) return false;
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ deletedAt: Date | null }[]>(
+      `SELECT "deletedAt" FROM "User" WHERE id = $1`, userId,
+    );
+    // A real tombstone is forever, so it's safe to remember permanently.
+    if (rows.length && rows[0].deletedAt) { deletedUsers.add(userId); return true; }
+    // No row: block this request, but do NOT remember it. "Missing" is not
+    // necessarily permanent — a lookup racing account creation, or a replica that
+    // hasn't caught up, would otherwise lock a real user out for the life of the
+    // process. Re-checking costs a query only for ids that don't exist.
+    if (!rows.length) return true;
+    liveUntil.set(userId, Date.now() + DELETED_TTL_MS);
+    return false;
+  } catch {
+    // Fail OPEN on a DB blip: a transient error must not sign everyone out.
+    return false;
+  }
+}
+
+app.use("/api", async (req, res, next) => {
   if (PUBLIC_API.some((r) => r.test(req.baseUrl + req.path))) return next();
   if (!req.actor) return res.status(401).json({ error: "Authentication required" });
+  if (await isDeletedAccount(req.actor.id)) {
+    return res.status(401).json({ error: "This account has been deleted.", code: "account_deleted" });
+  }
   next();
 });
 
@@ -5078,10 +5114,17 @@ async function buildProfilePayload(
       uid,
     ).catch(() => [{ count: 0n }]),
     prisma.$queryRawUnsafe<{ wins: bigint; losses: bigint; bonus: number }[]>(
+      // The bonus is RANKED-ONLY. Unranked Arena wins move no ELO — that gate has
+      // been there since the beginning — but scoreImpact was summed unfiltered, so
+      // it still fed the public Grounds Score. Custom opponents turned that into a
+      // faucet: author a tier-5 persona told to concede, farm it, and the wins land
+      // on the headline number on your public profile. Wins/losses stay unfiltered
+      // because they're presented as "bot matches played", a practice count, not a
+      // rating; only the number that feeds the score is gated.
       `SELECT
         COALESCE(SUM(CASE WHEN "winner"='human' THEN 1 ELSE 0 END),0) AS wins,
         COALESCE(SUM(CASE WHEN "winner"='bot'   THEN 1 ELSE 0 END),0) AS losses,
-        COALESCE(SUM("scoreImpact"),0) AS bonus
+        COALESCE(SUM(CASE WHEN "ranked" = true THEN "scoreImpact" ELSE 0 END),0) AS bonus
        FROM "ArenaMatch" WHERE "userId" = $1`,
       uid,
     ).catch(() => [{ wins: 0n, losses: 0n, bonus: 0 }]),
@@ -7118,13 +7161,51 @@ app.post("/api/me/delete", async (req, res) => {
   const userId = actorId(req);
   if (!userId) return res.status(401).json({ error: "Not signed in" });
   try {
+    // Stop the money BEFORE destroying the account, and refuse to proceed if we
+    // can't. This used to de-identify the row while leaving the Stripe
+    // subscription live — and because the same statement overwrites username,
+    // email and password and drops the reset tokens, the person could never sign
+    // back in, and /api/billing/portal needs a live session. The result was a
+    // recurring charge with no access and no way to cancel from inside the
+    // product, against a page that promises "Cancel anytime".
+    const subRows = await prisma.$queryRawUnsafe<{ stripeSubscriptionId: string | null }[]>(
+      `SELECT "stripeSubscriptionId" FROM "User" WHERE id = $1`, userId,
+    ).catch(() => [] as any[]);
+    const subId = subRows[0]?.stripeSubscriptionId ?? null;
+    if (subId && stripe) {
+      try {
+        await stripe.subscriptions.cancel(subId);
+      } catch (e: any) {
+        // Already gone at Stripe's end is a success for our purposes; anything
+        // else means we cannot guarantee the billing stops, so we stop instead.
+        const code = e?.code ?? e?.raw?.code;
+        if (code !== "resource_missing") {
+          console.error("[me/delete] subscription cancel failed", { userId, subId, code, message: e?.message });
+          return res.status(503).json({
+            error: "We couldn't cancel your subscription just now, so we haven't deleted your account — "
+                 + "deleting it would leave you being billed with no way to stop it. "
+                 + "Please try again in a few minutes, or cancel from Manage subscription on the Grounds Pro page first.",
+            code: "cancel_failed",
+          });
+        }
+      }
+    }
+
     const deadPass = await bcrypt.hash(`deleted-${userId}-${Math.random()}`, 10);
     await prisma.$executeRawUnsafe(
       `UPDATE "User" SET username = $2, email = $3, password = $4,
-         bio = NULL, "avatarUrl" = NULL, "emailVerified" = NULL, "deletedAt" = NOW()
+         bio = NULL, "avatarUrl" = NULL, "emailVerified" = NULL, "deletedAt" = NOW(),
+         "isPro" = false, "proStatus" = 'deleted',
+         "stripeCustomerId" = NULL, "stripeSubscriptionId" = NULL, "proCurrentPeriodEnd" = NULL
        WHERE id = $1`,
       userId, `deleted_${userId}`, `${userId}@deleted.invalid`, deadPass,
     );
+    // Kill the cached "not deleted" answer this same session just populated,
+    // otherwise the account keeps working until the TTL lapses. Exact in-process;
+    // another instance would still carry its own negative for up to DELETED_TTL_MS.
+    deletedUsers.add(userId);
+    liveUntil.delete(userId);
+
     await prisma.$executeRawUnsafe(`DELETE FROM "Notification" WHERE "userId" = $1 OR "fromUserId" = $1`, userId).catch(() => {});
     await prisma.$executeRawUnsafe(`DELETE FROM "PasswordResetToken" WHERE "userId" = $1`, userId).catch(() => {});
     await prisma.$executeRawUnsafe(`DELETE FROM "EmailVerificationToken" WHERE "userId" = $1`, userId).catch(() => {});

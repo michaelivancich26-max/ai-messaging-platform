@@ -27,13 +27,13 @@ const check = (name, ok, detail = "") => {
 
 async function clean() {
   await prisma.$executeRawUnsafe(`DELETE FROM "RapidAftermathAnswered" WHERE "roomName"=$1`, ROOM);
-  await prisma.$executeRawUnsafe(`DELETE FROM "BeliefChange" WHERE "userId" = ANY($1::text[])`, [A, B]);
-  await prisma.$executeRawUnsafe(`DELETE FROM "UserBelief" WHERE "userId" = ANY($1::text[])`, [A, B]);
+  await prisma.$executeRawUnsafe(`DELETE FROM "BeliefChange" WHERE "userId" = ANY($1::text[])`, [A, B, "aftermath-probe-c"]);
+  await prisma.$executeRawUnsafe(`DELETE FROM "UserBelief" WHERE "userId" = ANY($1::text[])`, [A, B, "aftermath-probe-c"]);
   await prisma.$executeRawUnsafe(`DELETE FROM "CompetitiveMatch" WHERE "roomName"=$1`, ROOM);
   await prisma.$executeRawUnsafe(`DELETE FROM "MatchProposition" WHERE "roomName"=$1`, ROOM);
   await prisma.$executeRawUnsafe(`DELETE FROM "RoomMember" WHERE "roomId" IN (SELECT id FROM "Room" WHERE name=$1)`, ROOM);
   await prisma.$executeRawUnsafe(`DELETE FROM "Room" WHERE name=$1`, ROOM);
-  await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [A, B]);
+  await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [A, B, "aftermath-probe-c"]);
 }
 
 async function main() {
@@ -42,7 +42,10 @@ async function main() {
   await clean();
 
   // Two users. A holds "agree/2" on a live proposition; B the opposite.
-  for (const [id, name] of [[A, "aftalpha"], [B, "aftbeta"]]) {
+  // C is a real signed-in outsider — it needs a User row like the others, because
+  // the API now rejects a session whose user id has no row, and this test is
+  // asserting the aftermath's PARTICIPANT check (403), not the auth wall (401).
+  for (const [id, name] of [[A, "aftalpha"], [B, "aftbeta"], ["aftermath-probe-c", "aftcee"]]) {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "User" (id, username, email, password) VALUES ($1,$2,$3,'')`, id, name, `${name}@probe.local`);
   }
@@ -123,7 +126,7 @@ async function main() {
   check("a non-participant POST is refused", outsiderPost.status === 403, `HTTP ${outsiderPost.status}`);
 
   await clean();
-  const left = await prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "User" WHERE id = ANY($1::text[])`, [A, B]);
+  const left = await prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS n FROM "User" WHERE id = ANY($1::text[])`, [A, B, "aftermath-probe-c"]);
   check("fixture removed", left[0].n === 0);
 
   await prisma.$disconnect();

@@ -27,6 +27,7 @@ const prisma = new PrismaClient();
 async function clean() {
   await prisma.$executeRawUnsafe(`DELETE FROM "UserBelief" WHERE "userId" = ANY($1::text[])`, [ATTACKER, VICTIM]);
   await prisma.$executeRawUnsafe(`DELETE FROM "BeliefChange" WHERE "userId" = ANY($1::text[])`, [ATTACKER, VICTIM]);
+  await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE id = ANY($1::text[])`, [ATTACKER, VICTIM]).catch(() => {});
 }
 
 async function main() {
@@ -34,6 +35,16 @@ async function main() {
   if (!secret) { console.error("FAIL: NEXTAUTH_SECRET not set"); process.exit(1); }
 
   await clean();
+
+  // Both probes need real User rows. The API now rejects a session whose user id
+  // has no row (that is how a deleted account loses access immediately, rather
+  // than when its 30-day token expires), so minting a token for a synthetic id
+  // would fail at the auth wall and never reach the impersonation checks below.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "User" (id,username,email,password) VALUES ($1,$2,$3,'x'), ($4,$5,$6,'x')
+     ON CONFLICT (id) DO NOTHING`,
+    ATTACKER, "attacker-probe", "attacker-probe@t.local",
+    VICTIM, "victim-probe", "victim-probe@t.local");
 
   let failures = 0;
   const check = (name: string, ok: boolean, detail = "") => {
