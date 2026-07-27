@@ -77,7 +77,15 @@ function Ladder({ name, ladder, stroke, note }: { name: string; ladder: Ladder; 
         </span>
       </div>
       {pts.length >= 2 ? (
-        <div className="mt-2"><TrendLine points={pts} stroke={stroke} label={`${name} rating over ${pts.length} matches`} /></div>
+        // The label carries the DATA, not just the fact that a chart is here:
+        // a curve announced only as "rating over 12 matches" tells a screen-reader
+        // user nothing they can act on. Start, end, direction, and range instead.
+        <div className="mt-2">
+          <TrendLine points={pts} stroke={stroke}
+            label={`${name} rating over ${pts.length} matches: started ${pts[0]}, now ${pts[pts.length - 1]}, ${
+              change === 0 ? "no net change" : `${change > 0 ? "up" : "down"} ${Math.abs(change)}`
+            }. Lowest ${Math.min(...pts)}, highest ${Math.max(...pts)}.`} />
+        </div>
       ) : (
         <p className="mt-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           {note ?? `Play a couple of ${name} matches and the curve fills in.`}

@@ -603,7 +603,7 @@ function BotCard({ bot, autoOpen = false, capReached = false, onCapHit, onMatchS
           onClick={() => capReached ? router.push("/pro") : setModalOpen(true)}
           disabled={challenging || !userId}
           title={capReached ? "You've used today's free Arena matches — Grounds Pro is unlimited" : undefined}
-          className={`mt-3 w-full rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100 ${
+          className={`mt-3 min-h-11 w-full rounded-xl py-2.5 text-sm font-semibold transition-colors disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100 ${
             capReached
               ? "bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
               : c.btn}`}
@@ -758,7 +758,8 @@ function ArenaContent() {
 
         {/* Mobile top bar */}
         <div className="flex min-h-12 shrink-0 items-center border-b border-gray-200 dark:border-gray-800 px-4 md:hidden pt-safe">
-          <button onClick={() => setMobileSidebarOpen(true)} className="rounded p-1.5 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+          <button onClick={() => setMobileSidebarOpen(true)} aria-label="Open opponents menu"
+            className="-ml-2 grid h-11 w-11 place-items-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">
             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5"><path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 10.5a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75ZM2 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 2 10Z" clipRule="evenodd" /></svg>
           </button>
           <span className="ml-3 font-display text-sm font-semibold text-brand-green-ink dark:text-brand-green">Training Grounds</span>

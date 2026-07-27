@@ -178,27 +178,27 @@ function BotRow({ bot, mine, onChallenge, onEdit, onDelete, onTogglePublic, onRe
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <button onClick={onChallenge} disabled={busy}
-          className="flex-1 rounded-xl bg-orange-700 py-2 text-xs font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-40">
+          className="min-h-11 flex-1 rounded-xl bg-orange-700 py-2 text-xs font-semibold text-white transition-colors hover:bg-orange-600 disabled:opacity-40">
           {busy ? "Starting…" : "Challenge"}
         </button>
         {mine ? (
           <>
             <button onClick={onTogglePublic} title={bot.isPublic ? "Unshare" : "Share to library"} disabled={bot.hidden}
-              className="rounded-xl border border-gray-300 p-2 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              className="grid h-11 w-11 place-items-center rounded-xl border border-gray-300 text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
               {bot.isPublic ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
             </button>
             <button onClick={onEdit} title="Edit"
-              className="rounded-xl border border-gray-300 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              className="grid h-11 w-11 place-items-center rounded-xl border border-gray-300 text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
               <Pencil className="h-4 w-4" />
             </button>
             <button onClick={onDelete} title="Delete"
-              className="rounded-xl border border-gray-300 p-2 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-red-950/30 dark:hover:text-red-400">
+              className="grid h-11 w-11 place-items-center rounded-xl border border-gray-300 text-gray-600 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-red-950/30 dark:hover:text-red-400">
               <Trash2 className="h-4 w-4" />
             </button>
           </>
         ) : (
           <button onClick={onReport} title="Report this opponent"
-            className="rounded-xl border border-gray-300 p-2 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-red-950/30 dark:hover:text-red-400">
+            className="grid h-11 w-11 place-items-center rounded-xl border border-gray-300 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-red-950/30 dark:hover:text-red-400">
             <Flag className="h-4 w-4" />
           </button>
         )}
@@ -315,7 +315,7 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
           <div className="flex rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
             {([["library", "Library"], ["mine", "Yours"]] as const).map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} aria-pressed={tab === k}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${tab === k
+                className={`min-h-11 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${tab === k
                   ? "bg-white text-orange-800 shadow-sm dark:bg-gray-900 dark:text-orange-300"
                   : "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"}`}>
                 {label}{k === "mine" && mine.length > 0 ? ` ${mine.length}` : ""}
@@ -330,7 +330,7 @@ export default function CustomOpponents({ onChallenge }: { onChallenge: (botId: 
             onClick={() => { if (proLoading) return; isPro ? setCreating(true) : router.push("/pro"); }}
             disabled={proLoading || (isPro && atLimit)}
             title={isPro && atLimit ? `You can keep up to ${limit} opponents` : undefined}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-orange-700 px-3 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40">
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-orange-700 px-3 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40">
             <Plus className="h-3.5 w-3.5" /> Create
             {!proLoading && !isPro && (
               <span className="rounded-full bg-white/20 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide">Pro</span>

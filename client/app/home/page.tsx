@@ -124,20 +124,20 @@ export default function HomePage() {
             : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-gray-200 text-2xl font-bold text-gray-700 ring-1 ring-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600 md:h-20 md:w-20">{username[0]?.toUpperCase()}</span>}
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-white md:text-4xl">{username || "Welcome"}</h1>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
               <button onClick={() => router.push("/dashboard")} title={rated ? "Your Grounds Score" : "Make 3 verified claims to earn a score"}
-                className="inline-flex items-center gap-1.5 hover:text-gray-900 dark:hover:text-gray-200">
+                className="-mx-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-200">
                 <Scale className="h-4 w-4 shrink-0" aria-hidden />
                 {rated ? <><span className="font-semibold text-gray-900 dark:text-gray-100">{cred!.score}</span> Grounds Score</> : "Unrated"}
               </button>
               <button onClick={() => router.push("/dashboard")} title="Days in a row you've been active"
-                className="inline-flex items-center gap-1.5 hover:text-gray-900 dark:hover:text-gray-200">
+                className="-mx-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-200">
                 <Flame className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="font-semibold text-gray-900 dark:text-gray-100">{streak ? streak.current : 0}</span> day streak
               </button>
               {nextMedal && (
                 <button onClick={() => router.push("/dashboard")} title={nextMedal.description}
-                  className="inline-flex items-center gap-1.5 hover:text-gray-900 dark:hover:text-gray-200">
+                  className="-mx-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-200">
                   <MedalIcon name={nextMedal.icon} className="h-4 w-4 shrink-0" />
                   <span className="max-w-[10rem] truncate">{nextMedal.name}</span>
                 </button>
@@ -166,7 +166,7 @@ export default function HomePage() {
                   {/* Second way into the Belief Map, mirroring the deck's own
                       progress row — the front door reaches both breakpoints. */}
                   <Link href="/beliefs"
-                    className="group -my-2 inline-flex items-baseline gap-1 py-2 font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
+                    className="group -my-2 inline-flex min-h-11 items-center gap-1 py-2 font-semibold uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
                     Your belief deck
                     <span aria-hidden className="opacity-50 transition-opacity group-hover:opacity-100">›</span>
                     <span className="sr-only">— see your Belief Map</span>

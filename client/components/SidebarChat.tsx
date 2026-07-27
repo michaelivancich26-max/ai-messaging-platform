@@ -121,7 +121,9 @@ export default function SidebarChat({ messages, currentUsername, onSend, onClose
               type="text"
               placeholder={isSpectator ? "Spectator chat…" : "Side chat…"}
               onKeyDown={handleKey}
-              className="flex-1 bg-transparent text-base md:text-xs text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 outline-none"
+              // outline-none with no replacement left this input with no visible
+              // focus state at all — keyboard users could not tell where they were.
+              className="flex-1 rounded bg-transparent text-base text-gray-900 outline-none placeholder-gray-500 focus-visible:ring-2 focus-visible:ring-brand-green dark:text-gray-100 dark:placeholder-gray-400 md:text-xs"
             />
             <button
               onClick={handleSendClick}

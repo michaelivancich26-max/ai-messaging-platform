@@ -86,7 +86,8 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
         <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 pt-safe">
           <button
             onClick={() => router.push("/home")}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 py-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            aria-label="Back to Hub"
             title="Back to Hub"
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
@@ -110,21 +111,26 @@ export default function ArenaSidebar({ mobileOpen, onMobileClose }: Props) {
           {BOTS.map((bot) => {
             const c = BOT_COLORS[bot.color];
             return (
-              <div key={bot.id} className="flex items-center gap-2 px-2 py-1 group">
+              <div key={bot.id} className="group flex items-center gap-2 px-2 py-0.5">
                 <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ${c.ring} bg-gray-50 dark:bg-gray-950`}>
                   <span className={`text-[10px] font-bold ${c.text}`}>{bot.name[0]}</span>
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{bot.name}</span>
+                  <span className="truncate text-xs font-medium text-gray-700 dark:text-gray-300">{bot.name}</span>
                   <StarMini tier={bot.tier} color={bot.color} />
                 </div>
+                {/* The pill stays visually small, but its hit area is a full 44px
+                    row — these were 31x21, the smallest targets in the app. */}
                 <button
                   onClick={() => challenge(bot)}
                   disabled={!!challenging}
+                  aria-label={`Challenge ${bot.name}`}
                   title={`Challenge ${bot.name}`}
-                  className={`shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors disabled:opacity-40 active:scale-[0.97] motion-reduce:active:scale-100 ${c.btn}`}
+                  className="grid h-11 min-w-11 shrink-0 place-items-center rounded-lg px-1 transition-colors disabled:opacity-40"
                 >
-                  {challenging === bot.id ? "…" : "Go"}
+                  <span className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors active:scale-[0.97] motion-reduce:active:scale-100 ${c.btn}`}>
+                    {challenging === bot.id ? "…" : "Go"}
+                  </span>
                 </button>
               </div>
             );

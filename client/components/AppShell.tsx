@@ -301,7 +301,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   // Shared style for the bottom-row utility icon buttons (settings/DMs/friends).
   const utilBtn = (active?: boolean) =>
-    `relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${active
+    `relative flex h-11 w-11 md:h-9 md:w-9 items-center justify-center rounded-lg transition-colors ${active
       ? "bg-brand-green/15 text-brand-green-ink dark:bg-brand-green/20 dark:text-brand-green"
       : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"}`;
 
@@ -415,28 +415,37 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {/* ── Main column ────────────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
-        <div className="flex min-h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 pt-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
-          <button onClick={() => go("/home")} className="flex items-center gap-1.5" aria-label="Home">
-            <Shield className="h-5 w-5 text-brand-green" />
-            <Wordmark className="text-sm" />
+        {/* Every control here is a 44x44 hit area (`h-11 w-11`) even though the
+            glyph inside stays 20px. These were 20-36px — the whole mobile chrome
+            sat under the 44pt minimum, on every page, which is the single most
+            common cause of mis-taps on a phone. The bar grows to 56px to fit them,
+            and the wordmark is allowed to shrink so 5 targets plus the mark still
+            fit inside 375px without overflowing. */}
+        <div className="flex min-h-14 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-3 pt-safe dark:border-gray-800 dark:bg-gray-900 md:hidden">
+          <button onClick={() => go("/home")} className="flex min-h-11 min-w-0 items-center gap-1.5 rounded-lg py-2 pr-1" aria-label="Home">
+            <Shield className="h-5 w-5 shrink-0 text-brand-green" />
+            <Wordmark className="truncate text-sm" />
           </button>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             {/* Notifications — mounted here on mobile only */}
             {userId && isDesktop === false && <NotificationBell userId={userId} username={username} alignRight />}
-            <button onClick={() => go("/messages")} className="relative text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200" aria-label="Messages">
+            <button onClick={() => go("/messages")} className="relative grid h-11 w-11 place-items-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="Messages">
               <MessageSquare className="h-5 w-5" />
               {dmUnread > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{dmUnread > 9 ? "9+" : dmUnread}</span>
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{dmUnread > 9 ? "9+" : dmUnread}</span>
               )}
             </button>
-            <button onClick={() => go("/friends")} className="relative text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            <button onClick={() => go("/friends")} className="relative grid h-11 w-11 place-items-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
               aria-label={friendReq > 0 ? `Friends, ${friendReq} pending` : "Friends"}>
               <Users className="h-5 w-5" />
               {friendReq > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{friendReq > 9 ? "9+" : friendReq}</span>
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white">{friendReq > 9 ? "9+" : friendReq}</span>
               )}
             </button>
-            <button onClick={() => go("/dashboard")} aria-label="Your profile"><Avatar size="h-7 w-7" /></button>
+            <button onClick={() => go("/dashboard")} aria-label="Your profile"
+              className="grid h-11 w-11 place-items-center rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800">
+              <Avatar size="h-7 w-7" />
+            </button>
             {/* Settings — mounted here on mobile only; the rail this used to
                 live in is desktop-only, so a phone had no way to reach theme,
                 profile, Grounds Pro, Admin or sign-out. */}
