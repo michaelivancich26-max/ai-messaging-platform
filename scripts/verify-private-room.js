@@ -30,6 +30,7 @@ const check = (name, ok, detail = "") => {
 
 async function clean() {
   await prisma.$executeRawUnsafe(`DELETE FROM "Message" WHERE "roomId" IN (SELECT id FROM "Room" WHERE name LIKE $1)`, `${P}%`);
+  await prisma.$executeRawUnsafe(`DELETE FROM "Channel" WHERE "roomId" IN (SELECT id FROM "Room" WHERE name LIKE $1)`, `${P}%`).catch(() => {});
   await prisma.$executeRawUnsafe(`DELETE FROM "RoomMember" WHERE "roomId" IN (SELECT id FROM "Room" WHERE name LIKE $1)`, `${P}%`);
   await prisma.$executeRawUnsafe(`DELETE FROM "Room" WHERE name LIKE $1`, `${P}%`);
   await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE id LIKE $1`, `${P}%`);
@@ -65,6 +66,10 @@ async function main() {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "RoomMember" (id,"userId","roomId",role) VALUES ($1,$2,$3,'PARTICIPANT')`,
     `${P}m1`, OWNER, PRIVATE_ROOM);
+  // A channel in the private room, so the REST read chain below has a real target.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "Channel" (id,"roomId",name,"order") VALUES ($1,$2,'general',0)`,
+    `${P}chan`, PRIVATE_ROOM).catch(() => {});
 
   const ownerSock = await connect(await tokenFor(OWNER, OWNER));
   const attackerSock = await connect(await tokenFor(ATTACKER, ATTACKER));
@@ -115,8 +120,37 @@ async function main() {
     `SELECT COUNT(*)::int AS n FROM "RoomMember" WHERE "roomId"=$1 AND "userId"=$2`, PRIVATE_ROOM, ATTACKER);
   check("REST join created no membership row", (members[0]?.n ?? 0) === 0, `rows=${members[0]?.n}`);
 
+  // The REST read chain, which the socket fix does not cover: room names are
+  // listable, /channels handed out channel ids, and /channels/:id/messages
+  // returned the contents — three unguarded steps into a private room.
+  //
+  // These run BEFORE the legitimate password join below, deliberately: that join
+  // creates a RoomMember row, after which the attacker genuinely HAS access and
+  // these checks would pass for the wrong reason.
+  const authed = (path) => fetch(`${SERVER}${path}`, { headers: { Authorization: `Bearer ${attackerToken}` } });
+
+  const chans = await authed(`/api/rooms/${PRIVATE_ROOM}/channels`);
+  check("channel list refuses a private room", chans.status === 403, `status=${chans.status}`);
+
+  const ch = await prisma.$queryRawUnsafe(
+    `SELECT id FROM "Channel" WHERE "roomId" = $1 LIMIT 1`, PRIVATE_ROOM).catch(() => []);
+  if (ch[0]?.id) {
+    const msgs = await authed(`/api/channels/${ch[0].id}/messages`);
+    check("channel messages refuse a private room", msgs.status === 403, `status=${msgs.status}`);
+  } else {
+    console.log("  note: private room has no Channel row — messages path not exercised");
+  }
+
+  const pubChans = await authed(`/api/rooms/${PUBLIC_ROOM}/channels`);
+  check("channel list still serves a public room", pubChans.status === 200, `status=${pubChans.status}`);
+
   const rightPw = await post(PRIVATE_ROOM, { password: "hunter2" });
   check("REST join still admits the correct password", rightPw.status === 200, `status=${rightPw.status}`);
+
+  // ...and once they are a member, the same reads must succeed. A gate that
+  // locks out legitimate members is just as broken as one that lets strangers in.
+  const memberChans = await authed(`/api/rooms/${PRIVATE_ROOM}/channels`);
+  check("a member CAN list the private room's channels", memberChans.status === 200, `status=${memberChans.status}`);
 
   const publicOk = await post(PUBLIC_ROOM, {});
   check("REST join still admits a public room freely", publicOk.status === 200, `status=${publicOk.status}`);

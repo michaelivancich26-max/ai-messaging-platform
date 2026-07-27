@@ -6400,6 +6400,26 @@ app.get("/api/rooms/:name/claims", async (req, res) => {
 // GET /api/channels/:id/messages — channel history for initial load
 app.get("/api/channels/:id/messages", async (req, res) => {
   try {
+    // Authenticated is not authorised. This returned any channel's last 50
+    // messages to any signed-in caller who knew a channel id — and ids are not
+    // secret: /api/rooms/:name/channels hands them out, and room names are
+    // listable. Chained, that read private rooms straight out over REST, which
+    // the socket-side fix does not cover because this path never touches a socket.
+    const ch = await (prisma as any).channel.findUnique({
+      where: { id: req.params.id }, select: { roomId: true },
+    });
+    if (!ch) return res.status(404).json({ error: "Channel not found" });
+    const room = await prisma.room.findUnique({
+      where: { id: ch.roomId },
+      select: { id: true, creatorId: true, isPrivate: true, isDM: true, participant1Id: true, participant2Id: true },
+    });
+    if (!room) return res.status(404).json({ error: "Channel not found" });
+    const userId = actorId(req);
+    const allowed = room.isDM
+      ? room.participant1Id === userId || room.participant2Id === userId
+      : !room.isPrivate || await restUserInRoom(userId, room);
+    if (!allowed) return res.status(403).json({ error: "You don't have access to this room." });
+
     const messages = await prisma.message.findMany({
       where: { channelId: req.params.id },
       orderBy: { createdAt: "desc" },
@@ -6417,6 +6437,16 @@ app.get("/api/rooms/:name/channels", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
+    // The other half of the same hole: this handed out a private room's channel
+    // ids — and its roomMeta — to anyone who knew the room name, which is the
+    // step that made the channel-messages read practical rather than theoretical.
+    {
+      const userId = actorId(req);
+      const allowed = (room as any).isDM
+        ? (room as any).participant1Id === userId || (room as any).participant2Id === userId
+        : !room.isPrivate || await restUserInRoom(userId, room);
+      if (!allowed) return res.status(403).json({ error: "You don't have access to this room." });
+    }
     const [sections, channels, sidebarChannelList] = await Promise.all([
       prisma.section.findMany({ where: { roomId: room.id }, orderBy: { order: "asc" } }),
       (prisma as any).channel.findMany({ where: { roomId: room.id, isSidebar: false }, orderBy: { order: "asc" } }),
