@@ -474,9 +474,9 @@ export default function DashboardPage() {
               <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-gray-500" />
             </Link>
 
-            {/* ── Rankings ── (gated on loaded profile data so a ranked user never
-                flashes "Unranked" while the fetch is still in flight) */}
-            {stats && <RankingsCard elo={elo} arenaElo={arenaElo} rapidElo={rapidElo} competitiveRank={competitiveRank} arenaRank={arenaRank} rapidRank={rapidRank} />}
+            {/* ── Standings ── (the card fetches every board itself and shows a
+                skeleton first, so a ranked user never flashes "Unranked") */}
+            {userId && <RankingsCard userId={userId} />}
 
             {/* ── Veritas Score ── */}
             {cred && <VeritasScorePanel cred={cred} arenaBonus={stats?.arenaBonus ?? 0} />}

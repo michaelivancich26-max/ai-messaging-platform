@@ -456,12 +456,19 @@ async function resolveBotUser(
       .catch(() => null);
   }
   try {
-    return await (prisma.user as any).upsert({
+    const row = await (prisma.user as any).upsert({
       where: { username: config.name },
       create: { username: config.name, email: `bot.${config.id}@veritas.internal`, password: "__bot__" },
       update: {},
       select: { id: true, username: true },
     });
+    // Raw, not part of the upsert: isBot is a raw-SQL column and is absent from
+    // schema.prisma, so naming it in a Prisma create/update throws at runtime.
+    // Bot messages stake Claims under this row — the Grounds Score input — so it
+    // must never be publicly ranked.
+    await prisma.$executeRawUnsafe(`UPDATE "User" SET "isBot" = true WHERE id = $1 AND "isBot" = false`, row.id)
+      .catch(() => { /* column not migrated yet */ });
+    return row;
   } catch {
     return prisma.user.findUnique({ where: { username: config.name }, select: { id: true, username: true } })
       .catch(() => null);

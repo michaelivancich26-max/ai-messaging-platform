@@ -198,7 +198,7 @@ export default function PublicProfilePage() {
                 </div>
 
                 {/* Rankings */}
-                <RankingsCard elo={data.elo} arenaElo={data.arenaElo} rapidElo={data.rapidElo} competitiveRank={data.competitiveRank} arenaRank={data.arenaRank} rapidRank={data.rapidRank} />
+                <RankingsCard userId={data.id} />
 
                 {/* Match history — completed 1v1 competitive matches */}
                 {matches.length > 0 && (

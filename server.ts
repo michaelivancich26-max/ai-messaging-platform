@@ -2836,7 +2836,7 @@ app.get("/api/battle/me", async (req, res) => {
       prisma.$queryRawUnsafe<any[]>(
         `WITH cohort AS (
            SELECT u.id, u.elo FROM "User" u
-           WHERE u."deletedAt" IS NULL AND (u.elo <> 1200
+           WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo <> 1200
               OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
                           WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id))
          ),
@@ -4408,7 +4408,7 @@ app.get("/api/rapid/leaderboard", async (_req, res) => {
                     UNION ALL
                     SELECT "challengedId" AS uid, "winnerId" FROM "CompetitiveMatch" WHERE "isRapid" = TRUE AND status='complete'
                   ) x WHERE "winnerId" IS DISTINCT FROM uid GROUP BY uid) l ON l.uid = u.id
-       WHERE u."deletedAt" IS NULL
+       WHERE u."deletedAt" IS NULL AND NOT u."isBot"
        ORDER BY u."rapidElo" DESC LIMIT 25`,
     ).catch(() => [] as any[]);
     res.json(rows.map((r) => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
@@ -4437,7 +4437,7 @@ app.get("/api/rapid/me", async (req, res) => {
       prisma.$queryRawUnsafe<any[]>(
         `WITH cohort AS (
            SELECT u.id, u."rapidElo" AS elo FROM "User" u
-           WHERE u."deletedAt" IS NULL AND EXISTS (
+           WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND EXISTS (
              SELECT 1 FROM "CompetitiveMatch" cm
               WHERE cm.status = 'complete' AND cm."isRapid" = TRUE
                 AND (cm."challengerId" = u.id OR cm."challengedId" = u.id))
@@ -5232,7 +5232,7 @@ app.get("/api/leaderboard", async (req, res) => {
        -- Parenthesised deliberately: AND binds tighter than OR, so appending the
        -- tombstone filter to the end would still admit any deleted account whose
        -- elo had moved — which is every deleted account worth hiding.
-       WHERE u."deletedAt" IS NULL AND (u.elo != 1200 OR wins.count IS NOT NULL)
+       WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo != 1200 OR wins.count IS NOT NULL)
        ORDER BY u.elo DESC LIMIT 25`,
     );
     res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo), battleMatches: Number(r.battleMatches ?? 0) })));
@@ -5253,7 +5253,7 @@ app.get("/api/arena-leaderboard", async (_req, res) => {
        JOIN (SELECT "userId", COUNT(*) AS c FROM "ArenaMatch" WHERE "ranked" = true GROUP BY "userId") am ON am."userId" = u.id
        LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'human' AND "ranked" = true GROUP BY "userId") w ON w.uid = u.id
        LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'bot'   AND "ranked" = true GROUP BY "userId") l ON l.uid = u.id
-       WHERE u."deletedAt" IS NULL
+       WHERE u."deletedAt" IS NULL AND NOT u."isBot"
        ORDER BY u."arenaElo" DESC LIMIT 25`,
     ).catch(() => [] as any[]);
     res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
@@ -5295,7 +5295,7 @@ const LEADERBOARDS: Record<string, BoardDef> = {
                        SELECT "challengedId", "winnerId" FROM "CompetitiveMatch"
                         WHERE status='complete' AND ("isRapid" IS NOT TRUE)
                      ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid) l ON l.uid = u.id
-          WHERE u."deletedAt" IS NULL AND (u.elo <> 1200 OR w.n IS NOT NULL)`,
+          WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo <> 1200 OR w.n IS NOT NULL)`,
   },
   rapid: {
     label: "Rapid Fire", unit: "elo",
@@ -5314,7 +5314,7 @@ const LEADERBOARDS: Record<string, BoardDef> = {
                        UNION ALL
                        SELECT "challengedId", "winnerId" FROM "CompetitiveMatch" WHERE status='complete' AND "isRapid"=TRUE
                      ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid) l ON l.uid = u.id
-          WHERE u."deletedAt" IS NULL`,
+          WHERE u."deletedAt" IS NULL AND NOT u."isBot"`,
   },
   arena: {
     label: "Training Grounds", unit: "elo",
@@ -5327,7 +5327,7 @@ const LEADERBOARDS: Record<string, BoardDef> = {
                       WHERE winner='human' AND ranked=TRUE GROUP BY "userId") w ON w.uid = u.id
           LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS n FROM "ArenaMatch"
                       WHERE winner='bot' AND ranked=TRUE GROUP BY "userId") l ON l.uid = u.id
-          WHERE u."deletedAt" IS NULL`,
+          WHERE u."deletedAt" IS NULL AND NOT u."isBot"`,
   },
   // The headline quality number. Must match what a profile shows, which is the
   // claim score (only once 3 claims are rated) PLUS the ranked-arena bonus.
@@ -5355,7 +5355,7 @@ const LEADERBOARDS: Record<string, BoardDef> = {
           FROM "User" u
           LEFT JOIN cred c ON c.uid = u.id
           LEFT JOIN bonus b ON b.uid = u.id
-          WHERE u."deletedAt" IS NULL AND (COALESCE(c.total,0) >= 3 OR COALESCE(b.b,0) <> 0)`,
+          WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (COALESCE(c.total,0) >= 3 OR COALESCE(b.b,0) <> 0)`,
   },
   // The two boards this product is actually about. A mind that moved is the
   // outcome the whole thing exists to produce, counted from both ends.
@@ -5371,7 +5371,7 @@ const LEADERBOARDS: Record<string, BoardDef> = {
           FROM "BeliefChange" bc
           JOIN "User" u ON u.id = bc."userId"
           WHERE bc."fromStance" <> bc."toStance" AND bc."roomName" IS NOT NULL
-            AND u."deletedAt" IS NULL
+            AND u."deletedAt" IS NULL AND NOT u."isBot"
           GROUP BY u.id, u.username, u."isPro"`,
   },
   persuader: {
@@ -5391,7 +5391,7 @@ const LEADERBOARDS: Record<string, BoardDef> = {
                                        THEN cm."challengedId" ELSE cm."challengerId" END
           WHERE bc."fromStance" <> bc."toStance"
             AND (cm."challengerId" = bc."userId" OR cm."challengedId" = bc."userId")
-            AND u."deletedAt" IS NULL
+            AND u."deletedAt" IS NULL AND NOT u."isBot"
             AND bc."toStance" = CASE
                   WHEN (CASE WHEN cm."challengerId" = bc."userId"
                              THEN cm."challengedStance" ELSE cm."challengerStance" END) = 'affirmative'
@@ -5404,9 +5404,48 @@ const LEADERBOARDS: Record<string, BoardDef> = {
     sql: `SELECT u.id, u.username, u."isPro", u."dailyStreak"::float8 AS value,
                  ('best ' || u."longestStreak"::text) AS detail
           FROM "User" u
-          WHERE u."deletedAt" IS NULL AND u."dailyStreak" > 0`,
+          WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND u."dailyStreak" > 0`,
   },
 };
+
+// Where one user sits on every board. Runs each board's own SQL, so a profile
+// and the Community board can never quote different positions for the same
+// person — the drift that already existed between the ladder pages and the
+// ranks printed on a profile.
+async function standingsFor(userId: string) {
+  const entries = Object.entries(LEADERBOARDS);
+  const rows = await Promise.all(entries.map(([, def]) =>
+    prisma.$queryRawUnsafe<any[]>(
+      `WITH cohort AS (${def.sql}),
+       ranked AS (
+         SELECT c.*, RANK() OVER (ORDER BY c.value DESC) AS rank, COUNT(*) OVER () AS total
+         FROM cohort c
+       )
+       SELECT rank::int AS rank, total::int AS total, value, detail FROM ranked WHERE id = $1`,
+      userId,
+    ).catch(() => [] as any[])));
+  return entries.map(([key, def], i) => {
+    const r = rows[i][0];
+    return {
+      key, label: def.label, unit: def.unit, blurb: def.blurb,
+      // null rank means "not in this cohort" — unranked, which is not the same
+      // as last and must not render as a position.
+      rank: r ? Number(r.rank) : null,
+      total: r ? Number(r.total) : null,
+      value: r ? Number(r.value) : null,
+      detail: r?.detail ?? "",
+    };
+  });
+}
+
+app.get("/api/users/:id/standings", heavyReadLimiter, async (req, res) => {
+  try {
+    res.json(await standingsFor(String(req.params.id)));
+  } catch (e) {
+    console.error("[GET /api/users/:id/standings]", e);
+    res.status(500).json({ error: "Couldn't load standings." });
+  }
+});
 
 app.get("/api/leaderboards", async (_req, res) => {
   res.json(Object.entries(LEADERBOARDS).map(([key, b]) => ({ key, label: b.label, unit: b.unit, blurb: b.blurb })));
@@ -5831,7 +5870,7 @@ async function buildProfilePayload(
     prisma.$queryRawUnsafe<any[]>(
       `WITH cohort AS (
          SELECT u.id, u.elo FROM "User" u
-         WHERE u."deletedAt" IS NULL AND (u.elo <> 1200
+         WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo <> 1200
             OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
                         WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id))
        ),
@@ -5842,7 +5881,7 @@ async function buildProfilePayload(
     prisma.$queryRawUnsafe<any[]>(
       `WITH cohort AS (
          SELECT u.id, u."arenaElo" AS elo FROM "User" u
-         WHERE u."deletedAt" IS NULL AND EXISTS (SELECT 1 FROM "ArenaMatch" am WHERE am."userId" = u.id AND am."ranked" = true)
+         WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND EXISTS (SELECT 1 FROM "ArenaMatch" am WHERE am."userId" = u.id AND am."ranked" = true)
        ),
        r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
        SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
@@ -5852,7 +5891,7 @@ async function buildProfilePayload(
     prisma.$queryRawUnsafe<any[]>(
       `WITH cohort AS (
          SELECT u.id, u."rapidElo" AS elo FROM "User" u
-         WHERE u."deletedAt" IS NULL AND EXISTS (
+         WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND EXISTS (
            SELECT 1 FROM "CompetitiveMatch" cm
             WHERE cm.status = 'complete' AND cm."isRapid" = true
               AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)
@@ -6367,6 +6406,26 @@ app.get("/api/coach/:roomName", aiRouteLimiter, async (req, res) => {
     const member = await prisma.roomMember.findFirst({ where: { roomId: room.id, userId, role: { not: "SPECTATOR" } } });
     if (!member) return res.status(403).json({ error: "You can only get coaching for your own matches." });
 
+    // AFTER the match, never during it. The UI only ever offers coaching from
+    // the aftermath panel, but the UI is not the boundary: a Pro player could
+    // call this mid-match and get an AI reading of the argument so far — what
+    // landed, what to sharpen — while the rating is still live. That is an AI
+    // assist inside a ranked match, which the product does not sell at any tier.
+    const [live] = await prisma.$queryRawUnsafe<{ status: string }[]>(
+      `SELECT status FROM "CompetitiveMatch" WHERE "roomName" = $1 LIMIT 1`, roomName);
+    if (live && (live.status === "active" || live.status === "closing")) {
+      return res.status(409).json({ error: "Coaching unlocks when the match ends.", code: "in_progress" });
+    }
+    // Same rule for ranked practice: the arena writes its ArenaMatch row when the
+    // match is judged, so its absence in a bot room means it is still running.
+    if ((room as any).isBotRoom) {
+      const [done] = await prisma.$queryRawUnsafe<{ n: number }[]>(
+        `SELECT COUNT(*)::int AS n FROM "ArenaMatch" WHERE "roomName" = $1`, roomName);
+      if (!Number(done?.n ?? 0)) {
+        return res.status(409).json({ error: "Coaching unlocks when the match ends.", code: "in_progress" });
+      }
+    }
+
     const cacheKey = `coach:${room.id}:${userId}`;
     if (!refresh) { try { const cached = await redis.get(cacheKey); if (cached) return res.json(JSON.parse(cached)); } catch { /* redis down */ } }
 
@@ -6654,6 +6713,9 @@ async function createBotUser(displayName: string): Promise<string | null> {
         data: { username, email: `custombot.${suffix}.${Date.now()}@veritas.internal`, password: "__bot__" },
         select: { id: true },
       });
+      // Keeps the opponent off every public ranking. The boot-time backfill
+      // catches older rows; this is so a bot minted today never appears at all.
+      await prisma.$executeRawUnsafe(`UPDATE "User" SET "isBot" = true WHERE id = $1`, created.id).catch(() => {});
       return created.id;
     } catch { /* collision or transient — try another suffix */ }
   }
@@ -8451,6 +8513,27 @@ async function start() {
     console.log("[DB] User agreement-acceptance columns ready");
   } catch (e) {
     console.error("[DB] User agreement-acceptance setup failed:", e);
+  }
+
+  // Bots post as real User rows, and every bot message stakes and evaluates a
+  // Claim under that row — which is exactly what the Grounds Score is computed
+  // from. So the practice opponents were accumulating a public score and turning
+  // up on the leaderboard beside the humans. Mark them once here rather than
+  // re-deriving "is this a bot" in every ranking query.
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isBot" BOOLEAN NOT NULL DEFAULT false`);
+    // Both bot-creation paths mint the row with a @veritas.internal address; the
+    // custom ones are also pointed at by CustomBot.botUserId. Backfill covers
+    // every bot that already exists.
+    await prisma.$executeRawUnsafe(
+      `UPDATE "User" SET "isBot" = true WHERE "isBot" = false AND email LIKE '%@veritas.internal'`);
+    await prisma.$executeRawUnsafe(
+      `UPDATE "User" SET "isBot" = true WHERE "isBot" = false AND id IN (
+         SELECT "botUserId" FROM "CustomBot" WHERE "botUserId" IS NOT NULL)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "User_isBot_idx" ON "User"("isBot")`);
+    console.log("[DB] Bot accounts marked");
+  } catch (e) {
+    console.error("[DB] Bot account marking failed:", e);
   }
 
   try {
