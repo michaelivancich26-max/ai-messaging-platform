@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import TeamMatches from "@/components/TeamMatches";
-import LiveMatches, { useLiveMatches } from "@/components/LiveMatches";
+import { useLiveMatches } from "@/components/LiveMatches";
+import PostChallengeModal, { WC_LABEL } from "@/components/PostChallengeModal";
 import { api } from "@/lib/api";
-import ClaimPicker, { type PickedClaim } from "@/components/ClaimPicker";
-import { useFocusTrap } from "@/lib/useFocusTrap";
-import { Zap, X, Trophy, Medal, Check, Lock, GraduationCap } from "@/lib/icons";
+import { Zap, X, Trophy, Medal, Check, Lock, GraduationCap, Scale } from "@/lib/icons";
+import { ChevronRight, Swords, type LucideIcon } from "lucide-react";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -23,10 +24,11 @@ interface BattleEligibility {
   battleMatches: number; provisional: boolean;
 }
 
-type WinCondition =
-  | { type: "exchanges"; limit: number }
-  | { type: "time"; minutes: number }
-  | { type: "proposition"; threshold: number };
+interface Standing {
+  elo: number; wins: number; losses: number; draws: number;
+  battleMatches: number; provisional: boolean;
+  rank: number | null; total: number | null;
+}
 
 interface Challenge {
   id: string;
@@ -42,27 +44,14 @@ interface Challenge {
 }
 
 interface LeaderboardEntry {
-  id: string;
-  username: string;
-  elo: number;
-  wins: number;
-  losses: number;
-  battleMatches?: number;
+  id: string; username: string; elo: number;
+  wins: number; losses: number; battleMatches?: number;
 }
 
-const WC_LABEL: Record<string, (wc: any) => string> = {
-  exchanges: (wc) => `${wc.limit} exchanges`,
-  time: (wc) => `${wc.minutes} min`,
-  proposition: (wc) => `Prop ≥${wc.threshold}%`,
-};
-
-// One-line explanation of how each win condition actually resolves — surfaced in
-// the post modal so the rules are legible before you commit.
-const WC_HELP: Record<string, string> = {
-  exchanges: "Ends after this many back-and-forth exchanges, then the AI judge reads the full transcript and picks the stronger case.",
-  time: "You each have this long to argue. When the clock runs out, the AI judge decides the winner from the transcript.",
-  proposition: "A live persuasion bar moves as claims land and get scored. The first side to push it past this threshold wins.",
-};
+interface Match {
+  roomName: string; topic: string; opponentName: string;
+  won: boolean; drawn: boolean; eloDelta: number; completedAt: string | null;
+}
 
 // EloBadge tier colors are intentional DATA (yellow/violet/sky/gray rank tiers),
 // each tuned for AA in light + dark — not chrome. Do not fold these into the
@@ -87,413 +76,102 @@ function EloBadge({ elo, provisional = false, className = "" }: { elo: number; p
 // payloads) reads as settled so we never wrongly brand an established player.
 const isProvisional = (battleMatches?: number) => typeof battleMatches === "number" && battleMatches < PROVISIONAL_MATCHES;
 
-function timeAgo(iso: string) {
+function timeAgo(iso: string | null) {
+  if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  const d = Math.floor(h / 24);
+  return d < 7 ? `${d}d ago` : `${Math.floor(d / 7)}w ago`;
 }
 
-// ── Shared empty state ────────────────────────────────────────────────────────
-
-function EmptyState({ icon, title, hint, action }: { icon: ReactNode; title: string; hint: string; action?: ReactNode }) {
-  return (
-    <div className="flex flex-col items-center gap-4 py-16 text-center animate-fadeIn">
-      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
-        {icon}
-      </div>
-      <div>
-        <p className="font-display text-base font-semibold text-gray-900 dark:text-white">{title}</p>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{hint}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-const BoltIcon = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-  </svg>
-);
-
-// ── Proposition win-condition picker ─────────────────────────────────────────
-// Previews the very bar it configures, exactly as it renders mid-match: the
-// winner (emerald) has to push the proposition bar to `threshold`, the loser
-// (rose) holds the rest, and a needle marks the win line. Dragging the slider
-// moves the score just as it would move live. Kept as one component so every
-// place a proposition win condition is chosen shows the same real bar.
-function PropositionThresholdPicker({ threshold, onChange }: { threshold: number; onChange: (v: number) => void }) {
-  const loser = 100 - threshold;
-  // Winner (emerald) on the left, loser (rose) on the right — the same first-side
-  // orientation as the Live match cards. The split is the win line: raising the
-  // slider grows the winner's green rightward as their score would climb live.
-  return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
-      <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">
-        <span className="text-emerald-700 dark:text-emerald-400">Winner</span>
-        <span className="text-gray-500 dark:text-gray-400">win at {threshold}%</span>
-        <span className="text-rose-700 dark:text-rose-400">Loser</span>
-      </div>
-      <div className="relative h-3.5 overflow-hidden rounded-full bg-gray-100 shadow-inner dark:bg-gray-800">
-        <div className="absolute inset-y-0 left-0 bg-emerald-500 transition-[width] duration-150" style={{ width: `${threshold}%` }} />
-        <div className="absolute inset-y-0 right-0 bg-rose-500 transition-[width] duration-150" style={{ width: `${loser}%` }} />
-        {/* Win line — the split the winner has to push the bar past to take it. */}
-        <div className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white/90 shadow dark:bg-gray-950/80 transition-[left] duration-150" style={{ left: `${threshold}%` }} />
-      </div>
-      <div className="mt-1 flex justify-between text-[11px] font-bold tabular-nums">
-        <span className="text-emerald-700 dark:text-emerald-300">{threshold}%</span>
-        <span className="text-rose-700 dark:text-rose-300">{loser}%</span>
-      </div>
-      <input
-        type="range" min={50} max={90} step={5} value={threshold}
-        onChange={e => onChange(+e.target.value)}
-        aria-label={`Win threshold ${threshold} percent`}
-        className="mt-2 h-11 w-full accent-emerald-600"
-      />
-    </div>
-  );
-}
-
-// ── Post Challenge Modal ──────────────────────────────────────────────────────
-
-function PostModal({ onClose, onPosted }: { onClose: () => void; onPosted: () => void }) {
-  const { data: session } = useSession();
-  const userId = (session?.user as any)?.id ?? "";
-  const [picked, setPicked] = useState<PickedClaim | null>(null);
-  const [stance, setStance] = useState<"affirmative" | "negative">("affirmative");
-  const [wcType, setWcType] = useState<"exchanges" | "time" | "proposition">("exchanges");
-  const [limit, setLimit] = useState(10);
-  const [minutes, setMinutes] = useState(10);
-  const [threshold, setThreshold] = useState(60);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const trapRef = useFocusTrap<HTMLDivElement>();
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const wc: WinCondition =
-    wcType === "exchanges" ? { type: "exchanges", limit } :
-    wcType === "time" ? { type: "time", minutes } :
-    { type: "proposition", threshold };
-
-  async function submit() {
-    if (!picked) return;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await api(`${SERVER}/api/challenges`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Curated picks send the ID only — the server resolves the text, so
-        // "from the library" can't be spoofed by sending matching text.
-        body: JSON.stringify(picked.propositionId
-          ? { userId, propositionId: picked.propositionId, stance, winCondition: wc }
-          : { userId, claim: picked.text, stance, winCondition: wc }),
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        setError(d.error ?? "Couldn't post that challenge.");
-        return;
-      }
-      onPosted();
-      onClose();
-    } catch {
-      setError("Couldn't post that challenge.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="post-challenge-title" className="w-full max-w-lg rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 shadow-elevated animate-fadeInUp" onClick={e => e.stopPropagation()}>
-        <h2 id="post-challenge-title" className="font-display text-lg font-bold tracking-tight text-gray-900 dark:text-white mb-4">Post a Challenge</h2>
-
-        {/* Claim — library first, own claim behind a disclosure. */}
-        <ClaimPicker value={picked} onChange={setPicked} />
-
-        {/* Stance */}
-        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-4 mb-1.5">You are arguing</label>
-        <div className="flex gap-2">
-          {(["affirmative", "negative"] as const).map(s => (
-            <button
-              key={s}
-              onClick={() => setStance(s)}
-              className={`min-h-11 flex-1 rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                stance === s
-                  ? s === "affirmative"
-                    ? "border-emerald-500 bg-emerald-100 dark:border-emerald-600 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
-                    : "border-rose-500 bg-rose-100 dark:border-rose-600 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300"
-                  : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"
-              }`}
-            >
-              {s === "affirmative" ? "FOR this claim" : "AGAINST this claim"}
-            </button>
-          ))}
-        </div>
-
-        {/* Win condition */}
-        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-4 mb-1.5">Win condition</label>
-        <div className="flex gap-2 mb-3">
-          {(["exchanges", "time", "proposition"] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setWcType(t)}
-              className={`min-h-11 flex-1 rounded-lg border py-2 text-xs font-semibold capitalize transition-colors ${
-                wcType === t ? "border-brand-green bg-brand-green/10 text-brand-green-ink dark:text-brand-green" : "border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        {wcType === "exchanges" && (
-          <div className="flex items-center gap-3">
-            <input type="range" min={4} max={20} value={limit} onChange={e => setLimit(+e.target.value)}
-              aria-label={`Exchanges: ${limit}`} className="h-11 flex-1 accent-brand-green" />
-            <span className="w-20 text-right text-xs text-gray-700 dark:text-gray-300">{limit} exchanges</span>
-          </div>
-        )}
-        {wcType === "time" && (
-          <div className="flex items-center gap-3">
-            <input type="range" min={3} max={30} value={minutes} onChange={e => setMinutes(+e.target.value)}
-              aria-label={`Minutes: ${minutes}`} className="h-11 flex-1 accent-brand-green" />
-            <span className="w-20 text-right text-xs text-gray-700 dark:text-gray-300">{minutes} minutes</span>
-          </div>
-        )}
-        {wcType === "proposition" && (
-          <PropositionThresholdPicker threshold={threshold} onChange={setThreshold} />
-        )}
-
-        {/* How it resolves + what's at stake */}
-        <p className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-[11px] leading-relaxed text-gray-600 dark:bg-gray-800/60 dark:text-gray-400">
-          {WC_HELP[wcType]} A win raises your ELO and drops your opponent&rsquo;s — by more when you beat a higher-rated debater.
-        </p>
-
-        {error && (
-          <p className="mt-3 rounded-lg bg-red-100 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>
-        )}
-
-        {/* Actions */}
-        <div className="mt-6 flex gap-3">
-          <button onClick={onClose} className="min-h-11 flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50">
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={loading || !picked}
-            className="min-h-11 flex-1 rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-40 active:scale-[0.98] motion-reduce:active:scale-100"
-          >
-            {loading ? "Posting…" : "Post Challenge"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Challenge Card ────────────────────────────────────────────────────────────
-
-function ChallengeCard({
-  challenge, onAccept, accepting, isMine, onCancel,
-}: {
-  challenge: Challenge;
-  onAccept: (id: string) => void;
-  accepting: string | null;
-  isMine?: boolean;
-  onCancel?: (id: string) => void;
-}) {
-  const wc = (() => { try { return JSON.parse(challenge.winCondition); } catch { return null; } })();
-  const stanceColor = challenge.stance === "affirmative"
-    ? "border-emerald-300 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
-    : "border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400";
-
-  return (
-    <div className="group flex flex-col gap-3 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-elevated">
-      {/* Claim */}
-      <p className="text-sm font-medium leading-relaxed text-gray-900 dark:text-gray-100">&ldquo;{challenge.claim}&rdquo;</p>
-
-      {/* Meta row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <EloBadge elo={challenge.elo} provisional={isProvisional(challenge.battleMatches)} />
-        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{challenge.username}</span>
-        <span className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${stanceColor}`}>
-          {challenge.stance === "affirmative" ? "FOR" : "AGAINST"}
-        </span>
-        {wc && (
-          <span className="rounded-md border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-[11px] text-gray-600 dark:text-gray-400">
-            {WC_LABEL[wc.type]?.(wc) ?? wc.type}
-          </span>
-        )}
-        <span className="ml-auto text-[11px] text-gray-500 dark:text-gray-400">{timeAgo(challenge.createdAt)}</span>
-      </div>
-
-      {/* Action */}
-      {isMine ? (
-        challenge.status === "open" && onCancel && (
-          <button
-            onClick={() => onCancel(challenge.id)}
-            className="self-end rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-400 hover:border-red-300 hover:text-red-600 dark:hover:border-red-800 dark:hover:text-red-400 transition-colors"
-          >
-            Withdraw
-          </button>
-        )
-      ) : (
-        <button
-          onClick={() => onAccept(challenge.id)}
-          disabled={accepting === challenge.id}
-          className="self-end inline-flex items-center gap-1.5 rounded-xl bg-orange-700 px-4 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-50 active:scale-[0.98] motion-reduce:active:scale-100"
-        >
-          {accepting === challenge.id ? "Joining…" : <>Accept &amp; Debate <span aria-hidden>→</span></>}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Entry gate ────────────────────────────────────────────────────────────────
-
-function RequirementRow({ met, label, detail, have, need, cta }: {
-  met: boolean; label: string; detail: string; have: number; need: number; cta: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${met ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green" : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"}`}>
-        {met ? <Check className="h-5 w-5" aria-hidden /> : <Lock className="h-4 w-4" aria-hidden />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{label}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{detail}</p>
-      </div>
-      {met ? (
-        <span className="shrink-0 text-xs font-semibold text-brand-green-ink dark:text-brand-green">Done</span>
-      ) : (
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="text-xs font-bold tabular-nums text-gray-700 dark:text-gray-200">{Math.min(have, need)} / {need}</span>
-          {cta}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EntryGate({ eligibility, onGoTo }: { eligibility: BattleEligibility; onGoTo: (href: string) => void }) {
-  const ratedMet = eligibility.claimsRated >= eligibility.ratedNeed;
-  const arenaMet = eligibility.arenaWins >= eligibility.arenaNeed;
-  const done = (ratedMet ? 1 : 0) + (arenaMet ? 1 : 0);
-  return (
-    <div className="mx-auto max-w-xl animate-fadeIn">
-      <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-hero dark:border-gray-800 dark:bg-gray-900">
-        <div className="border-b border-gray-200 bg-gray-50 px-6 py-5 dark:border-gray-800 dark:bg-gray-950/40">
-          <div className="flex items-start gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400"><Lock className="h-5 w-5" aria-hidden /></span>
-            <div className="min-w-0">
-              <h2 className="font-display text-lg font-bold tracking-tight text-gray-900 dark:text-white">Earn your way into Battle Grounds</h2>
-              <p className="mt-0.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">Ranked 1v1 and team debates unlock once you&rsquo;ve proven yourself in Training Grounds — <span className="font-semibold text-gray-700 dark:text-gray-300">{done} of 2</span> done.</p>
-            </div>
-          </div>
-        </div>
-        <div className="space-y-3 p-5">
-          <RequirementRow
-            met={ratedMet}
-            label="Earn a Grounds Score"
-            detail="Make verified claims in debates to build a credibility rating."
-            have={eligibility.claimsRated} need={eligibility.ratedNeed}
-            cta={<button onClick={() => onGoTo("/lobby")} className="text-[11px] font-semibold text-orange-700 hover:text-orange-600 dark:text-orange-400">Go debate →</button>}
-          />
-          <RequirementRow
-            met={arenaMet}
-            label="Win a Training Grounds match"
-            detail="Beat a bot in a ranked practice debate on a curated topic."
-            have={eligibility.arenaWins} need={eligibility.arenaNeed}
-            cta={<button onClick={() => onGoTo("/arena")} className="inline-flex items-center gap-1 text-[11px] font-semibold text-orange-700 hover:text-orange-600 dark:text-orange-400"><GraduationCap className="h-3.5 w-3.5" aria-hidden />Train →</button>}
-          />
-        </div>
-        <div className="border-t border-gray-200 px-5 py-4 dark:border-gray-800">
-          <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
-            This keeps the ladder meaningful — everyone you face has learned the ropes first. You can still watch live matches and browse the leaderboard while you qualify.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
-
+// ── Main page ──────────────────────────────────────────────────────────────
+//
+// /compete used to be five tabs over an empty frame: you landed on a board of
+// other people's challenges with no sense of your own standing, no record of
+// what you'd played, and a ladder one click away that you had to go looking
+// for. The challenge board is still the engine of the mode, so it keeps the
+// middle of the page — but your rating, your matches and the ladder are the
+// reason to come back, and they're on the page now.
 export default function CompetePage() {
   const { data: session, status } = useSession({ required: true, onUnauthenticated() { router.push("/"); } });
   const router = useRouter();
   const userId = (session?.user as any)?.id ?? "";
+  const myUsername = (session?.user as any)?.username ?? session?.user?.name ?? "";
 
-  const [tab, setTab] = useState<"live" | "board" | "teams" | "mine" | "leaderboard">("board");
+  const [board, setBoard] = useState<"open" | "mine" | "teams">("open");
   const { matches: liveMatches } = useLiveMatches();
-  const liveByUser = new Map<string, string>();
-  for (const m of liveMatches) for (const id of m.participantIds) liveByUser.set(id, m.roomName);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [myChallenges, setMyChallenges] = useState<Challenge[]>([]);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [myElo, setMyElo] = useState<number>(1200);
+  const [challenges, setChallenges] = useState<Challenge[] | null>(null);
+  const [myChallenges, setMyChallenges] = useState<Challenge[] | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[] | null>(null);
+  const [standing, setStanding] = useState<Standing | null>(null);
+  const [history, setHistory] = useState<Match[] | null>(null);
   const [eligibility, setEligibility] = useState<BattleEligibility | null>(null);
   const [postOpen, setPostOpen] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ roomName: string; acceptedBy: string } | null>(null);
+  // A failed accept used to be an alert(); it's a line above the board now, so
+  // the reason stays on screen next to the challenge it belongs to.
+  const [acceptError, setAcceptError] = useState("");
 
   // Default to unlocked until eligibility is known, so the gate never flashes for
   // players who are actually allowed in.
   const locked = eligibility ? !eligibility.eligible : false;
-  const myProvisional = isProvisional(eligibility?.battleMatches);
 
-  function loadBoard() {
+  // Ranked only. A rapid round on the Battle Grounds page would send someone
+  // into a mode with different rules under this heading.
+  const liveRanked = useMemo(() => liveMatches.filter(m => !m.isRapid), [liveMatches]);
+  const liveByUser = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const match of liveRanked) for (const id of match.participantIds) m.set(id, match.roomName);
+    return m;
+  }, [liveRanked]);
+
+  const loadBoard = useCallback(() => {
     if (!userId) return;
     api(`${SERVER}/api/challenges?excludeUserId=${userId}`)
-      .then(r => r.json()).then(setChallenges).catch(() => {});
-  }
-  function loadMine() {
-    if (!userId) return;
-    api(`${SERVER}/api/challenges/mine?userId=${userId}`)
-      .then(r => r.json()).then(setMyChallenges).catch(() => {});
-  }
-  function loadLeaderboard() {
-    api(`${SERVER}/api/leaderboard`)
-      .then(r => r.json()).then(data => setLeaderboard(Array.isArray(data) ? data : [])).catch(() => {});
-  }
-
-  useEffect(() => {
-    if (!userId) return;
-    api(`${SERVER}/api/users/${userId}/profile`)
-      .then(r => r.json()).then(d => setMyElo(d.elo ?? 1200)).catch(() => {});
-    api(`${SERVER}/api/battle/eligibility`)
-      .then(r => r.json()).then(d => setEligibility(d as BattleEligibility)).catch(() => {});
-    loadBoard();
-    loadMine();
-    loadLeaderboard();
+      .then(r => (r.ok ? r.json() : [])).then(d => setChallenges(Array.isArray(d) ? d : [])).catch(() => setChallenges([]));
   }, [userId]);
 
-  // Socket: listen for challengeAccepted notification
+  const loadMine = useCallback(() => {
+    if (!userId) return;
+    api(`${SERVER}/api/challenges/mine?userId=${userId}`)
+      .then(r => (r.ok ? r.json() : [])).then(d => setMyChallenges(Array.isArray(d) ? d : [])).catch(() => setMyChallenges([]));
+  }, [userId]);
+
   useEffect(() => {
     if (!userId) return;
-    // Dynamically import socket to avoid SSR issues
+    api(`${SERVER}/api/battle/me`).then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setStanding(d); }).catch(() => {});
+    api(`${SERVER}/api/battle/eligibility`).then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setEligibility(d as BattleEligibility); }).catch(() => {});
+    api(`${SERVER}/api/leaderboard`).then(r => (r.ok ? r.json() : []))
+      .then(d => setLeaderboard(Array.isArray(d) ? d : [])).catch(() => setLeaderboard([]));
+    api(`${SERVER}/api/users/${userId}/matches?mode=ranked`).then(r => (r.ok ? r.json() : []))
+      .then(d => setHistory(Array.isArray(d) ? d : [])).catch(() => setHistory([]));
+    loadBoard();
+    loadMine();
+  }, [userId, loadBoard, loadMine]);
+
+  // Socket: someone took your challenge.
+  useEffect(() => {
+    if (!userId) return;
+    let off: (() => void) | undefined;
     import("@/lib/socket").then(({ getSocket }) => {
-      const username = (session?.user as any)?.username ?? session?.user?.name ?? "";
       const socket = getSocket();
-      function onAccepted(data: { roomName: string; acceptedBy: string }) {
+      const onAccepted = (data: { roomName: string; acceptedBy: string }) => {
         setNotification(data);
         loadBoard();
         loadMine();
-      }
+      };
       socket.on("challengeAccepted", onAccepted);
-      return () => { socket.off("challengeAccepted", onAccepted); };
+      off = () => socket.off("challengeAccepted", onAccepted);
     });
-  }, [userId]);
+    return () => off?.();
+  }, [userId, loadBoard, loadMine]);
 
   async function handleAccept(challengeId: string) {
     setAccepting(challengeId);
@@ -503,16 +181,13 @@ export default function CompetePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
       });
-      const data = await res.json();
-      if (data.roomName) {
-        router.push(`/room/${data.roomName}`);
-      } else {
-        alert(data.error ?? "Failed to accept challenge");
-        setAccepting(null);
-      }
+      const data = await res.json().catch(() => ({}));
+      if (data.roomName) { router.push(`/room/${data.roomName}`); return; }
+      setAcceptError(data.error ?? "Couldn't accept that challenge.");
     } catch {
-      setAccepting(null);
+      setAcceptError("Couldn't accept that challenge.");
     }
+    setAccepting(null);
   }
 
   async function handleCancel(challengeId: string) {
@@ -520,7 +195,7 @@ export default function CompetePage() {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId }),
-    });
+    }).catch(() => {});
     loadMine();
     loadBoard();
   }
@@ -536,229 +211,575 @@ export default function CompetePage() {
     );
   }
 
-  const myUsername = (session?.user as any)?.username ?? session?.user?.name ?? "";
+  const openCount = challenges?.length ?? 0;
+  // The badge counts challenges still waiting for a taker. Counting matched and
+  // closed ones too would advertise work that isn't there.
+  const mineCount = myChallenges?.filter(c => c.status === "open").length ?? 0;
+  // Open ones first — a long history of matched challenges would otherwise bury
+  // the one you're waiting on.
+  const mineSorted = myChallenges
+    ? [...myChallenges].sort((a, b) => Number(b.status === "open") - Number(a.status === "open"))
+    : null;
+  const gateDone = eligibility
+    ? (eligibility.claimsRated >= eligibility.ratedNeed ? 1 : 0) + (eligibility.arenaWins >= eligibility.arenaNeed ? 1 : 0)
+    : 0;
 
   return (
-    <div className="flex h-full flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-white">
+    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
+      <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 md:py-8">
 
-      {/* Challenge accepted notification banner */}
-      {notification && (
-        <div className="flex items-center gap-3 border-b border-brand-green/30 bg-brand-green/10 dark:bg-brand-green/15 px-4 py-3 text-sm animate-fadeIn">
-          <span className="flex-1 text-gray-800 dark:text-gray-100">
-            <span className="font-semibold text-brand-green-ink dark:text-brand-green">{notification.acceptedBy}</span> accepted your challenge!
-          </span>
-          <button
-            onClick={() => { router.push(`/room/${notification.roomName}`); setNotification(null); }}
-            className="rounded-lg bg-orange-700 px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600"
-          >
-            Join Room →
-          </button>
-          <button onClick={() => setNotification(null)} aria-label="Close" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"><X className="h-4 w-4" aria-hidden /></button>
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 dark:border-gray-800 px-4 py-3 pt-safe">
-        <button onClick={() => router.push("/home")} className="rounded-lg p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800/50 dark:hover:text-gray-300 transition-colors">
-          <svg viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4">
-            <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
-          </svg>
-        </button>
-        <div className="flex min-w-0 items-center gap-2">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 shrink-0 text-brand-green-ink dark:text-brand-green">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-          </svg>
-          <h1 className="truncate font-display text-lg md:text-xl font-bold tracking-tight text-gray-900 dark:text-white">Battle Grounds</h1>
-        </div>
-        <EloBadge elo={myElo} provisional={myProvisional} className="ml-1 shrink-0" />
-        <div className="ml-auto">
-          {locked ? (
-            <button
-              onClick={() => setTab("board")}
-              title="Complete the entry requirements to post a challenge"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-400 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600"
-            >
-              <Lock className="h-3.5 w-3.5" aria-hidden /> Locked
+        {/* Someone accepted your challenge — the room is already open. */}
+        {notification && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-brand-green/40 bg-brand-green/10 p-4 animate-fadeIn dark:bg-brand-green/15">
+            <span className="min-w-0 flex-1 text-sm text-gray-800 dark:text-gray-100">
+              <span className="font-semibold text-brand-green-ink dark:text-brand-green">{notification.acceptedBy}</span> accepted your challenge.
+            </span>
+            <button onClick={() => { router.push(`/room/${notification.roomName}`); setNotification(null); }}
+              className="inline-flex min-h-11 items-center rounded-xl bg-orange-700 px-4 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
+              Join the room →
             </button>
-          ) : (
-            <button
-              onClick={() => setPostOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-700 px-3 py-2 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.98] motion-reduce:active:scale-100"
-            >
-              <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
-                <path d="M8.75 3.75a.75.75 0 0 0-1.5 0v3.5h-3.5a.75.75 0 0 0 0 1.5h3.5v3.5a.75.75 0 0 0 1.5 0v-3.5h3.5a.75.75 0 0 0 0-1.5h-3.5v-3.5Z" />
-              </svg>
-              Post Challenge
+            <button onClick={() => setNotification(null)} aria-label="Dismiss"
+              className="grid h-11 w-11 place-items-center rounded-xl text-gray-500 transition-colors hover:bg-black/5 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-200">
+              <X className="h-4 w-4" aria-hidden />
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex shrink-0 overflow-x-auto border-b border-gray-200 dark:border-gray-800">
-        {([["live", "Live"], ["board", "1v1 Challenges"], ["teams", "Team Matches"], ["mine", "My Challenges"], ["leaderboard", "Leaderboard"]] as const).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => { setTab(key); if (key === "board") loadBoard(); if (key === "mine") loadMine(); if (key === "leaderboard") loadLeaderboard(); }}
-            className={`shrink-0 whitespace-nowrap px-4 py-3 text-xs font-semibold border-b-2 transition-colors ${
-              tab === key ? "border-brand-green text-brand-green-ink dark:text-brand-green" : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-            }`}
-          >
-            {label}
-            {key === "board" && challenges.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-gray-200 px-1.5 text-[11px] font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">{challenges.length}</span>
-            )}
-            {key === "live" && liveMatches.length > 0 && (
-              <span className="ml-1.5 rounded-full bg-red-600 px-1.5 text-[11px] font-bold text-white">{liveMatches.length}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-
-        {/* The entry gate stands in for the interactive tabs until the player
-            qualifies. Live + Leaderboard stay open — you can watch and browse. */}
-        {locked && eligibility && tab !== "live" && tab !== "leaderboard" && (
-          <EntryGate eligibility={eligibility} onGoTo={(href) => router.push(href)} />
-        )}
-
-        {/* Live matches */}
-        {tab === "live" && (
-          <div className="mx-auto max-w-4xl">
-            <LiveMatches variant="grid" />
           </div>
         )}
 
-        {/* Team matches */}
-        {!locked && tab === "teams" && <TeamMatches userId={userId} username={myUsername} />}
-
-        {/* Open challenges board */}
-        {!locked && tab === "board" && (
-          <div className="space-y-3 max-w-2xl mx-auto">
-            {challenges.length === 0 ? (
-              <EmptyState
-                icon={BoltIcon}
-                title="No open challenges"
-                hint="Be the first — post a claim and dare someone to debate you."
-                action={
-                  <button onClick={() => setPostOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-orange-700 px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.98] motion-reduce:active:scale-100">
-                    Post a Challenge
-                  </button>
-                }
-              />
-            ) : (
-              challenges.map(c => (
-                <ChallengeCard key={c.id} challenge={c} onAccept={handleAccept} accepting={accepting} />
-              ))
-            )}
-          </div>
-        )}
-
-        {/* My challenges */}
-        {!locked && tab === "mine" && (
-          <div className="space-y-3 max-w-2xl mx-auto">
-            {myChallenges.length === 0 ? (
-              <EmptyState
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.732a48.524 48.524 0 0 1-.005-10.499l-3.11.732a9 9 0 0 1-6.085-.711l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
-                  </svg>
-                }
-                title="No challenges yet"
-                hint="Post a claim and dare someone to debate you."
-              />
-            ) : (
-              myChallenges.map(c => (
-                <div key={c.id}>
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold capitalize ${
-                      c.status === "open" ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green" :
-                      c.status === "matched" ? "bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300" :
-                      "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
-                    }`}>
-                      {c.status}
+        {/* ── Hero ─────────────────────────────────────────────────────────── */}
+        <section className="relative overflow-hidden rounded-3xl border border-gray-200 bg-white bg-hero-glow shadow-hero dark:border-gray-800 dark:bg-gray-900">
+          <div className="grid gap-7 p-5 sm:p-6 md:p-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:gap-8">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-brand-green-ink dark:text-brand-green">
+                  <Swords className="h-4 w-4" aria-hidden />
+                  Battle Grounds
+                </p>
+                {liveRanked.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] shadow-card dark:border-gray-800 dark:bg-gray-950/60">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 motion-safe:animate-ping" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
                     </span>
-                  </div>
-                  <ChallengeCard challenge={c} onAccept={handleAccept} accepting={accepting} isMine onCancel={handleCancel} />
-                </div>
-              ))
-            )}
-            <div className="pt-2">
-              <button onClick={() => setPostOpen(true)} className="w-full rounded-xl border border-dashed border-gray-300 dark:border-gray-700 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:border-orange-400 hover:text-orange-700 dark:hover:border-orange-500/60 dark:hover:text-orange-400 transition-colors">
-                + Post a new challenge
-              </button>
-            </div>
-          </div>
-        )}
+                    <span className="font-semibold tabular-nums text-gray-800 dark:text-gray-100">{liveRanked.length}</span>
+                    <span className="text-gray-500 dark:text-gray-400">live now</span>
+                  </span>
+                )}
+                {openCount > 0 && (
+                  <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] text-gray-500 shadow-card dark:border-gray-800 dark:bg-gray-950/60 dark:text-gray-400">
+                    <span className="font-semibold tabular-nums text-gray-800 dark:text-gray-100">{openCount}</span> open {openCount === 1 ? "challenge" : "challenges"}
+                  </span>
+                )}
+              </div>
 
-        {/* Leaderboard */}
-        {tab === "leaderboard" && (
-          <div className="max-w-lg mx-auto">
-            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-card overflow-hidden">
-              {leaderboard.length === 0 ? (
-                <EmptyState
-                  icon={
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-7 w-7">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 0 1-.982-3.172M9.497 14.25a7.454 7.454 0 0 0 .981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 0 0 7.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M7.73 9.728a6.726 6.726 0 0 0 2.748 1.35m8.272-6.842V4.5c0 2.108-.966 3.99-2.48 5.228m2.48-5.492a46.32 46.32 0 0 1 2.916.52 6.003 6.003 0 0 1-5.395 4.972m0 0a6.726 6.726 0 0 1-2.749 1.35m0 0a6.772 6.772 0 0 1-3.044 0" />
-                    </svg>
-                  }
-                  title="No ranked players yet"
-                  hint="Win ranked debates to earn a spot on the board."
-                />
-              ) : (
-                leaderboard.map((entry, i) => {
-                  const medal =
-                    i === 0 ? <Trophy className="mx-auto h-4 w-4 text-amber-500" aria-hidden /> :
-                    i === 1 ? <Medal className="mx-auto h-4 w-4 text-gray-400" aria-hidden /> :
-                    i === 2 ? <Medal className="mx-auto h-4 w-4 text-amber-700" aria-hidden /> :
-                    null;
-                  const isMe = entry.id === userId;
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`flex items-center gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800 last:border-0 ${isMe ? "bg-brand-green/10 dark:bg-brand-green/10" : ""}`}
-                    >
-                      <span className="w-6 text-center text-xs font-semibold text-gray-500 dark:text-gray-400">{medal ?? `${i + 1}`}</span>
-                      <button
-                        onClick={() => router.push(`/u/${encodeURIComponent(entry.username)}`)}
-                        className={`flex-1 truncate text-left text-sm font-medium hover:underline ${isMe ? "text-brand-green-ink dark:text-brand-green" : "text-gray-800 dark:text-gray-200"}`}
-                      >
-                        {entry.username}{isMe && <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">(you)</span>}
-                      </button>
-                      {liveByUser.has(entry.id) && (
-                        <button
-                          onClick={() => router.push(`/room/${liveByUser.get(entry.id)}?spectate=1`)}
-                          className="flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white transition-colors hover:bg-red-500"
-                        >
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-white opacity-75" />
-                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
-                          </span>
-                          Watch
-                        </button>
-                      )}
-                      <span className="text-xs text-gray-500 dark:text-gray-400">{Number(entry.wins)}W {Number(entry.losses)}L</span>
-                      <EloBadge elo={entry.elo} provisional={isProvisional(entry.battleMatches)} />
-                    </div>
-                  );
-                })
+              <h1 className="mt-3 font-display text-3xl font-bold leading-[1.05] tracking-tight text-balance text-gray-900 dark:text-white md:text-4xl">
+                Pick the claim. Pick the fight.
+              </h1>
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-pretty text-gray-600 dark:text-gray-300">
+                Post a claim from the library, choose the side you&rsquo;ll defend and how the match ends.
+                Whoever takes it argues you on the record — every claim scored, an AI judge on the transcript,
+                and your rating moves either way.
+              </p>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+                {locked ? (
+                  <Link href="/arena"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-orange-700 px-6 py-3.5 text-base font-semibold text-white shadow-glow transition-transform duration-150 hover:bg-orange-600 active:scale-[0.99] motion-reduce:active:scale-100">
+                    <GraduationCap className="h-5 w-5" aria-hidden />
+                    Qualify in Training Grounds
+                  </Link>
+                ) : (
+                  <button onClick={() => setPostOpen(true)}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-orange-700 px-6 py-3.5 text-base font-semibold text-white shadow-glow transition-transform duration-150 hover:bg-orange-600 active:scale-[0.99] motion-reduce:active:scale-100">
+                    Post a challenge <span aria-hidden>→</span>
+                  </button>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Stake title="Your rating moves on every completed match — up more when you beat a higher-rated opponent.">Rating on the line</Stake>
+                  <Stake title="Every message is scored on relevance, evidence, logic and impact; a judge reads the whole transcript at the end.">AI judged</Stake>
+                </div>
+              </div>
+
+              {locked && eligibility && (
+                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span className="font-semibold text-gray-700 dark:text-gray-200">{gateDone} of 2</span> requirements done —
+                  you can watch and browse the ladder meanwhile.
+                </p>
               )}
             </div>
-            {leaderboard.length > 0 && (
-              <p className="mt-3 px-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+
+            <StandingCard standing={standing} history={history} locked={locked} />
+          </div>
+        </section>
+
+        {/* ── The gate, when you haven't earned in yet ──────────────────────── */}
+        {locked && eligibility && <EntryGate eligibility={eligibility} />}
+
+        {/* ── The board ────────────────────────────────────────────────────── */}
+        {!locked && (
+          <section>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="flex rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+                {([["open", "Open", openCount], ["mine", "Yours", mineCount], ["teams", "Teams", null]] as const).map(([k, label, n]) => (
+                  <button key={k} onClick={() => setBoard(k)} aria-pressed={board === k}
+                    className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold transition-colors ${board === k
+                      ? "bg-white text-brand-green-ink shadow-sm dark:bg-gray-900 dark:text-brand-green"
+                      : "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"}`}>
+                    {label}
+                    {typeof n === "number" && n > 0 && (
+                      <span className="rounded-full bg-gray-200 px-1.5 text-[11px] font-bold tabular-nums text-gray-700 dark:bg-gray-700 dark:text-gray-200">{n}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {board !== "teams" && (
+                <button onClick={() => setPostOpen(true)}
+                  className="ml-auto inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-gray-300 px-3.5 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-white dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900">
+                  + Post
+                </button>
+              )}
+            </div>
+
+            {acceptError && (
+              <p role="alert" className="mb-3 rounded-xl bg-rose-100 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{acceptError}</p>
+            )}
+
+            {board === "teams" ? (
+              <TeamMatches userId={userId} username={myUsername} />
+            ) : board === "open" ? (
+              challenges === null
+                ? <SkeletonRows />
+                : challenges.length === 0
+                  ? <Empty title="No open challenges" hint="Be the first — post a claim and dare someone to take the other side."
+                      action={<button onClick={() => setPostOpen(true)} className="inline-flex min-h-11 items-center rounded-xl bg-orange-700 px-5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">Post a challenge</button>} />
+                  : <div className="grid gap-3 md:grid-cols-2">
+                      {challenges.map(c => <ChallengeCard key={c.id} challenge={c} onAccept={handleAccept} accepting={accepting} />)}
+                    </div>
+            ) : (
+              mineSorted === null
+                ? <SkeletonRows />
+                : mineSorted.length === 0
+                  ? <Empty title="You haven't posted one yet" hint="Put a claim up and let someone come to you."
+                      action={<button onClick={() => setPostOpen(true)} className="inline-flex min-h-11 items-center rounded-xl bg-orange-700 px-5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">Post a challenge</button>} />
+                  : <div className="grid gap-3 md:grid-cols-2">
+                      {mineSorted.map(c => (
+                        <ChallengeCard key={c.id} challenge={c} onAccept={handleAccept} accepting={accepting} isMine onCancel={handleCancel} />
+                      ))}
+                    </div>
+            )}
+          </section>
+        )}
+
+        {/* ── Your matches + the ladder ─────────────────────────────────────── */}
+        <section className="grid gap-6 lg:grid-cols-2">
+          <div>
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Your ranked matches</h2>
+              {history && history.length > 0 && (
+                <Link href="/profile" className="-my-3 inline-flex min-h-11 items-center py-3 text-xs font-semibold text-orange-700 transition-colors hover:text-orange-600 dark:text-orange-400">Full history</Link>
+              )}
+            </div>
+            <div className="space-y-2.5">
+              {history === null
+                ? <SkeletonRows n={3} />
+                : history.length === 0
+                  ? <Empty title="No ranked matches yet" hint="Every finished match leaves a tape here — the bar's trajectory, every claim scored, and what the judge read." small />
+                  : history.slice(0, 5).map(m => <MatchRow key={m.roomName} m={m} />)}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">The ladder</h2>
+              {standing?.rank && standing.total && (
+                <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">You&rsquo;re #{standing.rank} of {standing.total}</span>
+              )}
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900">
+              {leaderboard === null
+                ? <div className="shimmer-track h-64" />
+                : leaderboard.length === 0
+                  ? <p className="p-5 text-sm text-gray-600 dark:text-gray-400">Nobody is rated yet. Win a ranked match and you&rsquo;ll open the ladder.</p>
+                  : (
+                    <ol>
+                      {leaderboard.slice(0, 8).map((row, i) => (
+                        <LadderRow key={row.id} row={row} place={i + 1} me={row.id === userId} liveRoom={liveByUser.get(row.id)} />
+                      ))}
+                      {/* Your own row, when you're on the board but below the fold. */}
+                      {standing?.rank && standing.rank > 8 && (
+                        <LadderRow
+                          row={{ id: userId, username: myUsername, elo: standing.elo, wins: standing.wins, losses: standing.losses, battleMatches: standing.battleMatches }}
+                          place={standing.rank} me separated liveRoom={liveByUser.get(userId)} />
+                      )}
+                    </ol>
+                  )}
+            </div>
+            {leaderboard && leaderboard.length > 0 && (
+              <p className="mt-2 px-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
                 <span className="font-bold">?</span> marks a provisional rating — still settling over a player&rsquo;s first {PROVISIONAL_MATCHES} ranked matches.
               </p>
             )}
           </div>
+        </section>
+
+        {/* ── Live ranked matches. Hidden when there are none. ──────────────── */}
+        {liveRanked.length > 0 && (
+          <section>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-brand-red opacity-75 motion-safe:animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-red" />
+              </span>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Live now</h2>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {liveRanked.slice(0, 3).map(m => (
+                <Link key={m.roomName} href={`/room/${m.roomName}${m.participantIds.includes(userId) ? "" : "?spectate=1"}`}
+                  className="group flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900">
+                  <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 motion-safe:animate-ping" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+                    </span>
+                    <span className="font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">Live</span>
+                    <span className="rounded-full border border-gray-200 bg-gray-100 px-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                      {m.type === "team" ? `${m.teamSize}v${m.teamSize}` : "1v1"}
+                    </span>
+                    <span className="ml-auto tabular-nums">{m.viewers} watching</span>
+                  </div>
+                  <p className="line-clamp-2 text-sm font-medium leading-snug text-gray-900 dark:text-gray-100">&ldquo;{m.topic}&rdquo;</p>
+                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                    {m.sideA.map(p => p.username).join(", ")} vs {m.sideB.map(p => p.username).join(", ")}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </section>
         )}
+
+        {/* ── Where else to go ──────────────────────────────────────────────── */}
+        <section className="grid gap-3 sm:grid-cols-2">
+          <SideDoor href="/rapid" Icon={Zap} title="Rapid Fire"
+            blurb="No setup, no waiting for an opponent — queued against whoever disagrees." />
+          <SideDoor href="/arena" Icon={GraduationCap} title="Training Grounds"
+            blurb="Practise against a bot on a curated claim. Nothing on the line." />
+        </section>
+
       </div>
 
-      {/* Post modal */}
       {postOpen && (
-        <PostModal onClose={() => setPostOpen(false)} onPosted={() => { loadBoard(); loadMine(); }} />
+        <PostChallengeModal onClose={() => setPostOpen(false)} onPosted={() => { loadBoard(); loadMine(); setBoard("mine"); }} />
       )}
     </div>
+  );
+}
+
+// ── Standing ───────────────────────────────────────────────────────────────
+function StandingCard({ standing, history, locked }: { standing: Standing | null; history: Match[] | null; locked: boolean }) {
+  const played = (standing?.wins ?? 0) + (standing?.losses ?? 0) + (standing?.draws ?? 0);
+  const winPct = played > 0 ? Math.round(((standing?.wins ?? 0) / played) * 100) : 0;
+  const form = (history ?? []).slice(0, 5).reverse();   // oldest to newest, left to right
+  const last = history?.[0];
+
+  return (
+    <aside className="rounded-2xl border border-gray-200 bg-gray-50/80 p-5 shadow-card dark:border-gray-800 dark:bg-gray-950/50">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">Your rating</p>
+        {standing?.provisional && played > 0 && (
+          <span className="rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+            Provisional
+          </span>
+        )}
+      </div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="font-display text-4xl font-bold tabular-nums text-gray-900 dark:text-white">
+          {standing ? standing.elo : "—"}
+        </span>
+        {last && last.eloDelta !== 0 && (
+          <span className={`text-sm font-semibold tabular-nums ${last.eloDelta > 0
+            ? "text-brand-green-ink dark:text-brand-green" : "text-brand-red-ink dark:text-brand-red"}`}>
+            {last.eloDelta > 0 ? "+" : ""}{last.eloDelta}
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        {standing?.rank && standing.total
+          ? <><span className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">#{standing.rank}</span> of {standing.total} on the ladder</>
+          : locked ? "Unrated until you qualify" : "Unranked — win a match to join the ladder"}
+      </p>
+
+      <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-800">
+        {played > 0 ? (
+          <>
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="font-semibold text-gray-700 dark:text-gray-200 tabular-nums">
+                {standing!.wins}W · {standing!.losses}L{standing!.draws > 0 ? ` · ${standing!.draws}D` : ""}
+              </span>
+              <span className="text-gray-500 dark:text-gray-400 tabular-nums">{winPct}% won</span>
+            </div>
+            <div className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+              <div className="bg-brand-green transition-[width] duration-500" style={{ width: `${winPct}%` }} />
+            </div>
+            {standing!.provisional && (
+              <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+                {PROVISIONAL_MATCHES - standing!.battleMatches} more {PROVISIONAL_MATCHES - standing!.battleMatches === 1 ? "match" : "matches"} and your rating settles.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-gray-500 dark:text-gray-400">No ranked matches yet — your record starts with the first one.</p>
+        )}
+
+        {form.length > 0 && (
+          <div className="mt-4 flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Form</span>
+            <span className="flex gap-1">
+              {form.map(m => (
+                <span key={m.roomName}
+                  title={`${m.drawn ? "Drew with" : m.won ? "Beat" : "Lost to"} ${m.opponentName}`}
+                  className={`grid h-5 w-5 place-items-center rounded text-[10px] font-bold text-white ${m.drawn
+                    ? "bg-gray-500 dark:bg-gray-600" : m.won ? "bg-emerald-700" : "bg-rose-700"}`}>
+                  {m.drawn ? "D" : m.won ? "W" : "L"}
+                </span>
+              ))}
+            </span>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ── A posted challenge ─────────────────────────────────────────────────────
+function ChallengeCard({ challenge, onAccept, accepting, isMine, onCancel }: {
+  challenge: Challenge;
+  onAccept: (id: string) => void;
+  accepting: string | null;
+  isMine?: boolean;
+  onCancel?: (id: string) => void;
+}) {
+  const wc = (() => { try { return JSON.parse(challenge.winCondition); } catch { return null; } })();
+  const stanceColor = challenge.stance === "affirmative"
+    ? "border-emerald-300 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400"
+    : "border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400";
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
+      {isMine && (
+        <span className={`self-start rounded-md px-1.5 py-0.5 text-[11px] font-bold capitalize ${
+          challenge.status === "open" ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green" :
+          challenge.status === "matched" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" :
+          "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}>
+          {challenge.status}
+        </span>
+      )}
+
+      <p className="text-sm font-medium leading-relaxed text-gray-900 dark:text-gray-100">&ldquo;{challenge.claim}&rdquo;</p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <EloBadge elo={challenge.elo} provisional={isProvisional(challenge.battleMatches)} />
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{challenge.username}</span>
+        <span className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${stanceColor}`}>
+          {challenge.stance === "affirmative" ? "FOR" : "AGAINST"}
+        </span>
+        {wc && (
+          <span className="rounded-md border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+            {WC_LABEL[wc.type]?.(wc) ?? wc.type}
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-gray-500 dark:text-gray-400">{timeAgo(challenge.createdAt)}</span>
+      </div>
+
+      {isMine ? (
+        challenge.status === "open" && onCancel && (
+          <button onClick={() => onCancel(challenge.id)}
+            className="min-h-11 self-end rounded-lg border border-gray-300 px-3 text-xs font-semibold text-gray-600 transition-colors hover:border-red-300 hover:text-red-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-red-800 dark:hover:text-red-400">
+            Withdraw
+          </button>
+        )
+      ) : (
+        <button onClick={() => onAccept(challenge.id)} disabled={accepting === challenge.id}
+          className="inline-flex min-h-11 items-center justify-center gap-1.5 self-end rounded-xl bg-orange-700 px-4 text-xs font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 disabled:opacity-50 active:scale-[0.98] motion-reduce:active:scale-100">
+          {accepting === challenge.id ? "Joining…" : <>Accept &amp; debate <span aria-hidden>→</span></>}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── A finished ranked match ────────────────────────────────────────────────
+function MatchRow({ m }: { m: Match }) {
+  const tone = m.drawn
+    ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+    : m.won ? "bg-emerald-50 text-brand-green-ink dark:bg-emerald-950/40 dark:text-brand-green"
+      : "bg-rose-50 text-brand-red-ink dark:bg-rose-950/40 dark:text-brand-red";
+  return (
+    <Link href={`/match/${encodeURIComponent(m.roomName)}/review`}
+      className="group flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-bold ${tone}`}>
+        {m.drawn ? "D" : m.won ? "W" : "L"}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="line-clamp-1 text-sm font-medium text-gray-900 dark:text-gray-100">&ldquo;{m.topic}&rdquo;</span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+          <span className="truncate">vs {m.opponentName}</span>
+          {m.completedAt && <><span aria-hidden>·</span><span className="shrink-0">{timeAgo(m.completedAt)}</span></>}
+        </span>
+      </span>
+      {m.eloDelta !== 0 && (
+        <span className={`shrink-0 text-sm font-semibold tabular-nums ${m.eloDelta > 0
+          ? "text-brand-green-ink dark:text-brand-green" : "text-brand-red-ink dark:text-brand-red"}`}>
+          {m.eloDelta > 0 ? "+" : ""}{m.eloDelta}
+        </span>
+      )}
+      <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 dark:text-gray-600" aria-hidden />
+      <span className="sr-only">Review the tape</span>
+    </Link>
+  );
+}
+
+// ── Ladder ─────────────────────────────────────────────────────────────────
+function LadderRow({ row, place, me, separated, liveRoom }: {
+  row: LeaderboardEntry; place: number; me?: boolean; separated?: boolean; liveRoom?: string;
+}) {
+  const medal =
+    place === 1 ? <Trophy className="h-4 w-4 text-amber-500" aria-hidden /> :
+    place === 2 ? <Medal className="h-4 w-4 text-gray-400" aria-hidden /> :
+    place === 3 ? <Medal className="h-4 w-4 text-amber-700" aria-hidden /> : null;
+  return (
+    <li className={`${separated ? "border-t-4" : "border-t first:border-t-0"} border-gray-100 dark:border-gray-800 ${
+      me ? "bg-brand-green/10" : ""}`}>
+      <div className="flex min-h-11 items-center gap-2.5 px-3 py-2">
+        <span className="grid w-6 shrink-0 place-items-center text-xs font-bold tabular-nums text-gray-500 dark:text-gray-400">
+          {/* The medal is decorative, so the position still has to be spoken. */}
+          {medal ? <><span className="sr-only">{place}</span>{medal}</> : place}
+        </span>
+        {/* min-h-11 on the row isn't enough — the link is the tap target, so it
+            has to fill the row's height itself. */}
+        <Link href={`/u/${encodeURIComponent(row.username)}`}
+          className={`-my-2 flex min-h-11 min-w-0 flex-1 items-center py-2 text-sm font-medium transition-colors hover:text-brand-green-ink dark:hover:text-brand-green ${
+            me ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"}`}>
+          <span className="truncate">{row.username}</span>
+          {me && <span className="ml-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wider text-brand-green-ink dark:text-brand-green">you</span>}
+        </Link>
+        {liveRoom && (
+          <Link href={`/room/${liveRoom}${me ? "" : "?spectate=1"}`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white transition-colors hover:bg-red-500">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-75 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
+            {me ? "Rejoin" : "Watch"}
+          </Link>
+        )}
+        <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400 tabular-nums">{row.wins}–{row.losses}</span>
+        <EloBadge elo={row.elo} provisional={isProvisional(row.battleMatches)} className="shrink-0" />
+      </div>
+    </li>
+  );
+}
+
+// ── Entry gate ─────────────────────────────────────────────────────────────
+function RequirementRow({ met, label, detail, have, need, href, cta, Icon }: {
+  met: boolean; label: string; detail: string; have: number; need: number;
+  href: string; cta: string; Icon?: LucideIcon;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${met
+        ? "bg-brand-green/15 text-brand-green-ink dark:text-brand-green"
+        : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"}`}>
+        {met ? <Check className="h-5 w-5" aria-hidden /> : <Lock className="h-4 w-4" aria-hidden />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{detail}</p>
+      </div>
+      {met ? (
+        <span className="shrink-0 text-xs font-semibold text-brand-green-ink dark:text-brand-green">Done</span>
+      ) : (
+        <div className="flex shrink-0 flex-col items-end">
+          <span className="text-xs font-bold tabular-nums text-gray-700 dark:text-gray-200">{Math.min(have, need)} / {need}</span>
+          <Link href={href} className="-my-1 inline-flex min-h-11 items-center gap-1 py-1 text-[11px] font-semibold text-orange-700 hover:text-orange-600 dark:text-orange-400">
+            {Icon && <Icon className="h-3.5 w-3.5" />}{cta} →
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EntryGate({ eligibility }: { eligibility: BattleEligibility }) {
+  const ratedMet = eligibility.claimsRated >= eligibility.ratedNeed;
+  const arenaMet = eligibility.arenaWins >= eligibility.arenaNeed;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card dark:border-gray-800 dark:bg-gray-900">
+      <div className="border-b border-gray-200 bg-gray-50 px-5 py-4 dark:border-gray-800 dark:bg-gray-950/40">
+        <h2 className="flex items-center gap-2 font-display text-base font-bold tracking-tight text-gray-900 dark:text-white">
+          <Lock className="h-4 w-4 text-orange-700 dark:text-orange-400" aria-hidden />
+          Earn your way in
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+          Ranked 1v1 and team matches unlock once you&rsquo;ve proven yourself in Training Grounds. It keeps the
+          ladder meaningful — everyone you face has learned the ropes first.
+        </p>
+      </div>
+      <div className="space-y-3 p-5">
+        <RequirementRow met={ratedMet} label="Earn a Grounds Score"
+          detail="Make verified claims in debates to build a credibility rating."
+          have={eligibility.claimsRated} need={eligibility.ratedNeed} href="/lobby" cta="Go debate" />
+        <RequirementRow met={arenaMet} label="Win a Training Grounds match"
+          detail="Beat a bot in a ranked practice debate on a curated topic."
+          have={eligibility.arenaWins} need={eligibility.arenaNeed} href="/arena" cta="Train" Icon={GraduationCap} />
+      </div>
+    </section>
+  );
+}
+
+// ── Small parts ────────────────────────────────────────────────────────────
+function Stake({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <span title={title}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
+      <Scale className="h-3 w-3 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden />
+      {children}
+    </span>
+  );
+}
+
+function SkeletonRows({ n = 2 }: { n?: number }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} className="shimmer-track h-32 rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />
+      ))}
+    </div>
+  );
+}
+
+function Empty({ title, hint, action, small }: { title: string; hint: string; action?: ReactNode; small?: boolean }) {
+  return (
+    <div className={`rounded-2xl border border-dashed border-gray-300 bg-white/60 text-center dark:border-gray-700 dark:bg-gray-900/40 ${small ? "p-5" : "p-8"}`}>
+      <p className="font-display text-base font-semibold text-gray-900 dark:text-white">{title}</p>
+      <p className="mx-auto mt-1 max-w-sm text-sm text-gray-600 dark:text-gray-400">{hint}</p>
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+function SideDoor({ href, Icon, title, blurb }: {
+  href: string; Icon: LucideIcon; title: string; blurb: string;
+}) {
+  return (
+    <Link href={href}
+      className="group flex items-center gap-3.5 rounded-2xl border border-gray-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</span>
+        <span className="block text-xs text-gray-500 dark:text-gray-400">{blurb}</span>
+      </span>
+      <ChevronRight className="h-5 w-5 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 dark:text-gray-600" aria-hidden />
+    </Link>
   );
 }

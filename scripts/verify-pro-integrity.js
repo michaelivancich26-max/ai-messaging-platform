@@ -24,7 +24,12 @@ if (!SECRET) { console.error("NEXTAUTH_SECRET required"); process.exit(1); }
 
 const P = "vpi-";
 const FARMER = `${P}farmer`;
-const LEAVER = `${P}leaver`;
+// A fresh id per run. Deleting an account tombstones the id in the server's
+// memory for the life of the process, and rightly so — a real id is never
+// reused. But it made this suite pass once per server start and fail on every
+// re-run, because the recreated fixture row was refused by a tombstone the
+// database no longer had. The id is what has to change, not the gate.
+const LEAVER = `${P}leaver-${Math.random().toString(36).slice(2, 8)}`;
 
 let failures = 0;
 function check(name, cond, detail = "") {
@@ -47,7 +52,7 @@ async function main() {
     `INSERT INTO "User" (id,username,email,password) VALUES
        ($1,$2,$3,'x'), ($4,$5,$6,'x')`,
     FARMER, `${P}farmer`, `${P}farmer@t.local`,
-    LEAVER, `${P}leaver`, `${P}leaver@t.local`);
+    LEAVER, LEAVER, `${LEAVER}@t.local`);
 
   // ── 1. The faucet ──────────────────────────────────────────────────────────
   // One RANKED win (legitimately earns bonus) and three UNRANKED wins worth far
@@ -76,7 +81,7 @@ async function main() {
     `UPDATE "User" SET "isPro"=true, "proStatus"='active',
        "stripeCustomerId"='cus_test', "stripeSubscriptionId"='sub_test' WHERE id=$1`, LEAVER);
 
-  const leaverToken = await tokenFor(LEAVER, `${P}leaver`);
+  const leaverToken = await tokenFor(LEAVER, LEAVER);
   const before = await fetch(`${SERVER}/api/billing/status`, {
     headers: { Authorization: `Bearer ${leaverToken}` },
   });

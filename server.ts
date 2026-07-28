@@ -2815,6 +2815,50 @@ app.get("/api/battle/eligibility", async (req, res) => {
   }
 });
 
+// GET /api/battle/me — your standing on the Battle Grounds ladder, and nothing
+// else. Mirrors /api/rapid/me: the header on /compete used to fetch the whole
+// profile payload (credibility, medals, a dozen counts) to read one rating, and
+// could only work out your rank if you happened to be in the top 25.
+app.get("/api/battle/me", async (req, res) => {
+  const uid = actorId(req);
+  if (!uid) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const [eloRows, recordRows, rankRows] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(`SELECT elo::int AS elo FROM "User" WHERE id = $1`, uid),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT COUNT(*) FILTER (WHERE "winnerId" = $1)::int AS wins,
+                COUNT(*) FILTER (WHERE "winnerId" IS NOT NULL AND "winnerId" <> $1)::int AS losses,
+                COUNT(*) FILTER (WHERE "winnerId" IS NULL)::int AS draws
+         FROM "CompetitiveMatch"
+         WHERE status = 'complete' AND ("isRapid" IS NOT TRUE)
+           AND ("challengerId" = $1 OR "challengedId" = $1)`, uid),
+      // Same cohort as GET /api/leaderboard and the profile's competitiveRank.
+      prisma.$queryRawUnsafe<any[]>(
+        `WITH cohort AS (
+           SELECT u.id, u.elo FROM "User" u
+           WHERE u.elo <> 1200
+              OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
+                          WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id)
+         ),
+         r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
+         SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid),
+    ]);
+    const played = await battleMatchesPlayed(uid);
+    res.json({
+      elo: Number(eloRows[0]?.elo ?? 1200),
+      wins: Number(recordRows[0]?.wins ?? 0),
+      losses: Number(recordRows[0]?.losses ?? 0),
+      draws: Number(recordRows[0]?.draws ?? 0),
+      battleMatches: played,
+      provisional: played < BG_PROVISIONAL_MATCHES,
+      provisionalAfter: BG_PROVISIONAL_MATCHES,
+      // null until you're in the cohort — unranked is not the same as last.
+      rank: rankRows[0]?.rank != null ? Number(rankRows[0].rank) : null,
+      total: rankRows[0]?.total != null ? Number(rankRows[0].total) : null,
+    });
+  } catch (e) { console.error("[GET /api/battle/me]", e); res.status(500).json({ error: "Server error" }); }
+});
+
 // GET /api/challenges — list open challenges (optionally excluding the requesting user's own)
 app.get("/api/challenges", async (req, res) => {
   try {
@@ -5151,13 +5195,24 @@ app.get("/api/leaderboard", async (req, res) => {
             WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
               AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
        FROM "User" u
+       -- Rapid rounds are excluded from both halves. This board ranks battle
+       -- ELO, but the record beside it used to count every completed match a
+       -- player had, so rapid wins inflated a Battle Grounds record.
        LEFT JOIN (
-         SELECT "winnerId" AS uid, COUNT(*)::int AS count FROM "CompetitiveMatch" WHERE status='complete' GROUP BY "winnerId"
+         SELECT "winnerId" AS uid, COUNT(*)::int AS count FROM "CompetitiveMatch"
+          WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "winnerId" IS NOT NULL
+          GROUP BY "winnerId"
        ) wins ON wins.uid = u.id
+       -- A match with no winner is a draw. The old CASE resolved NULL to the
+       -- ELSE branch and charged the challenged player with a loss for it.
        LEFT JOIN (
-         SELECT CASE WHEN "winnerId" != "challengerId" THEN "challengerId" ELSE "challengedId" END AS uid,
-                COUNT(*)::int AS count
-         FROM "CompetitiveMatch" WHERE status='complete' GROUP BY uid
+         SELECT uid, COUNT(*)::int AS count FROM (
+           SELECT "challengerId" AS uid, "winnerId" FROM "CompetitiveMatch"
+            WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+           UNION ALL
+           SELECT "challengedId" AS uid, "winnerId" FROM "CompetitiveMatch"
+            WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+         ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid
        ) losses ON losses.uid = u.id
        WHERE u.elo != 1200 OR wins.count IS NOT NULL
        ORDER BY u.elo DESC LIMIT 25`,
@@ -5555,7 +5610,8 @@ async function buildProfilePayload(
       `WITH cohort AS (
          SELECT u.id, u.elo FROM "User" u
          WHERE u.elo <> 1200
-            OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm WHERE cm.status = 'complete' AND cm."winnerId" = u.id)
+            OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
+                        WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id)
        ),
        r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
        SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
