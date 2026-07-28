@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
+import TypingTrainer from "@/components/TypingTrainer";
+import type { TypingRun } from "@/lib/typing";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -155,6 +157,11 @@ export function RapidTakeover({ username, phase, found, needsDeck, since, waitin
   onCancel: () => void;
   onFixDeck: () => void;
 }) {
+  // Held here rather than in the trainer, because the trainer is unmounted by
+  // the very event that ends the run — the whole point is that the score
+  // outlives it.
+  const [lastRun, setLastRun] = useState<TypingRun | null>(null);
+
   // Purely-visual 3·2·1 that fills the 1200ms hand-off. Never gates the
   // navigation — that stays on the socket handler's timer.
   const [countdown, setCountdown] = useState(3);
@@ -237,12 +244,20 @@ export function RapidTakeover({ username, phase, found, needsDeck, since, waitin
         <p aria-live="polite" className="mt-1 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 tabular-nums">
           Entering the room in {countdown}
         </p>
+
+        {/* Cut off mid-warm-up. The run was banked on the way out; this says so
+            before the room takes the screen, and /rapid still has it later. */}
+        {lastRun && lastRun.seconds >= 5 && (
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+            Warm-up saved — <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">{lastRun.wpm} wpm</span>
+          </p>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-6 py-14 text-center">
+    <div className="mx-auto flex max-w-xl flex-col items-center gap-6 py-12 text-center">
       {/* Radar — the pool is being scanned. */}
       <div className="relative h-32 w-32">
         <div className="absolute inset-0 overflow-hidden rounded-full">
@@ -270,10 +285,14 @@ export function RapidTakeover({ username, phase, found, needsDeck, since, waitin
         <span className="font-semibold text-orange-700 dark:text-orange-400 tabular-nums">{Math.max(1, waiting)}</span> {Math.max(1, waiting) === 1 ? "person" : "people"} warming up
       </p>
 
+      {/* Cancel sits above the trainer in reading and tab order, so the way out
+          is never behind the thing that takes the keyboard. */}
       <button onClick={onCancel}
         className="min-h-11 rounded-full border border-gray-300 px-5 text-xs font-semibold text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
         Cancel
       </button>
+
+      <TypingTrainer onResult={run => setLastRun(run)} />
     </div>
   );
 }

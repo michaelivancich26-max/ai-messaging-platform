@@ -6,9 +6,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { Zap, Trophy } from "@/lib/icons";
-import { ChevronRight, Layers, Radio, type LucideIcon } from "lucide-react";
+import { ChevronRight, Keyboard, Layers, Radio, type LucideIcon } from "lucide-react";
 import { useLiveMatches } from "@/components/LiveMatches";
 import { useRapidQueue, RapidTakeover, CategoryChips, ANY } from "@/components/RapidFire";
+import { loadTypingStats, MIN_RUN_SECONDS, type TypingStats } from "@/lib/typing";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
@@ -47,7 +48,13 @@ export default function RapidPage() {
   const [standing, setStanding] = useState<Standing | null>(null);
   const [rounds, setRounds] = useState<Round[] | null>(null);
   const [board, setBoard] = useState<BoardRow[] | null>(null);
+  const [typing, setTyping] = useState<TypingStats | null>(null);
   const { matches } = useLiveMatches();
+
+  // Read after mount — localStorage doesn't exist during the server render, and
+  // re-read whenever the queue lets go so a run cut short by a match is already
+  // on the page when you come back to it.
+  useEffect(() => { setTyping(loadTypingStats()); }, [q.phase]);
 
   useEffect(() => {
     if (!userId) return;
@@ -200,6 +207,31 @@ export default function RapidPage() {
             <Link href="/beliefs" className="inline-flex min-h-11 items-center text-sm font-semibold text-gray-700 transition-colors hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Belief Map</Link>
           </section>
         ))}
+
+        {/* ── Warm-up typing, carried out of the queue. Only ever shown once
+             there's a run to show. ─────────────────────────────────────────── */}
+        {typing && (typing.runs > 0 || typing.last) && (
+          <section className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-card dark:border-gray-800 dark:bg-gray-900">
+            <Keyboard className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden />
+            <p className="min-w-0 flex-1 text-sm text-gray-600 dark:text-gray-300">
+              {typing.runs > 0 ? (
+                <>
+                  Warm-up typing — last{" "}
+                  <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{typing.last?.wpm ?? typing.avgWpm} wpm</span>
+                  {/* The trainer can't tell a match from a cancel — both just
+                      unmount it — so the wording doesn't claim to know. */}
+                  {typing.last?.interrupted && <span className="text-gray-500 dark:text-gray-400"> (cut short)</span>}
+                  , averaging{" "}
+                  <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{typing.avgWpm}</span> over {typing.runs} {typing.runs === 1 ? "run" : "runs"}
+                  {typing.bestWpm > typing.avgWpm && <> · best <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{typing.bestWpm}</span></>}
+                </>
+              ) : (
+                <>Warm-up typing — your last run was under {MIN_RUN_SECONDS} seconds, too short to score.</>
+              )}
+            </p>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Practise while you queue</span>
+          </section>
+        )}
 
         {/* ── First-timer explainer. Retires itself once you've played. ───── */}
         {rounds !== null && rounds.length === 0 && (
