@@ -42,6 +42,17 @@ export default function TypingTrainer({ onResult }: {
 
   useEffect(() => { setDuration(loadTypingDuration()); }, []);
 
+  // Alt-tabbing away fires blur on the input while it keeps DOM focus, so the
+  // caret would vanish and never come back even though typing still worked.
+  // Re-read the real focus state whenever the window does.
+  useEffect(() => {
+    const onFocus = () => setFocused(document.activeElement === inputRef.current);
+    const onBlur = () => setFocused(false);          // no caret in an unfocused window
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("blur", onBlur); };
+  }, []);
+
   // Characters right so far, including the current word's correct prefix.
   const word = words[wordIndex] ?? "";
   let livePrefix = 0;
@@ -99,6 +110,14 @@ export default function TypingTrainer({ onResult }: {
     if (el) setScroll(el.offsetTop);
   }, [wordIndex, words]);
 
+  // "Again" swaps the result panel back for a brand-new input. Unmounting the
+  // old one fires no blur, so `focused` stayed true and the panel came back
+  // dressed as focused — ring on, caret blinking, overlay gone — over an input
+  // nothing was typing into. Re-read the truth whenever the live branch mounts.
+  useLayoutEffect(() => {
+    if (!finished) setFocused(document.activeElement === inputRef.current);
+  }, [finished]);
+
   function restart(seconds = duration) {
     liveRef.current.finished = false;
     keysRef.current = { keys: 0, correct: 0 };
@@ -130,6 +149,10 @@ export default function TypingTrainer({ onResult }: {
   function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     if (finished) return;
     const v = e.target.value;
+    // Overtyped characters render inside the active word, so an unbounded run of
+    // them widens that flex item until the line re-wraps. A dozen past the end
+    // is already well past any real typo.
+    if (v.length > (words[wordIndex] ?? "").length + 12) return;
     if (!startedAt && v.length > 0) setStartedAt(Date.now());
 
     // Count the keystroke, not the resulting string: backspacing over a typo
@@ -196,11 +219,16 @@ export default function TypingTrainer({ onResult }: {
         </div>
       ) : (
         <>
+          {/* Fixed slots for the numbers. tabular-nums equalises digit width but
+              reserves no space, so 9 -> 10 wpm shunted the accuracy sideways
+              mid-run, right where the eye is. */}
           <div className="mt-2 flex items-baseline gap-4 text-sm">
             <span className="tabular-nums text-gray-500 dark:text-gray-400">
-              <span className="font-display text-xl font-bold text-gray-900 dark:text-white">{wpm}</span> wpm
+              <span className="inline-block min-w-[2.4ch] text-right font-display text-xl font-bold text-gray-900 dark:text-white">{wpm}</span> wpm
             </span>
-            <span className="tabular-nums text-gray-500 dark:text-gray-400">{accuracy}% acc</span>
+            <span className="tabular-nums text-gray-500 dark:text-gray-400">
+              <span className="inline-block min-w-[3ch] text-right">{accuracy}%</span> acc
+            </span>
             <span className="ml-auto font-display text-xl font-bold tabular-nums text-orange-700 dark:text-orange-400">
               {Math.ceil(remaining)}
             </span>
@@ -209,8 +237,15 @@ export default function TypingTrainer({ onResult }: {
           {/* The stream. Hidden from screen readers — a timed race against a
               scrolling word list can't be read out without becoming unusable. */}
           <div onClick={() => inputRef.current?.focus()}
-            className={`relative mt-2 h-[5.25rem] cursor-text overflow-hidden rounded-xl bg-gray-50 px-3 py-2 font-mono text-lg leading-7 dark:bg-gray-950/50 ${
+            className={`relative mt-2 cursor-text rounded-xl bg-gray-50 px-3 py-2 font-mono text-lg leading-7 dark:bg-gray-950/50 ${
               focused ? "ring-2 ring-orange-500/60" : ""}`}>
+            {/* The clip has to be its own box. With overflow-hidden and py-2 on
+                the SAME element, border-box takes the padding out of the 84px
+                while overflow still clips at the padding edge — so the third row
+                was sliced through its descenders and the scrolled-off row leaked
+                back in through the top band. Height here is exactly 3 x leading-7;
+                change one and change the other. */}
+            <div className="h-[5.25rem] overflow-hidden">
             <div aria-hidden className="relative flex flex-wrap gap-x-2 transition-transform duration-150 motion-reduce:transition-none"
               style={{ transform: `translateY(${-scroll}px)` }}>
               {words.slice(0, wordIndex + 60).map((w, i) => {
@@ -233,6 +268,7 @@ export default function TypingTrainer({ onResult }: {
                 // so they hold AA; the caret carries "where you are" instead.
                 return <span key={i} className="text-gray-500 dark:text-gray-400">{w}</span>;
               })}
+            </div>
             </div>
 
             {idle && !focused && (
@@ -291,10 +327,17 @@ function ActiveWord({ word, typed, caret }: { word: string; typed: string; caret
 }
 
 // Zero-width so the line never shifts as the caret moves.
+//
+// The height and alignment do the real work. An empty inline-block is a
+// ZERO-height box that align-baseline collapses onto the baseline, so a caret
+// positioned from its top starts below the text and hangs into the next line —
+// measured at 18.7px low against a character box of 562.0–583.3. Giving the
+// wrapper the font's own content-box height and aligning it to text-bottom puts
+// it exactly over the glyphs, in em units so it holds at any text size.
 function Caret() {
   return (
-    <span aria-hidden className="relative inline-block w-0 align-baseline">
-      <span className="absolute -left-px top-0.5 h-5 w-0.5 rounded bg-orange-500 motion-safe:animate-pulse" />
+    <span aria-hidden className="relative inline-block h-[1.19em] w-0 align-text-bottom">
+      <span className="absolute inset-y-0 -left-px w-0.5 rounded bg-orange-500 motion-safe:animate-pulse" />
     </span>
   );
 }
