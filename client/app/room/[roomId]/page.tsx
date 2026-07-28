@@ -1661,7 +1661,7 @@ export default function RoomPage() {
             <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z" />
           </svg>
           <div className="flex flex-1 items-center gap-2 min-w-0 flex-wrap">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">Training Grounds Match</span>
+            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">{isBotRoom ? "Training Grounds Match" : "Battle Grounds Match"}</span>
             <span className="text-[11px] text-gray-500 dark:text-gray-400">·</span>
             <span className="text-[11px] font-medium tabular-nums text-gray-500 dark:text-gray-400">{myTurnCount} / {winCondition.limit} exchanges</span>
             <div className="flex gap-0.5 ml-1">
@@ -1670,6 +1670,8 @@ export default function RoomPage() {
               ))}
             </div>
           </div>
+          <button onClick={() => setScorePanelOpen(true)}
+            className="shrink-0 rounded-full border border-gray-300 px-2.5 py-0.5 text-[11px] font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Scores</button>
           <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
@@ -1679,7 +1681,7 @@ export default function RoomPage() {
             <path fillRule="evenodd" d="M1 8a7 7 0 1 1 14 0A7 7 0 0 1 1 8Zm7.75-4.25a.75.75 0 0 0-1.5 0V8c0 .414.336.75.75.75h3.25a.75.75 0 0 0 0-1.5h-2.5v-3.5Z" clipRule="evenodd" />
           </svg>
           <div className="flex flex-1 items-center gap-2 min-w-0">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">Training Grounds Match</span>
+            <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">{isBotRoom ? "Training Grounds Match" : "Battle Grounds Match"}</span>
             <span className="text-[11px] text-gray-500 dark:text-gray-400">·</span>
             {timeLeft !== null && (
               <span className={`text-[11px] font-mono font-bold tabular-nums ${timeLeft <= 30 ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-200"}`}>
@@ -1695,6 +1697,8 @@ export default function RoomPage() {
               )}
             </div>
           </div>
+          <button onClick={() => setScorePanelOpen(true)}
+            className="shrink-0 rounded-full border border-gray-300 px-2.5 py-0.5 text-[11px] font-semibold text-gray-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Scores</button>
           <button onClick={() => triggerJudge(true)} className="shrink-0 rounded-full border border-red-800/50 px-2.5 py-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">Forfeit</button>
         </div>
       )}
@@ -1867,7 +1871,11 @@ export default function RoomPage() {
                       </p>
                     </div>
                     {/* Closes the loop: whichever way the match went, ask if it moved them. */}
-                    {isRapidMatch && <RapidAftermath roomName={roomId} />}
+                    {/* Asked after every match fought over a curated claim, not
+                        just Rapid ones. The component no-ops when the round has
+                        no proposition to record a belief against, so free-text
+                        challenges simply never see it. */}
+                    {!isSpectator && <RapidAftermath roomName={roomId} />}
                     {!isSpectator && <MatchCoach roomName={roomId} />}
                     <button onClick={() => router.push(isRapidMatch ? "/rapid" : "/compete")} className="w-full rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 transition-colors active:scale-[0.98] motion-reduce:active:scale-100">
                       {isRapidMatch ? "Find another →" : "Return to Battle Grounds"}

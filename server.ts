@@ -2573,6 +2573,18 @@ async function recomputePropositionBar(roomName: string): Promise<void> {
     const raw = pa / (pa + pb);   // both sides carry the prior, so this is always defined
     const priceA = sharpenProb(raw);
     await prisma.$executeRawUnsafe(`UPDATE "MatchProposition" SET "priceA"=$1, "lastExchange"="lastExchange"+1 WHERE "roomName"=$2`, priceA, roomName);
+
+    // Keep the TRAJECTORY, not just the latest value. The UPDATE above overwrites
+    // priceA in place, so the shape of the match — the single most watchable and
+    // most teachable thing this format produces — was being destroyed on every
+    // exchange. One append per exchange makes a finished match reviewable instead
+    // of a dead transcript. Best-effort: losing a tick must never cost a live match.
+    prisma.$executeRawUnsafe(
+      `INSERT INTO "MatchPropositionPoint" ("roomName","exchange","priceA")
+       VALUES ($1, (SELECT "lastExchange" FROM "MatchProposition" WHERE "roomName"=$1), $2)`,
+      roomName, priceA,
+    ).catch(() => { /* trajectory is a nice-to-have; the match is not */ });
+
     io.to(roomName).emit("propositionUpdate", { roomName, priceA, priceB: 1 - priceA });
   } catch (e) { console.error("[recomputePropositionBar]", e); }
 }
@@ -2968,6 +2980,24 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
       `UPDATE "Challenge" SET status = 'matched' WHERE id = $1`, challengeId,
     );
 
+    // What the match is ABOUT, carried onto the match itself.
+    //
+    // A curated challenge already knows its proposition, but none of that reached
+    // the match: matchConfig didn't carry the id and the CompetitiveMatch insert
+    // omitted both columns even though they exist and Rapid populates them. So the
+    // flagship mode forgot its own subject the moment a challenge was accepted —
+    // which is why the post-match "did that move you?" can't fire here, why domain
+    // reputation is impossible, and why Pro analytics buckets every ranked 1v1 as
+    // uncategorised. Snapshot rather than join: a retired or reworded proposition
+    // must not silently rewrite the history of a match already played.
+    let categoryId: string | null = null;
+    if (challenge.propositionId) {
+      const pr = await prisma.$queryRawUnsafe<{ categoryId: string }[]>(
+        `SELECT "categoryId" FROM "Proposition" WHERE id = $1 LIMIT 1`, challenge.propositionId,
+      ).catch(() => [] as any[]);
+      categoryId = pr[0]?.categoryId ?? null;
+    }
+
     // Create competitive room
     const shortId = Date.now().toString(36).slice(-5);
     const roomName = `comp-${challengeId.slice(-6)}-${shortId}`;
@@ -2980,6 +3010,8 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
       challengerStance: challenge.stance,
       challengedStance: challenge.stance === "affirmative" ? "negative" : "affirmative",
       topic: challenge.claim,
+      propositionId: challenge.propositionId ?? null,
+      categoryId,
       ...wc,
     });
 
@@ -2994,11 +3026,12 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
     // Create CompetitiveMatch record
     await prisma.$executeRawUnsafe(
       `INSERT INTO "CompetitiveMatch"
-         ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance","roomName","challengerEloBefore","challengedEloBefore")
-       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8)`,
+         ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance","roomName","challengerEloBefore","challengedEloBefore","propositionId","categoryId")
+       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       challengeId, challenge.userId, userId,
       challenge.stance, challenge.stance === "affirmative" ? "negative" : "affirmative",
       roomName, challenge.challengerElo ?? 1200, challengedElo,
+      challenge.propositionId ?? null, categoryId,
     );
 
     // Open the proposition bar for this match
@@ -3744,7 +3777,14 @@ async function resolveRapidRoundForUser(roomName: string, userId: string): Promi
 
   let cfg: any;
   try { cfg = JSON.parse(matchConfig); } catch { return { kind: "none" }; }
-  if (!cfg?.isRapid || !cfg.propositionId) return { kind: "none" };
+  // Gate on the PROPOSITION, not the mode. This used to require isRapid, which
+  // meant the one question the product exists to ask — "did that move you?" —
+  // was never asked in ranked play. Whether a debate changed a mind is the only
+  // honest measure of whether this thing works, and the flagship mode wasn't
+  // measuring it. A curated claim is all that's needed: it's the id that a
+  // belief can be recorded against, which is also why this only fires for
+  // library picks and not free-text challenges.
+  if (!cfg?.propositionId) return { kind: "none" };
   if (userId !== cfg.challengerId && userId !== cfg.challengedId) {
     return { kind: "error", status: 403, error: "Not your round" };
   }
@@ -6479,6 +6519,16 @@ app.get("/api/rooms/:name/claims", async (req, res) => {
   try {
     const room = await prisma.room.findUnique({ where: { name: req.params.name } });
     if (!room) return res.status(404).json({ error: "Room not found" });
+    // Same access rule as the room's messages — this returns what people argued
+    // and how it scored, which is room content. It had no check of any kind, and
+    // this route is about to get a button pointed at it.
+    {
+      const uid = actorId(req);
+      const allowed = (room as any).isDM
+        ? (room as any).participant1Id === uid || (room as any).participant2Id === uid
+        : !room.isPrivate || await restUserInRoom(uid, room);
+      if (!allowed) return res.status(403).json({ error: "You don't have access to this room." });
+    }
     const claims = await prisma.$queryRawUnsafe<any[]>(
       `SELECT c.id, c."messageId", c."claimantId", c.text, c.status,
               c.verdict AS reasoning, c.relevance, c.evidence, c.logic, c.impact, c.score,
@@ -8039,6 +8089,20 @@ async function start() {
       FROM "BetMarket"
       ON CONFLICT ("roomName") DO NOTHING
     `).catch(() => { /* no legacy table — nothing to carry over */ });
+
+    // One row per exchange: the bar's shape over the course of a match. The bar
+    // itself is a single mutable value, so without this the trajectory is gone the
+    // instant it changes — and it can never be backfilled, only collected forward.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "MatchPropositionPoint" (
+        "id"       BIGSERIAL PRIMARY KEY,
+        "roomName" TEXT NOT NULL,
+        "exchange" INTEGER NOT NULL,
+        "priceA"   DOUBLE PRECISION NOT NULL,
+        "at"       TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MatchPropositionPoint_room_idx" ON "MatchPropositionPoint"("roomName","exchange")`);
     console.log("[DB] Proposition table ready");
   } catch (e) {
     console.error("[DB] Proposition table setup failed:", e);
