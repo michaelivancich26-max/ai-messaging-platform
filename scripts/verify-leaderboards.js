@@ -122,7 +122,36 @@ async function main() {
   check("a tie at the cut still returns at most limit+1 rows",
     (tied.body.rows ?? []).length <= 5, `${(tied.body.rows ?? []).length} rows for limit=5`);
 
-  // ── 5. Inherited keys are a 404, not a 500 ─────────────────────────────────
+  // ── 5. Neither bots nor tombstones are findable as people ─────────────────
+  // The boards were only half of it: user search and the people directory feed
+  // friend requests, DMs and room invites, and filtered neither. A deleted
+  // account surfaced there under its `deleted_<id>` name, leaking the raw id
+  // exactly as the ladders did.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "User" (id,username,email,password) VALUES ($1,$1,'bot.' || $1 || '@veritas.internal','__bot__')`,
+    `${P}searchbot`).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "User" SET "isBot" = true WHERE id = $1`, `${P}searchbot`);
+
+  const searchAll = await get(`/api/users/search?q=${encodeURIComponent(P)}`);
+  const searchJson = JSON.stringify(searchAll.body ?? []);
+  check("search hides deleted accounts", !searchJson.includes(GHOST),
+    searchJson.includes(GHOST) ? "LEAKED the deleted user id" : "hidden");
+  check("search hides bots", !searchJson.includes("searchbot"),
+    searchJson.includes("searchbot") ? "bot is friendable" : "hidden");
+  check("search still finds real people", searchJson.includes(LIVE), `${(searchAll.body ?? []).length} results`);
+
+  const dir = await get("/api/users");
+  const dirJson = JSON.stringify(dir.body ?? []);
+  check("the people directory hides deleted accounts", !dirJson.includes(GHOST),
+    dirJson.includes(GHOST) ? "LEAKED the deleted user id" : "hidden");
+  check("the people directory hides bots", !dirJson.includes("searchbot"));
+
+  // A wildcard query must not dump the table.
+  const wild = await get(`/api/users/search?q=${encodeURIComponent("%")}`);
+  check("a bare wildcard doesn't match everyone", (wild.body ?? []).length === 0,
+    `${(wild.body ?? []).length} results for "%"`);
+
+  // ── 6. Inherited keys are a 404, not a 500 ─────────────────────────────────
   for (const key of ["constructor", "toString", "__proto__", "nope"]) {
     const r = await get(`/api/leaderboards/${encodeURIComponent(key)}`);
     check(`"${key}" is refused cleanly`, r.status === 404, `status=${r.status}`);

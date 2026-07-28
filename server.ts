@@ -6092,14 +6092,21 @@ app.patch("/api/users/:id/profile", async (req, res) => {
   }
 });
 
+// The people directory behind the room invite picker. Same two exclusions, same
+// reason they can't be Prisma `where` clauses.
 app.get("/api/users", heavyReadLimiter, async (req, res) => {
-  const excludeId = req.query.excludeId as string | undefined;
-  const users = await prisma.user.findMany({
-    where: excludeId ? { id: { not: excludeId } } : {},
-    select: { id: true, username: true },
-    orderBy: { username: "asc" },
-  });
-  res.json(users);
+  const excludeId = (req.query.excludeId as string | undefined) ?? "";
+  try {
+    const users = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, username FROM "User"
+        WHERE "deletedAt" IS NULL AND NOT "isBot" AND id <> $1
+        ORDER BY username ASC`,
+      excludeId);
+    res.json(users);
+  } catch (e) {
+    console.error("[users list]", e);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // ── Direct messages ───────────────────────────────────────────────────────────
@@ -7718,18 +7725,30 @@ app.get("/api/channels/:id/claims", heavyReadLimiter, async (req, res) => {
 });
 
 // GET /api/users/search?q=&excludeId=
+// Finding a person to friend, DM, or invite to a debate.
+//
+// Raw SQL, not prisma.user.findMany: isBot and deletedAt are raw-SQL columns
+// absent from schema.prisma, so naming them in a Prisma `where` throws at
+// runtime. Both filters are the point of this query — practice bots are not
+// people you can befriend, and a deleted account must not be re-surfaced under
+// the `deleted_<id>` name the tombstone gives it.
 app.get("/api/users/search", async (req, res) => {
   const q = ((req.query.q as string) ?? "").trim();
-  const excludeId = req.query.excludeId as string | undefined;
+  const excludeId = (req.query.excludeId as string | undefined) ?? "";
   if (!q) return res.json([]);
+  // Escape LIKE wildcards so a query of "%" doesn't match the whole table.
+  const needle = `%${q.replace(/([\\%_])/g, "\\$1")}%`;
   try {
-    const users = await prisma.user.findMany({
-      where: { username: { contains: q, mode: "insensitive" }, ...(excludeId ? { id: { not: excludeId } } : {}) },
-      select: { id: true, username: true, avatarUrl: true },
-      take: 8,
-    });
+    const users = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, username, "avatarUrl" FROM "User"
+        WHERE username ILIKE $1 ESCAPE '\\'
+          AND "deletedAt" IS NULL AND NOT "isBot"
+          AND id <> $2
+        ORDER BY username ASC LIMIT 8`,
+      needle, excludeId);
     res.json(users);
-  } catch {
+  } catch (e) {
+    console.error("[users search]", e);
     res.status(500).json({ error: "Server error" });
   }
 });
