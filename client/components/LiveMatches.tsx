@@ -13,6 +13,7 @@ export interface LiveMatch {
   type: "1v1" | "team";
   roomName: string;
   topic: string;
+  isRapid: boolean;
   teamSize: number;
   sideAStance: "affirmative" | "negative";
   sideBStance: "affirmative" | "negative";

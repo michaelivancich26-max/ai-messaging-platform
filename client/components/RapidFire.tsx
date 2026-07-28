@@ -2,18 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Deck from "@/components/Deck";
 import { getSocket } from "@/lib/socket";
 import { api } from "@/lib/api";
-import { Zap } from "@/lib/icons";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
-interface Category { id: string; label: string; count: number }
-interface MatchFound { roomName: string; topic: string; stance: string; opponent: string; minMessages: number }
-interface NeedsDeck { positioned: number; gate: number }
+export interface Category { id: string; label: string; count: number }
+export interface MatchFound { roomName: string; topic: string; stance: string; opponent: string; minMessages: number }
+export interface NeedsDeck { positioned: number; gate: number }
 
-const ANY = "__any__";
+// Everything but "idle" takes the whole page. Searching and being matched are
+// moments, not panels — a leaderboard sitting beside a 3·2·1 countdown reads as
+// though nothing is happening.
+export type QueuePhase = "idle" | "queued" | "found" | "needsDeck";
+
+export const ANY = "__any__";
 
 function elapsed(since: number): string {
   const s = Math.floor((Date.now() - since) / 1000);
@@ -24,9 +27,10 @@ function initial(name: string): string {
   return (name?.[0] ?? "?").toUpperCase();
 }
 
-// Queue for a rapid round. You pick a category (or take anything); the server
-// pairs you with whoever's waiting, picks the topic, and deals the sides.
-export default function RapidFire({ userId, username }: { userId: string; username: string }) {
+// The queue itself: sockets, the category you're waiting on, and the pool size.
+// Kept apart from the layout so /rapid can be a page around it rather than a
+// card containing it.
+export function useRapidQueue(userId: string, username: string) {
   const router = useRouter();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selected, setSelected] = useState<string>(ANY);
@@ -37,9 +41,6 @@ export default function RapidFire({ userId, username }: { userId: string; userna
   const [found, setFound] = useState<MatchFound | null>(null);
   const [needsDeck, setNeedsDeck] = useState<NeedsDeck | null>(null);
   const queuedRef = useRef(false);
-  // The belief deck used to be its own page; it's now a tab here since it's the
-  // pre-requisite for matching (pairing needs claims you've taken a side on).
-  const [tab, setTab] = useState<"queue" | "deck">("queue");
 
   useEffect(() => {
     api(`${SERVER}/api/topics`).then(r => r.json())
@@ -101,7 +102,60 @@ export default function RapidFire({ userId, username }: { userId: string; userna
     if (queuedRef.current) getSocket().emit("rapidQueueLeave");
   }, [userId, username]);
 
-  // Purely-visual 3·2·1 that fills the 1200ms hand-off above. Never gates the
+  const join = useCallback(() => {
+    getSocket().emit("rapidQueueJoin", { categoryId: selected === ANY ? null : selected });
+    setQueued(true); queuedRef.current = true; setSince(Date.now());
+  }, [selected]);
+
+  const leave = useCallback(() => {
+    getSocket().emit("rapidQueueLeave");
+    setQueued(false); queuedRef.current = false; setSince(null);
+  }, []);
+
+  const phase: QueuePhase = found ? "found" : needsDeck ? "needsDeck" : queued ? "queued" : "idle";
+
+  return {
+    categories, selected, setSelected, phase, since, waiting, found, needsDeck,
+    join, leave, dismissNeedsDeck: () => setNeedsDeck(null),
+  };
+}
+
+// ── Category chips ─────────────────────────────────────────────────────────
+export function CategoryChips({ categories, selected, onSelect }: {
+  categories: Category[]; selected: string; onSelect: (id: string) => void;
+}) {
+  const chip = (active: boolean) =>
+    `min-h-11 rounded-full px-3.5 text-xs font-semibold transition-all active:scale-[0.97] motion-reduce:active:scale-100 ${active
+      ? "bg-orange-700 text-white shadow-glow"
+      : "border border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50"}`;
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button onClick={() => onSelect(ANY)} aria-pressed={selected === ANY} className={chip(selected === ANY)}>
+        Any topic
+      </button>
+      {categories.map(c => (
+        <button key={c.id} onClick={() => onSelect(c.id)} aria-pressed={selected === c.id} className={chip(selected === c.id)}>
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── The takeover states ────────────────────────────────────────────────────
+export function RapidTakeover({ username, phase, found, needsDeck, since, waiting, selected, categories, onCancel, onFixDeck }: {
+  username: string;
+  phase: QueuePhase;
+  found: MatchFound | null;
+  needsDeck: NeedsDeck | null;
+  since: number | null;
+  waiting: number;
+  selected: string;
+  categories: Category[];
+  onCancel: () => void;
+  onFixDeck: () => void;
+}) {
+  // Purely-visual 3·2·1 that fills the 1200ms hand-off. Never gates the
   // navigation — that stays on the socket handler's timer.
   const [countdown, setCountdown] = useState(3);
   useEffect(() => {
@@ -111,19 +165,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
     return () => clearInterval(id);
   }, [found]);
 
-  function join() {
-    getSocket().emit("rapidQueueJoin", { categoryId: selected === ANY ? null : selected });
-    setQueued(true); queuedRef.current = true; setSince(Date.now());
-  }
-
-  function leave() {
-    getSocket().emit("rapidQueueLeave");
-    setQueued(false); queuedRef.current = false; setSince(null);
-  }
-
-  // Not enough of the deck answered to find anyone. Framed as the on-ramp it is
-  // — you're close to the pool, not shut out of it.
-  if (needsDeck) {
+  if (phase === "needsDeck" && needsDeck) {
     const remaining = Math.max(0, needsDeck.gate - needsDeck.positioned);
     const pct = Math.min(100, (needsDeck.positioned / Math.max(1, needsDeck.gate)) * 100);
     return (
@@ -131,7 +173,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-7 w-7"><rect x="3" y="5" width="14" height="16" rx="2" /><path d="M7 3h12a2 2 0 0 1 2 2v12" /></svg>
         </div>
-        <h3 className="font-display text-2xl font-bold text-gray-900 dark:text-gray-100">Almost in the pool</h3>
+        <h2 className="font-display text-2xl font-bold text-gray-900 dark:text-gray-100">Almost in the pool</h2>
         <p className="mx-auto mt-2 max-w-sm text-sm text-gray-600 dark:text-gray-400">
           We match you against someone who holds the opposite view on a specific claim —
           so we need a few more of your positions before we can find them.
@@ -145,7 +187,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
             <div className="h-full rounded-full bg-orange-500 transition-[width] duration-300" style={{ width: `${Math.max(6, pct)}%` }} />
           </div>
         </div>
-        <button onClick={() => { setNeedsDeck(null); setTab("deck"); }}
+        <button onClick={onFixDeck}
           className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-orange-700 px-6 py-3.5 text-base font-semibold text-white shadow-glow transition-colors hover:bg-orange-600">
           Set your positions <span aria-hidden>→</span>
         </button>
@@ -153,7 +195,7 @@ export default function RapidFire({ userId, username }: { userId: string; userna
     );
   }
 
-  if (found) {
+  if (phase === "found" && found) {
     const isFor = found.stance === "affirmative";
     return (
       <div className="mx-auto flex max-w-md animate-popIn flex-col items-center gap-5 py-14 text-center">
@@ -192,144 +234,46 @@ export default function RapidFire({ userId, username }: { userId: string; userna
           — the side you already hold.
         </p>
 
-        <p className="mt-1 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 tabular-nums">
+        <p aria-live="polite" className="mt-1 text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 tabular-nums">
           Entering the room in {countdown}
         </p>
       </div>
     );
   }
 
-  if (queued) {
-    return (
-      <div className="mx-auto flex max-w-md flex-col items-center gap-6 py-14 text-center">
-        {/* Radar — the pool is being scanned. */}
-        <div className="relative h-32 w-32">
-          <div className="absolute inset-0 overflow-hidden rounded-full">
-            {[0, 0.73, 1.46].map(d => (
-              <span key={d} style={{ animationDelay: `${d}s` }}
-                className="absolute inset-0 rounded-full border-2 border-orange-500/50 motion-safe:animate-radar" />
-            ))}
-          </div>
-          <div className="absolute inset-0 grid place-items-center">
-            <span className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-orange-500 to-orange-700 text-xl font-bold text-white shadow-glow motion-safe:animate-pulseGlow">
-              {initial(username)}
-            </span>
-          </div>
-        </div>
-
-        <div>
-          <p className="font-display text-xl font-bold text-gray-900 dark:text-gray-100">Finding someone who disagrees…</p>
-          <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
-            {selected === ANY ? "Any topic" : categories.find(c => c.id === selected)?.label}
-            {since && <> · <span className="tabular-nums">{elapsed(since)}</span></>}
-          </p>
-        </div>
-
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          <span className="font-semibold text-orange-700 dark:text-orange-400 tabular-nums">{Math.max(1, waiting)}</span> {Math.max(1, waiting) === 1 ? "person" : "people"} warming up
-        </p>
-
-        <button onClick={leave}
-          className="rounded-full border border-gray-300 px-5 py-2 text-xs font-semibold text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto max-w-lg py-8 md:py-10">
-      {/* Toggle between queueing and building your belief deck ("Where you stand") —
-          the deck used to be its own page; it's what pairing matches you on. */}
-      <div className="mx-auto mb-7 flex max-w-xs rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
-        {([["queue", "Find a match"], ["deck", "Where you stand"]] as const).map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)} aria-pressed={tab === k}
-            className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${tab === k
-              ? "bg-white text-orange-700 shadow-sm dark:bg-gray-900 dark:text-orange-400"
-              : "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "deck" ? (
-        <div>
-          <div className="mb-5 text-center">
-            <h3 className="font-display text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Where you stand</h3>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-              Take a side on each claim. We use these to find you someone who genuinely
-              disagrees — so you argue what you actually think, not a side you were dealt.
-            </p>
-          </div>
-          <Deck userId={userId} />
-        </div>
-      ) : (
-        <>
-      <div className="text-center">
-        <p className="flex items-center justify-center gap-2 text-[11px] font-bold uppercase tracking-widest text-orange-700 dark:text-orange-400">
-          <Zap className="h-4 w-4" />
-          Rapid Fire
-        </p>
-        <h3 className="mt-3 font-display text-3xl font-bold tracking-tight text-gray-900 dark:text-white">Argue it out, live.</h3>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-          We find someone who holds the opposite view on a claim you&rsquo;ve both taken a side on.
-          You argue the side you actually hold — when you both agree to move on, whoever leads the
-          proposition bar takes it.
-        </p>
-
-        {/* Live pool count */}
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 py-1.5 text-xs shadow-card dark:border-gray-800 dark:bg-gray-900">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-70 motion-safe:animate-ping" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-orange-500" />
-          </span>
-          {waiting > 0
-            ? <><span className="font-semibold text-gray-800 dark:text-gray-100 tabular-nums">{waiting}</span> <span className="text-gray-500 dark:text-gray-400">{waiting === 1 ? "person" : "people"} in the queue</span></>
-            : <span className="text-gray-500 dark:text-gray-400">Be the first in the queue</span>}
-        </div>
-      </div>
-
-      {/* Stakes — the tension, not fine print. */}
-      <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400" title="You can't bank a lead by walking away.">
-          <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-rose-500"><path d="M3 3a1 1 0 0 1 1-1h1v16H4a1 1 0 0 1-1-1V3Zm3 .5 8.5-1a1 1 0 0 1 1.1 1.2l-.8 4 .8 4a1 1 0 0 1-1.1 1.2L6 12V3.5Z" /></svg>
-          Leaving forfeits
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400" title="Under 3 messages each and the round is void — no winner, no rating change.">
-          <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 text-gray-400"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-12.25a.75.75 0 0 0-1.5 0v4.5c0 .414.336.75.75.75h3a.75.75 0 0 0 0-1.5h-2.25v-3.75Z" clipRule="evenodd" /></svg>
-          Under 3 messages voids
-        </span>
-      </div>
-
-      <div className="mt-7">
-        <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Category</p>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setSelected(ANY)}
-            className={`rounded-full px-3.5 py-2 text-xs font-semibold transition-all active:scale-[0.97] motion-reduce:active:scale-100 ${
-              selected === ANY ? "bg-orange-700 text-white shadow-glow" : "border border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50"
-            }`}>
-            Any topic
-          </button>
-          {categories.map(c => (
-            <button key={c.id} onClick={() => setSelected(c.id)}
-              className={`rounded-full px-3.5 py-2 text-xs font-semibold transition-all active:scale-[0.97] motion-reduce:active:scale-100 ${
-                selected === c.id ? "bg-orange-700 text-white shadow-glow" : "border border-gray-300 text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50"
-              }`}>
-              {c.label}
-            </button>
+    <div className="mx-auto flex max-w-md flex-col items-center gap-6 py-14 text-center">
+      {/* Radar — the pool is being scanned. */}
+      <div className="relative h-32 w-32">
+        <div className="absolute inset-0 overflow-hidden rounded-full">
+          {[0, 0.73, 1.46].map(d => (
+            <span key={d} style={{ animationDelay: `${d}s` }}
+              className="absolute inset-0 rounded-full border-2 border-orange-500/50 motion-safe:animate-radar" />
           ))}
         </div>
-        <p className="mt-2.5 text-[11px] text-gray-500 dark:text-gray-400">
-          &ldquo;Any topic&rdquo; matches fastest — a category only pairs you with someone who chose it or chose any.
+        <div className="absolute inset-0 grid place-items-center">
+          <span className="grid h-16 w-16 place-items-center rounded-full bg-gradient-to-br from-orange-500 to-orange-700 text-xl font-bold text-white shadow-glow motion-safe:animate-pulseGlow">
+            {initial(username)}
+          </span>
+        </div>
+      </div>
+
+      <div>
+        <p className="font-display text-xl font-bold text-gray-900 dark:text-gray-100">Finding someone who disagrees…</p>
+        <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
+          {selected === ANY ? "Any topic" : categories.find(c => c.id === selected)?.label}
+          {since && <> · <span className="tabular-nums">{elapsed(since)}</span></>}
         </p>
       </div>
 
-      <button onClick={join}
-        className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-700 py-4 text-base font-semibold text-white shadow-glow transition-transform duration-150 hover:bg-orange-600 active:scale-[0.99] motion-reduce:active:scale-100">
-        Find an opponent <span aria-hidden>→</span>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        <span className="font-semibold text-orange-700 dark:text-orange-400 tabular-nums">{Math.max(1, waiting)}</span> {Math.max(1, waiting) === 1 ? "person" : "people"} warming up
+      </p>
+
+      <button onClick={onCancel}
+        className="min-h-11 rounded-full border border-gray-300 px-5 text-xs font-semibold text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+        Cancel
       </button>
-        </>
-      )}
     </div>
   );
 }

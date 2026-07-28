@@ -3475,6 +3475,9 @@ app.get("/api/match/:roomName/tape", heavyReadLimiter, async (req, res) => {
         verdict: match.verdict ?? null,
         completedAt: match.completedAt ?? null,
         categoryLabel: match.categoryId ? categoryLabel(match.categoryId) : null,
+        // Which mode this was. The tape is shared, so without it the page sends
+        // a rapid player "back" to Battle Grounds, which they were never in.
+        isRapid: !!match.isRapid,
       },
       sideA: { ...sideStats(sideAId), label: prop[0]?.labelA ?? nameOf(sideAId) },
       sideB: { ...sideStats(other), label: prop[0]?.labelB ?? nameOf(other) },
@@ -4353,6 +4356,48 @@ app.get("/api/rapid/leaderboard", async (_req, res) => {
   } catch (e) { console.error("[rapid leaderboard]", e); res.status(500).json({ error: "Server error" }); }
 });
 
+// Your standing in Rapid, and only that. The full profile payload carries
+// rapidElo and rapidRank, but it also computes credibility, medals and half a
+// dozen counts — far too heavy for a header that just needs a rating and a
+// record. Self only: it reads the caller, never a path param.
+app.get("/api/rapid/me", async (req, res) => {
+  const uid = actorId(req);
+  if (!uid) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const [eloRows, recordRows, rankRows] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(`SELECT "rapidElo"::int AS elo FROM "User" WHERE id = $1`, uid),
+      // Only 'complete' counts. A voided round leaves no result and no rating
+      // change, so counting it as a loss would punish the abandoned player.
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT COUNT(*) FILTER (WHERE "winnerId" = $1)::int AS wins,
+                COUNT(*) FILTER (WHERE "winnerId" IS NOT NULL AND "winnerId" <> $1)::int AS losses
+         FROM "CompetitiveMatch"
+         WHERE status = 'complete' AND "isRapid" = TRUE
+           AND ("challengerId" = $1 OR "challengedId" = $1)`, uid),
+      // Same cohort as the leaderboard: anyone who has finished a rapid round.
+      prisma.$queryRawUnsafe<any[]>(
+        `WITH cohort AS (
+           SELECT u.id, u."rapidElo" AS elo FROM "User" u
+           WHERE EXISTS (
+             SELECT 1 FROM "CompetitiveMatch" cm
+              WHERE cm.status = 'complete' AND cm."isRapid" = TRUE
+                AND (cm."challengerId" = u.id OR cm."challengedId" = u.id))
+         ),
+         r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
+         SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid),
+    ]);
+    res.json({
+      elo: Number(eloRows[0]?.elo ?? 1200),
+      wins: Number(recordRows[0]?.wins ?? 0),
+      losses: Number(recordRows[0]?.losses ?? 0),
+      // null until you've finished a round — an unplayed player has no rank,
+      // which is different from being last.
+      rank: rankRows[0]?.rank != null ? Number(rankRows[0].rank) : null,
+      total: rankRows[0]?.total != null ? Number(rankRows[0].total) : null,
+    });
+  } catch (e) { console.error("[GET /api/rapid/me]", e); res.status(500).json({ error: "Server error" }); }
+});
+
 // ─── Team competitive matches (pre-formed teams, 1v1–3v3) ─────────────────────
 
 const OPP_STANCE = (s: string) => (s === "affirmative" ? "negative" : "affirmative");
@@ -5170,10 +5215,12 @@ app.get("/api/live-matches", async (_req, res) => {
   try {
     const [compRows, teamRows] = await Promise.all([
       prisma.$queryRawUnsafe<any[]>(
-        `SELECT cm."roomName", cm."challengerId", cm."challengedId",
-                cm."challengerStance", cm."challengedStance", cm."createdAt", c.claim AS topic
+        `SELECT cm."roomName", cm."challengerId", cm."challengedId", cm."isRapid",
+                cm."challengerStance", cm."challengedStance", cm."createdAt",
+                COALESCE(c.claim, p.text) AS topic
          FROM "CompetitiveMatch" cm
          LEFT JOIN "Challenge" c ON cm."challengeId" = c.id
+         LEFT JOIN "Proposition" p ON p.id = cm."propositionId"
          WHERE cm.status = 'active'
          ORDER BY cm."createdAt" DESC LIMIT 40`,
       ).catch(() => [] as any[]),
@@ -5205,6 +5252,9 @@ app.get("/api/live-matches", async (_req, res) => {
         type: "1v1" as const,
         roomName: r.roomName,
         topic: r.topic ?? "Debate",
+        // Lets a caller show one mode's rounds without a second endpoint —
+        // the Rapid home would otherwise advertise Battle Grounds matches.
+        isRapid: !!r.isRapid,
         teamSize: 1,
         sideAStance: r.challengerStance,
         sideBStance: r.challengedStance,
@@ -5221,6 +5271,7 @@ app.get("/api/live-matches", async (_req, res) => {
           type: "team" as const,
           roomName: r.roomName,
           topic: r.topic ?? "Debate",
+          isRapid: false,                       // rapid is 1v1 only
           teamSize: Number(r.teamSize ?? teamA.length),
           sideAStance: r.sideAStance,
           sideBStance: oppStance(r.sideAStance),
@@ -5636,17 +5687,29 @@ app.get("/api/users/by-name/:username/profile", heavyReadLimiter, async (req, re
 // GET /api/users/:id/matches — a user's completed 1v1 competitive matches (most recent first)
 app.get("/api/users/:id/matches", async (req, res) => {
   const uid = req.params.id;
+  // ?mode=rapid|ranked narrows the window. Without it a player with a long
+  // Battle Grounds history would find their rapid rounds pushed out of the
+  // LIMIT entirely, so the Rapid home would show an empty record to someone
+  // who has played all week.
+  const mode = req.query.mode === "rapid" ? "rapid" : req.query.mode === "ranked" ? "ranked" : null;
+  const modeSql = mode === "rapid" ? `AND cm."isRapid" = TRUE`
+    : mode === "ranked" ? `AND cm."isRapid" IS NOT TRUE` : "";
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(
+      // A rapid round has no Challenge row — it's paired out of the queue — so
+      // its subject lives on the proposition. Without the second join every
+      // rapid round in a history list just read "Debate".
       `SELECT cm."roomName", cm."challengerId", cm."challengedId", cm."winnerId", cm.verdict,
               cm."challengerEloBefore", cm."challengedEloBefore", cm."challengerEloAfter", cm."challengedEloAfter",
-              cm."completedAt", c.claim AS topic,
+              cm."completedAt", cm."isRapid", COALESCE(c.claim, p.text) AS topic,
               uc.username AS "challengerName", ud.username AS "challengedName"
        FROM "CompetitiveMatch" cm
        LEFT JOIN "Challenge" c ON cm."challengeId" = c.id
+       LEFT JOIN "Proposition" p ON p.id = cm."propositionId"
        LEFT JOIN "User" uc ON uc.id = cm."challengerId"
        LEFT JOIN "User" ud ON ud.id = cm."challengedId"
        WHERE cm.status = 'complete' AND (cm."challengerId" = $1 OR cm."challengedId" = $1)
+       ${modeSql}
        ORDER BY cm."completedAt" DESC NULLS LAST LIMIT 20`, uid,
     ).catch(() => [] as any[]);
     const matches = rows.map((r) => {
@@ -5658,6 +5721,10 @@ app.get("/api/users/:id/matches", async (req, res) => {
         topic: r.topic ?? "Debate",
         opponentName: (isChallenger ? r.challengedName : r.challengerName) ?? "Opponent",
         won: r.winnerId === uid,
+        // A settled match with nobody ahead is a draw, not a loss — `won:false`
+        // alone would show it as a defeat on any history list.
+        drawn: r.winnerId == null,
+        isRapid: !!r.isRapid,
         eloAfter,
         eloDelta: eloAfter - eloBefore,
         verdict: r.verdict ?? "",

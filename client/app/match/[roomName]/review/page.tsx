@@ -23,7 +23,7 @@ interface Claim {
 interface Tape {
   match: {
     roomName: string; status: string; winnerId: string | null; verdict: string | null;
-    completedAt: string | null; categoryLabel: string | null;
+    completedAt: string | null; categoryLabel: string | null; isRapid?: boolean;
   };
   sideA: Side; sideB: Side;
   trajectory: { exchange: number; priceA: number }[];
@@ -148,8 +148,11 @@ export default function MatchReviewPage() {
   const shell = (children: React.ReactNode) => (
     <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
       <div className="mx-auto max-w-3xl space-y-5 px-4 py-6 md:py-8">
-        <Link href="/compete" className="-my-2 inline-flex min-h-11 items-center gap-1.5 py-2 text-xs font-semibold text-gray-600 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Battle Grounds
+        {/* Back to the mode you actually played. Unknown while the tape loads,
+            and Battle Grounds is the safe default — it owns the /match route. */}
+        <Link href={tape?.match.isRapid ? "/rapid" : "/compete"}
+          className="-my-2 inline-flex min-h-11 items-center gap-1.5 py-2 text-xs font-semibold text-gray-600 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100">
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> {tape?.match.isRapid ? "Rapid Fire" : "Battle Grounds"}
         </Link>
         {children}
       </div>
