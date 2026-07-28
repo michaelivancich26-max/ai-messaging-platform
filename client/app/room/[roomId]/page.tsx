@@ -1877,9 +1877,17 @@ export default function RoomPage() {
                         challenges simply never see it. */}
                     {!isSpectator && <RapidAftermath roomName={roomId} />}
                     {!isSpectator && <MatchCoach roomName={roomId} />}
-                    <button onClick={() => router.push(isRapidMatch ? "/rapid" : "/compete")} className="w-full rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow hover:bg-orange-600 transition-colors active:scale-[0.98] motion-reduce:active:scale-100">
-                      {isRapidMatch ? "Find another →" : "Return to Battle Grounds"}
-                    </button>
+                    <div className="flex gap-2">
+                      {/* The tape is the artifact the match leaves behind — where
+                          the bar moved, which claims scored, where it turned. */}
+                      <button onClick={() => router.push(`/match/${encodeURIComponent(roomId)}/review`)}
+                        className="min-h-11 flex-1 rounded-xl border border-gray-300 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+                        Review the tape
+                      </button>
+                      <button onClick={() => router.push(isRapidMatch ? "/rapid" : "/compete")} className="min-h-11 flex-1 rounded-xl bg-orange-700 py-2.5 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-orange-600 active:scale-[0.98] motion-reduce:active:scale-100">
+                        {isRapidMatch ? "Find another →" : "Back to Battle Grounds"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

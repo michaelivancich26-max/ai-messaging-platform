@@ -3299,6 +3299,111 @@ app.get("/api/competitive/match/:roomName", async (req, res) => {
   }
 });
 
+// The tape — everything needed to review a finished match.
+//
+// A ranked match used to leave behind one italic sentence and an ELO delta,
+// while the app quietly scored a four-dimension rubric on every single message
+// and threw the result away. This hands it back: the bar's trajectory, every
+// claim with its scores and the evaluator's reasoning, the per-dimension
+// head-to-head, and where the match actually turned.
+//
+// Finished matches only. Mid-match the Scores panel already shows the live
+// rubric; a "review" of a running debate is just a second scoreboard.
+app.get("/api/match/:roomName/tape", heavyReadLimiter, async (req, res) => {
+  const roomName = String(req.params.roomName);
+  try {
+    const mRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "CompetitiveMatch" WHERE "roomName" = $1 LIMIT 1`, roomName);
+    const match = mRows[0];
+    if (!match) return res.status(404).json({ error: "No such match." });
+    if (match.status === "active" || match.status === "closing") {
+      return res.status(409).json({ error: "That match is still in progress.", code: "in_progress" });
+    }
+
+    const room = await prisma.room.findUnique({
+      where: { name: roomName },
+      select: { id: true, isPrivate: true, creatorId: true, createdAt: true },
+    });
+    if (!room) return res.status(404).json({ error: "No such match." });
+    if (room.isPrivate && !(await restUserInRoom(actorId(req), room))) {
+      return res.status(403).json({ error: "You don't have access to this match." });
+    }
+
+    const [ticks, claims, names, prop] = await Promise.all([
+      prisma.$queryRawUnsafe<{ exchange: number; priceA: number; at: Date }[]>(
+        `SELECT "exchange", "priceA"::float8 AS "priceA", "at" FROM "MatchPropositionPoint"
+          WHERE "roomName" = $1 ORDER BY "exchange" ASC, "id" ASC`, roomName),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT c.id, c."messageId", c."claimantId", c.text, c.status,
+                c.verdict AS reasoning, c.relevance, c.evidence, c.logic, c.impact, c.score, c."createdAt"
+           FROM "Claim" c WHERE c."roomId" = $1 AND c.status <> 'PENDING'
+          ORDER BY c."createdAt" ASC`, room.id),
+      prisma.$queryRawUnsafe<{ id: string; username: string }[]>(
+        `SELECT id, username FROM "User" WHERE id = ANY($1::text[])`,
+        [match.challengerId, match.challengedId]),
+      prisma.$queryRawUnsafe<{ labelA: string; labelB: string; sideA: string }[]>(
+        `SELECT "labelA", "labelB", "sideA" FROM "MatchProposition" WHERE "roomName" = $1 LIMIT 1`, roomName),
+    ]);
+
+    const nameOf = (id: string) => names.find(n => n.id === id)?.username ?? "Former member";
+
+    // Side A of the bar is whoever MatchProposition put there; fall back to the
+    // challenger so an older row is still orientable.
+    let sideAId: string = match.challengerId;
+    try { const a = JSON.parse(prop[0]?.sideA ?? "[]"); if (a[0]) sideAId = a[0]; } catch { /* fall back */ }
+
+    const dims = ["relevance", "evidence", "logic", "impact", "score"] as const;
+    const avg = (id: string, k: string) => {
+      const mine = claims.filter(c => c.claimantId === id && c[k] != null);
+      return mine.length ? Math.round((mine.reduce((t, c) => t + Number(c[k]), 0) / mine.length) * 10) / 10 : null;
+    };
+    const sideStats = (id: string) => ({
+      userId: id, username: nameOf(id),
+      claims: claims.filter(c => c.claimantId === id).length,
+      ...Object.fromEntries(dims.map(d => [d, avg(id, d)])),
+    });
+
+    // Where it turned: the largest single-exchange move. Reported WITH the claims
+    // from that exchange, so the swing can be read rather than trusted — the bar
+    // is a function of evaluator scores, and a confident arrow pointing at a noisy
+    // score would be worse than no arrow at all.
+    let biggestSwing: any = null;
+    for (let i = 1; i < ticks.length; i++) {
+      const delta = ticks[i].priceA - ticks[i - 1].priceA;
+      if (!biggestSwing || Math.abs(delta) > Math.abs(biggestSwing.delta)) {
+        biggestSwing = { exchange: ticks[i].exchange, delta, from: ticks[i - 1].priceA, to: ticks[i].priceA, at: ticks[i].at };
+      }
+    }
+    if (biggestSwing) {
+      const since = ticks.find(t => t.exchange === biggestSwing.exchange - 1)?.at ?? room.createdAt;
+      biggestSwing.claims = claims
+        .filter(c => new Date(c.createdAt) > new Date(since) && new Date(c.createdAt) <= new Date(biggestSwing.at))
+        .map(c => ({ ...c, claimantName: nameOf(c.claimantId) }));
+    }
+
+    const other = sideAId === match.challengerId ? match.challengedId : match.challengerId;
+    res.json({
+      match: {
+        roomName, status: match.status,
+        winnerId: match.winnerId ?? null,
+        verdict: match.verdict ?? null,
+        completedAt: match.completedAt ?? null,
+        categoryLabel: match.categoryId ? categoryLabel(match.categoryId) : null,
+      },
+      sideA: { ...sideStats(sideAId), label: prop[0]?.labelA ?? nameOf(sideAId) },
+      sideB: { ...sideStats(other), label: prop[0]?.labelB ?? nameOf(other) },
+      // Empty for every match played before tick capture shipped. The client says
+      // so, rather than drawing a flat line that implies nothing happened.
+      trajectory: ticks.map(t => ({ exchange: t.exchange, priceA: t.priceA })),
+      claims: claims.map(c => ({ ...c, claimantName: nameOf(c.claimantId) })),
+      biggestSwing,
+    });
+  } catch (e) {
+    console.error("[GET /api/match/tape]", e);
+    res.status(500).json({ error: "Couldn't load the tape." });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Rapid Fire — queued 1v1 against whoever's waiting
 //
