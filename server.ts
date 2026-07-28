@@ -3631,6 +3631,67 @@ async function rapidBelowFloor({ match, roomId }: ActiveRapid): Promise<boolean>
   return said(match.challengerId) < RAPID_MIN_MESSAGES || said(match.challengedId) < RAPID_MIN_MESSAGES;
 }
 
+// ─── Abandoned ranked matches ────────────────────────────────────────────────
+// Battle Grounds completion is entirely client-driven, and nothing ever ended a
+// match nobody came back to: resolveRapidMatchesFor filters isRapid, so a ranked
+// 1v1 whose players closed the tab stayed 'active' forever with both ratings
+// untouched. That made the optimal play when losing "walk away" — the exact
+// reflex the void/forfeit rules elsewhere exist to break — and left zombie
+// matches on /watch and the bar-tick table growing on rooms that never end.
+//
+// Deliberately NOT a disconnect forfeit like Rapid. Rapid rounds are short, with
+// strangers, on a separate ladder; a ranked match carries real ELO and a phone
+// losing signal for thirty seconds must not cost a rating. So this waits for a
+// long silence and then resolves on the MERITS: too little to judge is voided,
+// and anything else goes through the normal judge on the transcript that exists.
+// Leaving therefore stops being free without becoming a trapdoor. Deliberate
+// concession still has its own button.
+const BG_ABANDON_SILENCE_MS = 15 * 60_000;   // generous: considered debate, not blitz
+const BG_ABANDON_SWEEP_MS = 2 * 60_000;
+
+async function sweepAbandonedBattleMatches(): Promise<void> {
+  try {
+    // Silence is measured from the last message, falling back to when the room
+    // was created so a match nobody ever spoke in is still cleaned up.
+    const stale = await prisma.$queryRawUnsafe<{ roomName: string; roomId: string }[]>(
+      `SELECT cm."roomName", r.id AS "roomId"
+         FROM "CompetitiveMatch" cm
+         JOIN "Room" r ON r.name = cm."roomName"
+        WHERE cm.status = 'active'
+          AND cm."isRapid" IS NOT TRUE
+          AND COALESCE(
+                (SELECT MAX(m."createdAt") FROM "Message" m WHERE m."roomId" = r.id),
+                r."createdAt"
+              ) < NOW() - ($1::int * INTERVAL '1 millisecond')
+        LIMIT 25`,
+      BG_ABANDON_SILENCE_MS,
+    );
+    if (!stale.length) return;
+
+    for (const { roomName, roomId } of stale) {
+      const matches = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT * FROM "CompetitiveMatch" WHERE "roomName"=$1 AND status='active' LIMIT 1`, roomName);
+      if (!matches.length) continue;
+
+      if (await rapidBelowFloor({ match: matches[0], roomId })) {
+        // Nothing to read a result off. Claim it first so a late settle can't
+        // also fire, then void: no ELO either way.
+        const claimed = await prisma.$executeRawUnsafe(
+          `UPDATE "CompetitiveMatch" SET status='closing' WHERE "roomName"=$1 AND status='active'`, roomName);
+        if (claimed !== 1) continue;
+        await voidRapidRound(roomName, "This match was abandoned before there was enough to judge — no result, no rating change.");
+        console.log("[abandon] voided", roomName);
+        continue;
+      }
+
+      // Enough was argued to decide it. No forcedWinner — completeCompetitiveMatch
+      // does its own single-flight on status='active', so it must NOT be pre-claimed.
+      await completeCompetitiveMatch(roomName).catch(() => null);
+      console.log("[abandon] judged", roomName);
+    }
+  } catch (e) { console.error("[sweepAbandonedBattleMatches]", e); }
+}
+
 // Every active rapid round this user is in. Match completion is otherwise
 // entirely client-driven, so without this an abandoned round stays 'active'
 // forever — and in a queue of strangers, walking out is routine.
@@ -8178,6 +8239,12 @@ async function start() {
   } catch (e) {
     console.error("[DB] Analytics backfill failed (non-fatal):", e);
   }
+
+  // Close out ranked matches nobody came back to. Started after the schema is
+  // ready so the first pass can't race the boot DDL, and unref'd so it never
+  // holds the process open. Runs once at boot to clear anything already stranded.
+  sweepAbandonedBattleMatches().catch(() => {});
+  setInterval(() => { sweepAbandonedBattleMatches().catch(() => {}); }, BG_ABANDON_SWEEP_MS).unref?.();
 
   httpServer.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
