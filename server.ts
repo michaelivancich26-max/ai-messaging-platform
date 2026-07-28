@@ -2563,7 +2563,13 @@ async function recomputePropositionBar(roomName: string): Promise<void> {
     // an all-CONTESTED opinion debate (the norm) still separates the two debaters
     // instead of pinning the bar at 0.5, which used to void almost every round.
     const scoreRows = await prisma.$queryRawUnsafe<{ claimantId: string; total: number }[]>(
-      `SELECT "claimantId", COALESCE(SUM(score), 0)::float AS total FROM "Claim"
+      // AVERAGE, not sum. Summing made the bar a volume meter: splitting one good
+      // argument across four messages minted four claims and beat one strong one,
+      // so the winning strategy was to talk more rather than argue better — in a
+      // product whose entire premise is argument quality. Averaging also matches
+      // what the Arena judge already uses, which is what lets the bar and the
+      // verdict finally be computed from the same number.
+      `SELECT "claimantId", COALESCE(AVG(score), 0)::float AS total FROM "Claim"
        WHERE "roomId"=$1 AND status IN ('SUPPORTED','CONTESTED','REFUTED') GROUP BY "claimantId"`, roomRow.id,
     );
     const scoreOf: Record<string, number> = {};
@@ -3062,6 +3068,64 @@ app.post("/api/challenges/:id/accept", async (req, res) => {
 // both clients race to call this, and a Rapid Fire forfeit calls it server-side,
 // so the second caller gets the stored result rather than a second judgement.
 // Returns null only when the room or match doesn't exist.
+// Which judge actually decides a ranked 1v1.
+//
+//   "shadow" (default) — the model still decides, but the rubric's answer is
+//                        computed and recorded alongside so the two can be
+//                        compared on real matches before anything changes.
+//   "rubric"           — the rubric decides and the model only writes the
+//                        sentence, matching how Arena has always worked.
+//
+// Deliberately a runtime switch rather than a deploy: this changes how ranked
+// ELO is awarded, so it should be flippable the moment the agreement numbers
+// say it is safe, and flippable BACK without a rollback.
+const RANKED_JUDGE = (process.env.RANKED_JUDGE ?? "shadow") === "rubric" ? "rubric" : "shadow";
+
+interface RubricVerdict {
+  winnerId: string | null;
+  scoreA: number | null; scoreB: number | null;
+  claimsA: number; claimsB: number;
+  margin: number | null;
+}
+
+// What the rubric says about a match: mean claim score per side, exactly the
+// aggregation the Arena judge uses (services/debateBot.ts) and — since the bar
+// moved off SUM — the same number the persuasion bar is drawn from.
+async function rubricVerdictFor(roomId: string, challengerId: string, challengedId: string): Promise<RubricVerdict> {
+  const rows = await prisma.$queryRawUnsafe<{ claimantId: string; avg: number; n: bigint }[]>(
+    `SELECT "claimantId", AVG(score)::float8 AS avg, COUNT(*) AS n FROM "Claim"
+      WHERE "roomId" = $1 AND score IS NOT NULL AND status IN ('SUPPORTED','CONTESTED','REFUTED')
+      GROUP BY "claimantId"`, roomId,
+  ).catch(() => [] as any[]);
+  const pick = (id: string) => rows.find(r => r.claimantId === id);
+  const a = pick(challengerId), b = pick(challengedId);
+  const scoreA = a ? Math.round(Number(a.avg) * 10) / 10 : null;
+  const scoreB = b ? Math.round(Number(b.avg) * 10) / 10 : null;
+  // No winner unless BOTH sides have something scored — otherwise the rubric
+  // would hand a win to whoever happened to get evaluated first.
+  const winnerId = scoreA != null && scoreB != null
+    ? (scoreA === scoreB ? null : scoreA > scoreB ? challengerId : challengedId)
+    : null;
+  return {
+    winnerId, scoreA, scoreB,
+    claimsA: Number(a?.n ?? 0), claimsB: Number(b?.n ?? 0),
+    margin: scoreA != null && scoreB != null ? Math.round(Math.abs(scoreA - scoreB) * 10) / 10 : null,
+  };
+}
+
+// Record what each judge said, so the switch is made on evidence rather than
+// on a hunch. Written for every judged 1v1 regardless of which one is live.
+async function recordJudgeShadow(roomName: string, live: string | null, r: RubricVerdict, mode: string): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "JudgeShadow" ("roomName","liveWinnerId","rubricWinnerId","agreed","scoreA","scoreB","claimsA","claimsB","mode")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT ("roomName") DO NOTHING`,
+    roomName, live, r.winnerId,
+    r.winnerId == null || live == null ? null : r.winnerId === live,
+    r.scoreA, r.scoreB, r.claimsA, r.claimsB, mode,
+  ).catch(() => { /* measurement must never fail a match */ });
+}
+
 async function completeCompetitiveMatch(roomName: string, forcedWinner?: string, forcedVerdict?: string): Promise<any | null> {
   {
     // Idempotent: return existing result
@@ -3180,6 +3244,28 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
       } catch (e) {
         console.error("[competitive judge]", e);
       }
+
+      // ── Judge coherence ────────────────────────────────────────────────────
+      // The model reads the transcript and never looks at the rubric, so the
+      // bar players watch for the whole match has no bearing on who wins under
+      // exchanges/time — you cannot form a theory of how to win, and a mode you
+      // cannot theorise about can only be played, not mastered.
+      //
+      // Both answers are computed on every judged match. In "shadow" the model
+      // stays authoritative and the rubric is only recorded, so the switch can
+      // be made on measured agreement instead of a guess. In "rubric" they swap:
+      // the scores decide and the model's sentence is kept as the explanation,
+      // which is exactly the Arena arrangement.
+      try {
+        const r = await rubricVerdictFor(roomRows.id, match.challengerId, match.challengedId);
+        await recordJudgeShadow(roomName, winnerId, r, RANKED_JUDGE);
+        if (RANKED_JUDGE === "rubric" && r.winnerId) {
+          if (r.winnerId !== winnerId) {
+            console.log("[judge] rubric overrode model", { roomName, model: winnerId, rubric: r.winnerId, a: r.scoreA, b: r.scoreB });
+          }
+          winnerId = r.winnerId;
+        }
+      } catch (e) { console.error("[judge shadow]", e); }
     }
 
     // Calculate ELO. Provisional competitors (their first few RANKED matches) move
@@ -6398,6 +6484,42 @@ app.post("/api/custom-bots/:id/report", createLimiter, async (req, res) => {
   }
 });
 
+// How often the two judges agree. This is the number the switch is made on:
+// flip RANKED_JUDGE to "rubric" once agreement is high enough, and look at the
+// disagreements first — a rubric that disagrees with the model mostly on
+// razor-thin margins is fine, one that disagrees on blowouts is not.
+app.get("/api/admin/judge-shadow", async (req, res) => {
+  const userId = actorId(req);
+  if (!(await isAdmin(userId))) return res.status(403).json({ error: "Admins only" });
+  try {
+    const [summary, recent] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT COUNT(*)::int                                             AS judged,
+                COUNT(*) FILTER (WHERE "agreed" IS TRUE)::int             AS agreed,
+                COUNT(*) FILTER (WHERE "agreed" IS FALSE)::int            AS disagreed,
+                COUNT(*) FILTER (WHERE "rubricWinnerId" IS NULL)::int     AS "rubricUndecided",
+                ROUND(AVG(ABS("scoreA" - "scoreB"))::numeric, 2)::float8  AS "avgMargin",
+                ROUND(AVG(ABS("scoreA" - "scoreB")) FILTER (WHERE "agreed" IS FALSE)::numeric, 2)::float8
+                                                                          AS "avgMarginWhenDisagreeing"
+           FROM "JudgeShadow"`),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT "roomName","liveWinnerId","rubricWinnerId","agreed","scoreA","scoreB","claimsA","claimsB","mode","at"
+           FROM "JudgeShadow" ORDER BY "at" DESC LIMIT 50`),
+    ]);
+    const s = summary[0] ?? {};
+    const decided = (s.agreed ?? 0) + (s.disagreed ?? 0);
+    res.json({
+      mode: RANKED_JUDGE,
+      ...s,
+      agreementRate: decided > 0 ? Math.round(((s.agreed ?? 0) / decided) * 100) : null,
+      recent,
+    });
+  } catch (e) {
+    console.error("[GET /api/admin/judge-shadow]", e);
+    res.status(500).json({ error: "Couldn't read the shadow log." });
+  }
+});
+
 // Admin review queue — reported first, then everything published.
 app.get("/api/admin/custom-bots", async (req, res) => {
   const userId = actorId(req);
@@ -8269,6 +8391,24 @@ async function start() {
       )
     `);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MatchPropositionPoint_room_idx" ON "MatchPropositionPoint"("roomName","exchange")`);
+
+    // What each judge said, for every judged 1v1. Exists so the decision to let
+    // the rubric decide ranked matches can be made on measured agreement rather
+    // than on a hunch — and so it can be audited afterwards.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "JudgeShadow" (
+        "roomName"       TEXT PRIMARY KEY,
+        "liveWinnerId"   TEXT,
+        "rubricWinnerId" TEXT,
+        "agreed"         BOOLEAN,
+        "scoreA"         DOUBLE PRECISION,
+        "scoreB"         DOUBLE PRECISION,
+        "claimsA"        INTEGER NOT NULL DEFAULT 0,
+        "claimsB"        INTEGER NOT NULL DEFAULT 0,
+        "mode"           TEXT NOT NULL DEFAULT 'shadow',
+        "at"             TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
     console.log("[DB] Proposition table ready");
   } catch (e) {
     console.error("[DB] Proposition table setup failed:", e);
