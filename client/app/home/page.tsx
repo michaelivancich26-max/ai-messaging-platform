@@ -33,6 +33,7 @@ export default function HomePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [streak, setStreak] = useState<{ current: number; longest: number } | null>(null);
   const [cred, setCred] = useState<CredScore | null>(null);
+  const [arenaBonus, setArenaBonus] = useState(0);
   const [medals, setMedals] = useState<Medal[]>([]);
   const [lessonsDone, setLessonsDone] = useState<LessonDone[] | null>(null);
   const [puzzlesDone, setPuzzlesDone] = useState<string[]>([]);
@@ -47,6 +48,7 @@ export default function HomePage() {
         setAvatarUrl(d?.avatarUrl ?? null);
         setStreak({ current: d?.stats?.dailyStreak ?? 0, longest: d?.stats?.longestStreak ?? 0 });
         setCred(d?.cred ?? null);
+        setArenaBonus(Number(d?.stats?.arenaBonus ?? 0));
         setMedals(Array.isArray(d?.medals) ? d.medals : []);
       }).catch(() => {});
     api(`${SERVER}/api/lessons/progress?userId=${userId}`).then(r => r.json())
@@ -90,7 +92,11 @@ export default function HomePage() {
     return LESSON_ORDER.find(l => !doneKeys.has(`${l.seriesSlug}/${l.lessonSlug}`)) ?? null;
   }, [lessonsDone]);
 
-  const rated = !!cred && cred.total >= 3;
+  // The same arithmetic the dashboard, the public profile and the Grounds Score
+  // board use. This page showed the bare claim score, so a player with arena
+  // wins read a different headline number here than everywhere else.
+  const groundsScore = Math.round(((cred && cred.total >= 3 ? cred.score : 0) + arenaBonus) * 10) / 10;
+  const rated = (!!cred && cred.total >= 3) || arenaBonus !== 0;
   const lessonCount = lessonsDone?.length ?? 0;
   const lessonPct = TOTAL_LESSONS > 0 ? Math.round((lessonCount / TOTAL_LESSONS) * 100) : 0;
   const puzzlePct = PUZZLES.length > 0 ? Math.round((puzzlesDone.length / PUZZLES.length) * 100) : 0;
@@ -128,7 +134,7 @@ export default function HomePage() {
               <button onClick={() => router.push("/dashboard")} title={rated ? "Your Grounds Score" : "Make 3 verified claims to earn a score"}
                 className="-mx-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-200">
                 <Scale className="h-4 w-4 shrink-0" aria-hidden />
-                {rated ? <><span className="font-semibold text-gray-900 dark:text-gray-100">{cred!.score}</span> Grounds Score</> : "Unrated"}
+                {rated ? <><span className="font-semibold text-gray-900 dark:text-gray-100">{groundsScore}</span> Grounds Score</> : "Unrated"}
               </button>
               <button onClick={() => router.push("/dashboard")} title="Days in a row you've been active"
                 className="-mx-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-200">

@@ -2836,9 +2836,9 @@ app.get("/api/battle/me", async (req, res) => {
       prisma.$queryRawUnsafe<any[]>(
         `WITH cohort AS (
            SELECT u.id, u.elo FROM "User" u
-           WHERE u.elo <> 1200
+           WHERE u."deletedAt" IS NULL AND (u.elo <> 1200
               OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
-                          WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id)
+                          WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id))
          ),
          r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
          SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid),
@@ -4042,10 +4042,24 @@ app.post("/api/deck/position", async (req, res) => {
       return res.status(400).json({ error: "confidence must be 1 or 2" });
     }
 
+    // The room is attribution, not decoration: it is what the Open Minds and
+    // Persuaders boards count, and what analytics credits a debate for. It
+    // arrived straight from the request body, so anyone could stamp a position
+    // with a room they were never in — inflating their own board, or someone
+    // else's, from a script. Keep the position either way; drop the claim of
+    // where it happened unless the caller was actually there.
+    let attributedRoom: string | null = null;
+    if (typeof roomName === "string" && roomName) {
+      const room = await prisma.room.findUnique({
+        where: { name: roomName }, select: { id: true, creatorId: true },
+      }).catch(() => null);
+      if (room && await restUserInRoom(userId, room)) attributedRoom = roomName;
+    }
+
     const result = await recordBelief(
       prisma, userId, propositionId, stance,
       stance === "skip" ? null : confidence!,
-      roomName ?? null,
+      attributedRoom,
       !correction,
     );
     res.json({ ...result, positioned: await beliefCount(prisma, userId) });
@@ -4394,6 +4408,7 @@ app.get("/api/rapid/leaderboard", async (_req, res) => {
                     UNION ALL
                     SELECT "challengedId" AS uid, "winnerId" FROM "CompetitiveMatch" WHERE "isRapid" = TRUE AND status='complete'
                   ) x WHERE "winnerId" IS DISTINCT FROM uid GROUP BY uid) l ON l.uid = u.id
+       WHERE u."deletedAt" IS NULL
        ORDER BY u."rapidElo" DESC LIMIT 25`,
     ).catch(() => [] as any[]);
     res.json(rows.map((r) => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
@@ -4422,7 +4437,7 @@ app.get("/api/rapid/me", async (req, res) => {
       prisma.$queryRawUnsafe<any[]>(
         `WITH cohort AS (
            SELECT u.id, u."rapidElo" AS elo FROM "User" u
-           WHERE EXISTS (
+           WHERE u."deletedAt" IS NULL AND EXISTS (
              SELECT 1 FROM "CompetitiveMatch" cm
               WHERE cm.status = 'complete' AND cm."isRapid" = TRUE
                 AND (cm."challengerId" = u.id OR cm."challengedId" = u.id))
@@ -5214,7 +5229,10 @@ app.get("/api/leaderboard", async (req, res) => {
             WHERE status='complete' AND ("isRapid" IS NOT TRUE)
          ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid
        ) losses ON losses.uid = u.id
-       WHERE u.elo != 1200 OR wins.count IS NOT NULL
+       -- Parenthesised deliberately: AND binds tighter than OR, so appending the
+       -- tombstone filter to the end would still admit any deleted account whose
+       -- elo had moved — which is every deleted account worth hiding.
+       WHERE u."deletedAt" IS NULL AND (u.elo != 1200 OR wins.count IS NOT NULL)
        ORDER BY u.elo DESC LIMIT 25`,
     );
     res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo), battleMatches: Number(r.battleMatches ?? 0) })));
@@ -5235,12 +5253,216 @@ app.get("/api/arena-leaderboard", async (_req, res) => {
        JOIN (SELECT "userId", COUNT(*) AS c FROM "ArenaMatch" WHERE "ranked" = true GROUP BY "userId") am ON am."userId" = u.id
        LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'human' AND "ranked" = true GROUP BY "userId") w ON w.uid = u.id
        LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS count FROM "ArenaMatch" WHERE "winner" = 'bot'   AND "ranked" = true GROUP BY "userId") l ON l.uid = u.id
+       WHERE u."deletedAt" IS NULL
        ORDER BY u."arenaElo" DESC LIMIT 25`,
     ).catch(() => [] as any[]);
     res.json(rows.map(r => ({ ...r, wins: Number(r.wins), losses: Number(r.losses), elo: Number(r.elo) })));
   } catch (e) {
     console.error("[arena-leaderboard]", e);
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ─── Leaderboards ────────────────────────────────────────────────────────────
+//
+// One shape for every board, so Community can render them all the same way and
+// new boards cost a SQL block rather than an endpoint. Each board's SQL yields
+// (id, username, isPro, value, detail); the wrapper below does ranking, ties,
+// the caller's own row, and the cohort total.
+//
+// Two rules every board here obeys, which the older single-purpose endpoints did
+// not: deleted accounts are excluded (a tombstoned user was still publicly
+// ranked), and RANK() is used so equal scores genuinely tie instead of one being
+// arbitrarily placed above the other.
+
+type BoardDef = { label: string; unit: string; blurb: string; sql: string };
+
+const LEADERBOARDS: Record<string, BoardDef> = {
+  // Ranked 1v1. Wins/losses count ranked matches only — rapid has its own board.
+  battle: {
+    label: "Battle Grounds", unit: "elo",
+    blurb: "Ranked 1v1, opponent of your choosing.",
+    sql: `SELECT u.id, u.username, u."isPro", u.elo::float8 AS value,
+                 (COALESCE(w.n,0)::text || '–' || COALESCE(l.n,0)::text) AS detail
+          FROM "User" u
+          LEFT JOIN (SELECT "winnerId" AS uid, COUNT(*)::int AS n FROM "CompetitiveMatch"
+                      WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "winnerId" IS NOT NULL
+                      GROUP BY "winnerId") w ON w.uid = u.id
+          LEFT JOIN (SELECT uid, COUNT(*)::int AS n FROM (
+                       SELECT "challengerId" AS uid, "winnerId" FROM "CompetitiveMatch"
+                        WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+                       UNION ALL
+                       SELECT "challengedId", "winnerId" FROM "CompetitiveMatch"
+                        WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+                     ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid) l ON l.uid = u.id
+          WHERE u."deletedAt" IS NULL AND (u.elo <> 1200 OR w.n IS NOT NULL)`,
+  },
+  rapid: {
+    label: "Rapid Fire", unit: "elo",
+    blurb: "Queued against whoever disagrees.",
+    sql: `SELECT u.id, u.username, u."isPro", u."rapidElo"::float8 AS value,
+                 (COALESCE(w.n,0)::text || '–' || COALESCE(l.n,0)::text) AS detail
+          FROM "User" u
+          JOIN (SELECT "challengerId" AS uid FROM "CompetitiveMatch" WHERE status='complete' AND "isRapid"=TRUE
+                UNION SELECT "challengedId" FROM "CompetitiveMatch" WHERE status='complete' AND "isRapid"=TRUE
+               ) played ON played.uid = u.id
+          LEFT JOIN (SELECT "winnerId" AS uid, COUNT(*)::int AS n FROM "CompetitiveMatch"
+                      WHERE status='complete' AND "isRapid"=TRUE AND "winnerId" IS NOT NULL
+                      GROUP BY "winnerId") w ON w.uid = u.id
+          LEFT JOIN (SELECT uid, COUNT(*)::int AS n FROM (
+                       SELECT "challengerId" AS uid, "winnerId" FROM "CompetitiveMatch" WHERE status='complete' AND "isRapid"=TRUE
+                       UNION ALL
+                       SELECT "challengedId", "winnerId" FROM "CompetitiveMatch" WHERE status='complete' AND "isRapid"=TRUE
+                     ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid) l ON l.uid = u.id
+          WHERE u."deletedAt" IS NULL`,
+  },
+  arena: {
+    label: "Training Grounds", unit: "elo",
+    blurb: "Ranked practice against the bots.",
+    sql: `SELECT u.id, u.username, u."isPro", u."arenaElo"::float8 AS value,
+                 (COALESCE(w.n,0)::text || '–' || COALESCE(l.n,0)::text) AS detail
+          FROM "User" u
+          JOIN (SELECT "userId" AS uid FROM "ArenaMatch" WHERE ranked = TRUE GROUP BY "userId") am ON am.uid = u.id
+          LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS n FROM "ArenaMatch"
+                      WHERE winner='human' AND ranked=TRUE GROUP BY "userId") w ON w.uid = u.id
+          LEFT JOIN (SELECT "userId" AS uid, COUNT(*)::int AS n FROM "ArenaMatch"
+                      WHERE winner='bot' AND ranked=TRUE GROUP BY "userId") l ON l.uid = u.id
+          WHERE u."deletedAt" IS NULL`,
+  },
+  // The headline quality number. Must match what a profile shows, which is the
+  // claim score (only once 3 claims are rated) PLUS the ranked-arena bonus.
+  grounds: {
+    label: "Grounds Score", unit: "pts",
+    blurb: "How well your claims hold up when they're checked.",
+    sql: `WITH cred AS (
+            SELECT "claimantId" AS uid,
+                   COUNT(*) FILTER (WHERE status <> 'PENDING')::int AS total,
+                   COALESCE(SUM(relevance) FILTER (WHERE status = 'SUPPORTED'), 0)::float8 AS sw,
+                   COUNT(*) FILTER (WHERE status = 'REFUTED')::int AS refuted
+            FROM "Claim" GROUP BY "claimantId"
+          ),
+          bonus AS (
+            SELECT "userId" AS uid, COALESCE(SUM("scoreImpact") FILTER (WHERE ranked = TRUE), 0)::float8 AS b
+            FROM "ArenaMatch" GROUP BY "userId"
+          )
+          SELECT u.id, u.username, u."isPro",
+                 ROUND((
+                   (CASE WHEN COALESCE(c.total,0) >= 3
+                         THEN GREATEST(0, COALESCE(c.sw,0) * 2 - COALESCE(c.refuted,0) * 3)
+                         ELSE 0 END) + COALESCE(b.b,0)
+                 )::numeric, 1)::float8 AS value,
+                 (COALESCE(c.total,0)::text || ' claim' || CASE WHEN COALESCE(c.total,0) = 1 THEN '' ELSE 's' END || ' checked') AS detail
+          FROM "User" u
+          LEFT JOIN cred c ON c.uid = u.id
+          LEFT JOIN bonus b ON b.uid = u.id
+          WHERE u."deletedAt" IS NULL AND (COALESCE(c.total,0) >= 3 OR COALESCE(b.b,0) <> 0)`,
+  },
+  // The two boards this product is actually about. A mind that moved is the
+  // outcome the whole thing exists to produce, counted from both ends.
+  openmind: {
+    label: "Open Minds", unit: "changed",
+    blurb: "Claims you took the opposite side of after debating them. Changing your mind counts for you here, not against.",
+    // DISTINCT claim, not row count: BeliefChange logs every movement, so
+    // flipping one position back and forth would otherwise mint a score. And it
+    // requires a room, because the blurb says "after debating them" — a quiet
+    // correction in the deck is not a mind changed by an argument.
+    sql: `SELECT u.id, u.username, u."isPro", COUNT(DISTINCT bc."propositionId")::float8 AS value,
+                 ('across ' || COUNT(DISTINCT bc."roomName")::text || ' debate' || CASE WHEN COUNT(DISTINCT bc."roomName") = 1 THEN '' ELSE 's' END) AS detail
+          FROM "BeliefChange" bc
+          JOIN "User" u ON u.id = bc."userId"
+          WHERE bc."fromStance" <> bc."toStance" AND bc."roomName" IS NOT NULL
+            AND u."deletedAt" IS NULL
+          GROUP BY u.id, u.username, u."isPro"`,
+  },
+  persuader: {
+    label: "Persuaders", unit: "minds",
+    blurb: "Opponents who came round to your side of the claim after debating you.",
+    // Credit only when the opponent moved TOWARD the side you were arguing.
+    // Counting any flip credited you for driving someone further away, which is
+    // the opposite of persuasion. agree maps to affirmative, disagree to
+    // negative — the same mapping the room uses to deal sides.
+    // DISTINCT (person, claim) so one opponent oscillating can't farm your score.
+    sql: `SELECT u.id, u.username, u."isPro",
+                 COUNT(DISTINCT (bc."userId", bc."propositionId"))::float8 AS value,
+                 ('across ' || COUNT(DISTINCT bc."roomName")::text || ' debate' || CASE WHEN COUNT(DISTINCT bc."roomName") = 1 THEN '' ELSE 's' END) AS detail
+          FROM "BeliefChange" bc
+          JOIN "CompetitiveMatch" cm ON cm."roomName" = bc."roomName"
+          JOIN "User" u ON u.id = CASE WHEN cm."challengerId" = bc."userId"
+                                       THEN cm."challengedId" ELSE cm."challengerId" END
+          WHERE bc."fromStance" <> bc."toStance"
+            AND (cm."challengerId" = bc."userId" OR cm."challengedId" = bc."userId")
+            AND u."deletedAt" IS NULL
+            AND bc."toStance" = CASE
+                  WHEN (CASE WHEN cm."challengerId" = bc."userId"
+                             THEN cm."challengedStance" ELSE cm."challengerStance" END) = 'affirmative'
+                  THEN 'agree' ELSE 'disagree' END
+          GROUP BY u.id, u.username, u."isPro"`,
+  },
+  streak: {
+    label: "Streaks", unit: "days",
+    blurb: "Consecutive days showing up to argue.",
+    sql: `SELECT u.id, u.username, u."isPro", u."dailyStreak"::float8 AS value,
+                 ('best ' || u."longestStreak"::text) AS detail
+          FROM "User" u
+          WHERE u."deletedAt" IS NULL AND u."dailyStreak" > 0`,
+  },
+};
+
+app.get("/api/leaderboards", async (_req, res) => {
+  res.json(Object.entries(LEADERBOARDS).map(([key, b]) => ({ key, label: b.label, unit: b.unit, blurb: b.blurb })));
+});
+
+app.get("/api/leaderboards/:board", heavyReadLimiter, async (req, res) => {
+  // The board name selects a fixed SQL block from the map above — it is never
+  // interpolated into a query, so an unknown name is a 404, not an injection.
+  // hasOwnProperty, not a bare lookup: "constructor" and "toString" inherit from
+  // Object.prototype, pass a truthiness check, and would then splice `undefined`
+  // into the SQL for a 500 instead of a 404.
+  const key = String(req.params.board);
+  const def = Object.prototype.hasOwnProperty.call(LEADERBOARDS, key) ? LEADERBOARDS[key] : undefined;
+  if (!def) return res.status(404).json({ error: "No such leaderboard" });
+
+  const limit = Math.min(50, Math.max(5, Number(req.query.limit ?? 25) || 25));
+  const me = actorId(req) ?? "";
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `WITH cohort AS (${def.sql}),
+       ranked AS (
+         SELECT c.*, RANK() OVER (ORDER BY c.value DESC) AS rank, COUNT(*) OVER () AS total
+         FROM cohort c
+       )
+       -- The hard LIMIT is not redundant with "rank <= $1". RANK() ties share a
+       -- number, so on a board where thousands sit on the same value (a one-day
+       -- streak, one changed mind) every one of them is rank 1 and the whole
+       -- cohort would come back for a top-25 request.
+       --
+       -- The caller's row sorts FIRST, not by rank: it is the one row that must
+       -- survive the cut, and when they rank below the fold it would otherwise
+       -- be the first thing truncated. The +1 is its slot. Display order is
+       -- restored below.
+       SELECT * FROM ranked
+        WHERE rank <= $1 OR id = $2
+        ORDER BY (id = $2) DESC, rank ASC, username ASC
+        LIMIT $1 + 1`,
+      limit, me,
+    );
+    const shape = (r: any) => ({
+      id: r.id, username: r.username, isPro: !!r.isPro,
+      value: Number(r.value), detail: r.detail ?? "", rank: Number(r.rank),
+    });
+    const top = rows.filter(r => Number(r.rank) <= limit).map(shape)
+      .sort((a, b) => a.rank - b.rank || a.username.localeCompare(b.username));
+    const mine = rows.find(r => r.id === me);
+    res.json({
+      board: req.params.board, label: def.label, unit: def.unit, blurb: def.blurb,
+      total: rows.length ? Number(rows[0].total) : 0,
+      rows: top,
+      // null when the caller isn't in this board's cohort — unranked is not last.
+      me: mine ? shape(mine) : null,
+    });
+  } catch (e) {
+    console.error(`[GET /api/leaderboards/${req.params.board}]`, e);
+    res.status(500).json({ error: "Couldn't load that leaderboard." });
   }
 });
 
@@ -5609,9 +5831,9 @@ async function buildProfilePayload(
     prisma.$queryRawUnsafe<any[]>(
       `WITH cohort AS (
          SELECT u.id, u.elo FROM "User" u
-         WHERE u.elo <> 1200
+         WHERE u."deletedAt" IS NULL AND (u.elo <> 1200
             OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
-                        WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id)
+                        WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id))
        ),
        r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
        SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
@@ -5620,7 +5842,7 @@ async function buildProfilePayload(
     prisma.$queryRawUnsafe<any[]>(
       `WITH cohort AS (
          SELECT u.id, u."arenaElo" AS elo FROM "User" u
-         WHERE EXISTS (SELECT 1 FROM "ArenaMatch" am WHERE am."userId" = u.id AND am."ranked" = true)
+         WHERE u."deletedAt" IS NULL AND EXISTS (SELECT 1 FROM "ArenaMatch" am WHERE am."userId" = u.id AND am."ranked" = true)
        ),
        r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
        SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
@@ -5630,7 +5852,7 @@ async function buildProfilePayload(
     prisma.$queryRawUnsafe<any[]>(
       `WITH cohort AS (
          SELECT u.id, u."rapidElo" AS elo FROM "User" u
-         WHERE EXISTS (
+         WHERE u."deletedAt" IS NULL AND EXISTS (
            SELECT 1 FROM "CompetitiveMatch" cm
             WHERE cm.status = 'complete' AND cm."isRapid" = true
               AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)
