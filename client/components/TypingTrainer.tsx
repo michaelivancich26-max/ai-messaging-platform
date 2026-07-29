@@ -244,12 +244,17 @@ export default function TypingTrainer({ onResult }: {
                 change one and change the other. (It once shared a box with
                 padding, and border-box plus clipping at the padding edge sliced
                 the third row through its descenders.) */}
-            {/* No opacity toggle here. Fading the words while idle looked good
-                and behaved badly — the computed value could stick at 0.4 after
-                the class had already flipped back, which leaves the words
-                unreadable rather than merely dim. The prompt below carries the
-                idle state on its own, and the words keep their contrast. */}
-            <div className="h-[5.25rem] overflow-hidden">
+            {/* The words fade back while the prompt is up, so the two layers of
+                text stop competing — the prompt sits over the stream and was
+                hard to read against it at full strength.
+                A previous pass removed this fade, believing the opacity stuck
+                partway. It doesn't: CSS transitions don't advance in a hidden
+                document, which is what an automated browser pane is, so the
+                computed value sits at the from-value forever while the specified
+                value is already correct. Check the style property, not
+                getComputedStyle, when verifying this without a real window. */}
+            <div className="h-[5.25rem] overflow-hidden transition-opacity duration-200 motion-reduce:transition-none"
+              style={{ opacity: idle && !focused ? 0.25 : 1 }}>
             <div aria-hidden className="relative flex flex-wrap gap-x-2 transition-transform duration-150 motion-reduce:transition-none"
               style={{ transform: `translateY(${-scroll}px)` }}>
               {words.slice(0, wordIndex + 60).map((w, i) => {
