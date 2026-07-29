@@ -176,17 +176,17 @@ export default function TypingTrainer({ onResult }: {
   const idle = !startedAt && !finished;
 
   return (
-    <div className="w-full rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-card dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="w-full text-left">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
           Warm up your hands
         </p>
-        <div className="ml-auto flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800" role="group" aria-label="Practice length">
+        <div className="ml-auto flex items-center" role="group" aria-label="Practice length">
           {DURATIONS.map(d => (
             <button key={d} onClick={() => restart(d)} aria-pressed={duration === d}
-              className={`min-h-11 rounded-md px-2.5 text-xs font-semibold tabular-nums transition-colors ${duration === d
-                ? "bg-white text-orange-700 shadow-sm dark:bg-gray-900 dark:text-orange-400"
-                : "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"}`}>
+              className={`min-h-11 px-2 text-xs font-semibold tabular-nums transition-colors ${duration === d
+                ? "text-orange-700 dark:text-orange-400"
+                : "text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"}`}>
               {d}s
             </button>
           ))}
@@ -205,7 +205,7 @@ export default function TypingTrainer({ onResult }: {
               <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">accuracy</p>
             </div>
             <button onClick={() => restart()}
-              className="ml-auto inline-flex min-h-11 items-center rounded-xl border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50">
+              className="ml-auto inline-flex min-h-11 items-center px-2 text-sm font-semibold text-orange-700 transition-colors hover:text-orange-600 dark:text-orange-400">
               Again
             </button>
           </div>
@@ -234,17 +234,21 @@ export default function TypingTrainer({ onResult }: {
             </span>
           </div>
 
-          {/* The stream. Hidden from screen readers — a timed race against a
-              scrolling word list can't be read out without becoming unusable. */}
+          {/* The stream. No panel, no border, no box — just words on the page,
+              with the caret carrying focus. Hidden from screen readers: a timed
+              race against a scrolling word list can't be read out without
+              becoming unusable. */}
           <div onClick={() => inputRef.current?.focus()}
-            className={`relative mt-2 cursor-text rounded-xl bg-gray-50 px-3 py-2 font-mono text-lg leading-7 dark:bg-gray-950/50 ${
-              focused ? "ring-2 ring-orange-500/60" : ""}`}>
-            {/* The clip has to be its own box. With overflow-hidden and py-2 on
-                the SAME element, border-box takes the padding out of the 84px
-                while overflow still clips at the padding edge — so the third row
-                was sliced through its descenders and the scrolled-off row leaked
-                back in through the top band. Height here is exactly 3 x leading-7;
-                change one and change the other. */}
+            className="relative mt-1 cursor-text font-mono text-lg leading-7">
+            {/* The clip has to be its own box. Height is exactly 3 x leading-7;
+                change one and change the other. (It once shared a box with
+                padding, and border-box plus clipping at the padding edge sliced
+                the third row through its descenders.) */}
+            {/* No opacity toggle here. Fading the words while idle looked good
+                and behaved badly — the computed value could stick at 0.4 after
+                the class had already flipped back, which leaves the words
+                unreadable rather than merely dim. The prompt below carries the
+                idle state on its own, and the words keep their contrast. */}
             <div className="h-[5.25rem] overflow-hidden">
             <div aria-hidden className="relative flex flex-wrap gap-x-2 transition-transform duration-150 motion-reduce:transition-none"
               style={{ transform: `translateY(${-scroll}px)` }}>
@@ -271,8 +275,9 @@ export default function TypingTrainer({ onResult }: {
             </div>
             </div>
 
+            {/* No panel behind the prompt either — it sits over the faded words. */}
             {idle && !focused && (
-              <div className="absolute inset-0 grid place-items-center rounded-xl bg-white/85 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/85">
+              <div className="pointer-events-none absolute inset-0 grid place-items-center px-4 text-center">
                 <p className="font-sans text-sm font-semibold text-gray-700 dark:text-gray-200">
                   Click here to practise while you wait
                   <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-gray-400">
@@ -281,20 +286,25 @@ export default function TypingTrainer({ onResult }: {
                 </p>
               </div>
             )}
-          </div>
 
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={onChange}
-            onKeyDown={e => { if (e.key === "Escape") inputRef.current?.blur(); }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            aria-label="Typing practice — type the words shown"
-            autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-            className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 font-mono text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-500 focus:border-orange-400 dark:border-gray-800 dark:bg-gray-950/50 dark:text-gray-100 dark:placeholder:text-gray-400"
-            placeholder={idle ? "type here" : ""}
-          />
+            {/* The field itself is invisible and lies over the words, so typing
+                feels like it lands on them directly. It is still a real focusable
+                input — tab order, mobile keyboard and IME all keep working — and
+                text-lg keeps it at 18px, above the 16px below which iOS zooms the
+                page on focus. Focus is shown by the caret appearing and the words
+                coming up to full strength, the way any text surface does it. */}
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={onChange}
+              onKeyDown={e => { if (e.key === "Escape") inputRef.current?.blur(); }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              aria-label="Typing practice — type the words shown"
+              autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              className="absolute inset-0 h-full w-full cursor-text bg-transparent p-0 text-lg opacity-0 outline-none"
+            />
+          </div>
         </>
       )}
     </div>
