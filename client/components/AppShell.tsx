@@ -41,6 +41,11 @@ const DEBATE_CHILDREN: Child[] = [
   { href: "/rapid", label: "Rapid Fire", blurb: "Match a stranger who disagrees", Icon: Zap, live: true },
   { href: "/lobby", label: "Common Grounds", blurb: "Open debate rooms", Icon: MessagesSquare },
   { href: "/compete", label: "Battle Grounds", blurb: "Ranked 1v1, AI judged", Icon: Trophy },
+  // Tournaments sit in the rail rather than at the foot of /compete. Hosting is
+  // the Pro half of the feature, and a paid surface nobody can find sells
+  // nothing — this is the only place it's discoverable without already knowing
+  // it exists.
+  { href: "/tournaments", label: "Tournaments", blurb: "Bracket play on one claim", Icon: Swords },
   { href: "/arena", label: "Arena", blurb: "Practice against AI opponents", Icon: Dumbbell },
 ];
 
@@ -52,7 +57,7 @@ const LEARN_CHILDREN: Child[] = [
 const NAV: NavItem[] = [
   { id: "home", href: "/home", label: "Home", short: "Home", Icon: Home },
   { id: "debate", href: "/debate", label: "Debate", short: "Debate", Icon: Swords, live: true,
-    match: ["/debate", "/rapid", "/lobby", "/compete", "/deck", "/room"], children: DEBATE_CHILDREN },
+    match: ["/debate", "/rapid", "/lobby", "/compete", "/tournaments", "/deck", "/room"], children: DEBATE_CHILDREN },
   { id: "learn", href: "/learn", label: "Learn", short: "Learn", Icon: GraduationCap,
     match: ["/learn"], children: LEARN_CHILDREN },
   { id: "practice", href: "/arena", label: "Practice", short: "Practice", Icon: Dumbbell,

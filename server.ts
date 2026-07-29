@@ -5308,11 +5308,18 @@ async function tournamentRow(id: string): Promise<any | null> {
 async function createTournamentMatch(t: any, round: number, slot: number, aId: string, bId: string): Promise<string> {
   const roomName = `trn-${String(t.id).slice(-6)}-r${round}s${slot}`;
   const wc = (() => { try { return JSON.parse(t.winCondition); } catch { return { type: "exchanges", limit: 10 }; } })();
+  // The sides were decided when the bracket was drawn, so they're read off the
+  // fixture rather than assumed.
+  const [fx] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "stanceA" FROM "TournamentMatch" WHERE "tournamentId"=$1 AND round=$2 AND slot=$3 LIMIT 1`,
+    t.id, round, slot);
+  const stanceA = fx?.stanceA === "negative" ? "negative" : "affirmative";
+  const stanceB = stanceA === "affirmative" ? "negative" : "affirmative";
   const matchConfig = JSON.stringify({
     isCompetitive: true,
     tournamentId: t.id,
     challengerId: aId, challengedId: bId,
-    challengerStance: "affirmative", challengedStance: "negative",
+    challengerStance: stanceA, challengedStance: stanceB,
     topic: t.claim,
     propositionId: t.propositionId ?? null,
     categoryId: t.categoryId ?? null,
@@ -5332,9 +5339,9 @@ async function createTournamentMatch(t: any, round: number, slot: number, aId: s
     `INSERT INTO "CompetitiveMatch"
        ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance",
         "roomName","challengerEloBefore","challengedEloBefore","propositionId","categoryId","tournamentId")
-     VALUES (gen_random_uuid()::text,NULL,$1,$2,'affirmative','negative',$3,1200,1200,$4,$5,$6)
+     VALUES (gen_random_uuid()::text,NULL,$1,$2,$7,$8,$3,1200,1200,$4,$5,$6)
      ON CONFLICT DO NOTHING`,
-    aId, bId, roomName, t.propositionId ?? null, t.categoryId ?? null, t.id);
+    aId, bId, roomName, t.propositionId ?? null, t.categoryId ?? null, t.id, stanceA, stanceB);
 
   try {
     const names = await prisma.$queryRawUnsafe<{ id: string; username: string }[]>(
@@ -5421,7 +5428,7 @@ app.get("/api/tournaments", async (_req, res) => {
        LIMIT 30`);
     res.json(rows.map(r => ({
       id: r.id, name: r.name, claim: r.claim, size: Number(r.size), status: r.status,
-      hostId: r.hostId, hostName: r.hostName, entrants: Number(r.entrants),
+      hostId: r.hostId, hostName: r.hostName, entrants: Number(r.entrants), isPrivate: !!r.isPrivate,
       championId: r.championId ?? null, championName: r.championName ?? null,
       winCondition: r.winCondition, createdAt: r.createdAt,
     })));
@@ -5442,7 +5449,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
          FROM "TournamentEntrant" e JOIN "User" u ON u.id = e."userId"
          WHERE e."tournamentId" = $1 ORDER BY e.seed ASC NULLS LAST, e."joinedAt" ASC`, t.id),
       prisma.$queryRawUnsafe<any[]>(
-        `SELECT m.round, m.slot, m."playerA", m."playerB", m."roomName", m."winnerId", m.status,
+        `SELECT m.round, m.slot, m."playerA", m."playerB", m."roomName", m."winnerId", m.status, m."stanceA",
                 a.username AS "playerAName", b.username AS "playerBName"
          FROM "TournamentMatch" m
          LEFT JOIN "User" a ON a.id = m."playerA"
@@ -5455,7 +5462,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
     ]);
     res.json({
       id: t.id, name: t.name, claim: t.claim, size: Number(t.size), status: t.status,
-      hostId: t.hostId, hostName: host[0]?.username ?? "Host",
+      hostId: t.hostId, hostName: host[0]?.username ?? "Host", isPrivate: !!t.isPrivate,
       championId: t.championId ?? null, championName: champ[0]?.username ?? null,
       winCondition: t.winCondition, rounds: roundsFor(Number(t.size)),
       entrants: entrants.map(e => ({ userId: e.userId, username: e.username, isPro: !!e.isPro, seed: e.seed })),
@@ -5464,6 +5471,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
         playerA: m.playerA, playerB: m.playerB,
         playerAName: m.playerAName ?? null, playerBName: m.playerBName ?? null,
         roomName: m.roomName ?? null, winnerId: m.winnerId ?? null, status: m.status,
+        stanceA: m.stanceA === "negative" ? "negative" : "affirmative",
       })),
     });
   } catch (e) {
@@ -5479,14 +5487,31 @@ app.post("/api/tournaments", async (req, res) => {
   if (!(await userIsPro(userId))) {
     return res.status(402).json({ error: "Hosting a tournament is a Grounds Pro feature.", code: "pro_only" });
   }
-  const { name, propositionId, claim, size, winCondition } = req.body as {
+  const { name, propositionId, claim, size, winCondition, isPrivate, password } = req.body as {
     name?: string; propositionId?: string; claim?: string; size?: number; winCondition?: any;
+    isPrivate?: boolean; password?: string;
   };
   const n = String(name ?? "").trim().slice(0, 80);
   const sz = Number(size);
   if (!n) return res.status(400).json({ error: "Give the tournament a name." });
   if (!(TOURNAMENT_SIZES as readonly number[]).includes(sz)) {
     return res.status(400).json({ error: `Size must be one of ${TOURNAMENT_SIZES.join(", ")}.` });
+  }
+  // Every match in the bracket runs on the same terms. Exchanges or a clock —
+  // validated here rather than trusted, since it is written into every room.
+  const wcIn = winCondition ?? { type: "exchanges", limit: 10 };
+  let wcOut: any;
+  if (wcIn.type === "time") {
+    const mins = Math.min(30, Math.max(3, Number(wcIn.minutes) || 10));
+    wcOut = { type: "time", minutes: mins };
+  } else {
+    const lim = Math.min(20, Math.max(4, Number(wcIn.limit) || 10));
+    wcOut = { type: "exchanges", limit: lim };
+  }
+  const priv = !!isPrivate;
+  const rawPw = String(password ?? "");
+  if (priv && rawPw.length < 4) {
+    return res.status(400).json({ error: "A private tournament needs a password of at least 4 characters." });
   }
   try {
     // Resolve a curated claim server-side from its id, exactly as challenges do,
@@ -5501,16 +5526,30 @@ app.post("/api/tournaments", async (req, res) => {
     }
     if (!text) return res.status(400).json({ error: "Pick a claim to debate." });
 
-    const wc = JSON.stringify(winCondition ?? { type: "exchanges", limit: 10 });
+    const pwHash = priv ? await bcrypt.hash(rawPw, 10) : null;
     const rows = await prisma.$queryRawUnsafe<any[]>(
-      `INSERT INTO "Tournament" ("hostId",name,claim,"propositionId","categoryId",size,"winCondition",status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'open') RETURNING id`,
-      userId, n, text, propositionId ?? null, categoryId, sz, wc);
+      `INSERT INTO "Tournament" ("hostId",name,claim,"propositionId","categoryId",size,"winCondition",status,"isPrivate",password)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'open',$8,$9) RETURNING id`,
+      userId, n, text, propositionId ?? null, categoryId, sz, JSON.stringify(wcOut), priv, pwHash);
     const id = rows[0].id;
     // The host is in their own bracket — otherwise a 4-player tournament needs
     // four other people before it can start.
     await prisma.$executeRawUnsafe(
       `INSERT INTO "TournamentEntrant" ("tournamentId","userId") VALUES ($1,$2)`, id, userId);
+
+    // Draw the whole bracket now, empty. The shape — how many bouts, which feeds
+    // which, and the side each seat argues — is the thing entrants want to see
+    // BEFORE they commit, so it exists from creation rather than from kickoff.
+    const totalRounds = roundsFor(sz);
+    for (let round = 1; round <= totalRounds; round++) {
+      const slots = sz / Math.pow(2, round);
+      for (let slot = 0; slot < slots; slot++) {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "TournamentMatch" ("tournamentId",round,slot,status,"stanceA")
+           VALUES ($1,$2,$3,'pending','affirmative')
+           ON CONFLICT ("tournamentId",round,slot) DO NOTHING`, id, round, slot);
+      }
+    }
     res.json({ id });
   } catch (e) {
     console.error("[POST /api/tournaments]", e);
@@ -5533,6 +5572,13 @@ app.post("/api/tournaments/:id/join", async (req, res) => {
     if (!t) return res.status(404).json({ error: "No such tournament." });
     if (t.status !== "open") return res.status(409).json({ error: "That tournament has already started." });
 
+    // Invite-only: the password is the invitation. The host never needs it.
+    if (t.isPrivate && t.hostId !== userId) {
+      const given = String((req.body as any)?.password ?? "");
+      const ok = t.password ? await bcrypt.compare(given, t.password) : false;
+      if (!ok) return res.status(403).json({ error: "That password doesn't match.", code: "bad_password" });
+    }
+
     const [{ n }] = await prisma.$queryRawUnsafe<any[]>(
       `SELECT COUNT(*)::int AS n FROM "TournamentEntrant" WHERE "tournamentId" = $1`, t.id);
     if (Number(n) >= Number(t.size)) return res.status(409).json({ error: "That bracket is full." });
@@ -5545,6 +5591,71 @@ app.post("/api/tournaments/:id/join", async (req, res) => {
   } catch (e) {
     console.error("[tournament join]", e);
     res.status(500).json({ error: "Couldn't join that tournament." });
+  }
+});
+
+// POST /api/tournaments/:id/bracket — the host draws it.
+//
+// Who meets whom, and which side each seat argues. Set before the bracket
+// starts, and visible to everyone as soon as it is set, so an entrant knows the
+// draw and their side before committing rather than discovering both at kickoff.
+app.post("/api/tournaments/:id/bracket", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const t = await tournamentRow(String(req.params.id));
+    if (!t) return res.status(404).json({ error: "No such tournament." });
+    if (t.hostId !== userId) return res.status(403).json({ error: "Only the host can draw the bracket." });
+    if (t.status !== "open") return res.status(409).json({ error: "It has already started." });
+
+    const size = Number(t.size);
+    const { pairings, stances } = req.body as {
+      pairings?: { a: string | null; b: string | null; stanceA?: string }[];
+      stances?: Record<string, string>;      // "round:slot" -> stance for later rounds
+    };
+
+    if (Array.isArray(pairings)) {
+      if (pairings.length !== size / 2) {
+        return res.status(400).json({ error: `A ${size}-player bracket has ${size / 2} opening bouts.` });
+      }
+      const entrants = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT "userId" FROM "TournamentEntrant" WHERE "tournamentId" = $1`, t.id);
+      const valid = new Set(entrants.map(e => e.userId));
+      const used = new Set<string>();
+      for (const p of pairings) {
+        for (const id of [p.a, p.b]) {
+          if (id == null) continue;
+          if (!valid.has(id)) return res.status(400).json({ error: "Someone in that draw isn't entered." });
+          // A player in two bouts would break the bracket the moment it ran.
+          if (used.has(id)) return res.status(400).json({ error: "Each entrant can only appear once." });
+          used.add(id);
+        }
+      }
+      for (let slot = 0; slot < pairings.length; slot++) {
+        const p = pairings[slot];
+        const st = p.stanceA === "negative" ? "negative" : "affirmative";
+        await prisma.$executeRawUnsafe(
+          `UPDATE "TournamentMatch" SET "playerA"=$3,"playerB"=$4,"stanceA"=$5
+           WHERE "tournamentId"=$1 AND round=1 AND slot=$2`,
+          t.id, slot, p.a ?? null, p.b ?? null, st);
+      }
+    }
+
+    // Later rounds have no players yet, but their sides can still be fixed —
+    // "the winner of Bout 1 argues FOR" is knowable before the winner is.
+    if (stances && typeof stances === "object") {
+      for (const [key, val] of Object.entries(stances)) {
+        const [r, s] = String(key).split(":").map(Number);
+        if (!Number.isInteger(r) || !Number.isInteger(s) || r < 1 || s < 0) continue;
+        await prisma.$executeRawUnsafe(
+          `UPDATE "TournamentMatch" SET "stanceA"=$4 WHERE "tournamentId"=$1 AND round=$2 AND slot=$3`,
+          t.id, r, s, val === "negative" ? "negative" : "affirmative");
+      }
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[tournament bracket]", e);
+    res.status(500).json({ error: "Couldn't save that draw." });
   }
 });
 
@@ -5590,34 +5701,43 @@ app.post("/api/tournaments/:id/start", async (req, res) => {
       `UPDATE "Tournament" SET status='running', "startedAt"=NOW() WHERE id=$1 AND status='open'`, t.id);
     if (claimed === 0) return res.status(409).json({ error: "It has already started." });
 
-    const ids = entrants.map(e => e.userId);
-    for (let i = ids.length - 1; i > 0; i--) {            // Fisher-Yates
+    // The fixtures already exist — they were drawn when the tournament was
+    // created. If the host arranged the opening round, that draw stands. Any
+    // seat still empty is filled from whoever is left, so a host who never
+    // opened the bracket editor still gets a working tournament.
+    const opening = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT slot, "playerA", "playerB" FROM "TournamentMatch"
+       WHERE "tournamentId" = $1 AND round = 1 ORDER BY slot ASC`, t.id);
+
+    const placed = new Set<string>();
+    for (const m of opening) { if (m.playerA) placed.add(m.playerA); if (m.playerB) placed.add(m.playerB); }
+    const spare = entrants.map(e => e.userId).filter(id => !placed.has(id));
+    for (let i = spare.length - 1; i > 0; i--) {            // Fisher-Yates
       const j = Math.floor(Math.random() * (i + 1));
-      [ids[i], ids[j]] = [ids[j], ids[i]];
-    }
-    for (let i = 0; i < ids.length; i++) {
-      await prisma.$executeRawUnsafe(
-        `UPDATE "TournamentEntrant" SET seed = $3 WHERE "tournamentId" = $1 AND "userId" = $2`, t.id, ids[i], i + 1);
+      [spare[i], spare[j]] = [spare[j], spare[i]];
     }
 
-    // Every fixture in the bracket exists from the start, so the shape is
-    // visible before it is played; later rounds fill their players in as the
-    // earlier ones resolve.
-    const totalRounds = roundsFor(size);
-    for (let round = 1; round <= totalRounds; round++) {
-      const slots = size / Math.pow(2, round);
-      for (let slot = 0; slot < slots; slot++) {
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO "TournamentMatch" ("tournamentId",round,slot,status) VALUES ($1,$2,$3,'pending')
-           ON CONFLICT ("tournamentId",round,slot) DO NOTHING`, t.id, round, slot);
-      }
+    let next = 0;
+    const draw: { slot: number; a: string; b: string }[] = [];
+    for (const m of opening) {
+      const a = m.playerA ?? spare[next++];
+      const b = m.playerB ?? spare[next++];
+      draw.push({ slot: Number(m.slot), a, b });
     }
-    for (let slot = 0; slot < size / 2; slot++) {
-      const aId = ids[slot * 2], bId = ids[slot * 2 + 1];
+    if (draw.some(d => !d.a || !d.b)) {
+      return res.status(409).json({ error: "The draw is incomplete — every seat needs a player." });
+    }
+
+    let seed = 1;
+    for (const d of draw) {
+      for (const uid of [d.a, d.b]) {
+        await prisma.$executeRawUnsafe(
+          `UPDATE "TournamentEntrant" SET seed = $3 WHERE "tournamentId" = $1 AND "userId" = $2`, t.id, uid, seed++);
+      }
       await prisma.$executeRawUnsafe(
         `UPDATE "TournamentMatch" SET "playerA"=$3,"playerB"=$4 WHERE "tournamentId"=$1 AND round=1 AND slot=$2`,
-        t.id, slot, aId, bId);
-      await createTournamentMatch(t, 1, slot, aId, bId);
+        t.id, d.slot, d.a, d.b);
+      await createTournamentMatch(t, 1, d.slot, d.a, d.b);
     }
     res.json({ ok: true });
   } catch (e) {
@@ -9008,6 +9128,14 @@ async function start() {
       )
     `);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TournamentMatch_room_idx" ON "TournamentMatch"("roomName")`);
+    // Invite-only brackets. Same shape as a private room: a bcrypt hash, and the
+    // host is always admitted without it.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "isPrivate" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "password" TEXT`);
+    // Which side each seat of a fixture argues. Set per SLOT, not per player, so
+    // a later round can say "the winner of Bout 1 argues FOR" before anyone knows
+    // who that is.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "TournamentMatch" ADD COLUMN IF NOT EXISTS "stanceA" TEXT NOT NULL DEFAULT 'affirmative'`);
 
     // Webhook idempotency: one row per Stripe event id that has been handled.
     await prisma.$executeRawUnsafe(`

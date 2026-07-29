@@ -97,6 +97,40 @@ async function main() {
   const stranger = await call(PLAYERS[0], `/api/tournaments/${id}/start`, "POST");
   check("only the host can start it", stranger.status === 403, `status=${stranger.status}`);
 
+  // ── The bracket exists before it starts ────────────────────────────────────
+  const early = await call(HOST, `/api/tournaments/${id}`);
+  check("the bracket is visible from the start", (early.body.matches ?? []).length === 3,
+    `${(early.body.matches ?? []).length} fixtures while still open`);
+  check("and its shape is knowable — the final feeds from two bouts",
+    (early.body.matches ?? []).some(m => m.round === 2 && !m.playerA && m.stanceA));
+
+  // ── The host draws it: who meets whom, and which side each seat argues ─────
+  const [p1, p2, p3] = PLAYERS;
+  const draw = await call(HOST, `/api/tournaments/${id}/bracket`, "POST", {
+    pairings: [
+      { a: HOST, b: p3, stanceA: "negative" },   // host argues AGAINST in bout 1
+      { a: p1, b: p2, stanceA: "affirmative" },
+    ],
+    stances: { "2:0": "negative" },              // the final's first seat argues AGAINST
+  });
+  check("the host can draw the bracket", draw.status === 200, `status=${draw.status}`);
+
+  const drawn = await call(HOST, `/api/tournaments/${id}`);
+  const b1 = (drawn.body.matches ?? []).find(m => m.round === 1 && m.slot === 0);
+  check("the chosen pairing sticks", b1?.playerA === HOST && b1?.playerB === p3,
+    `bout 1: ${b1?.playerAName ?? "-"} vs ${b1?.playerBName ?? "-"}`);
+  check("the chosen side sticks", b1?.stanceA === "negative", `stanceA=${b1?.stanceA}`);
+  check("a later round's side can be set before its players are known",
+    (drawn.body.matches ?? []).find(m => m.round === 2)?.stanceA === "negative");
+
+  const clash = await call(HOST, `/api/tournaments/${id}/bracket`, "POST", {
+    pairings: [{ a: HOST, b: p3 }, { a: HOST, b: p2 }],     // host twice
+  });
+  check("the same person can't be in two bouts", clash.status === 400, `status=${clash.status}`);
+
+  const outsider = await call(p1, `/api/tournaments/${id}/bracket`, "POST", { pairings: [] });
+  check("only the host can draw it", outsider.status === 403, `status=${outsider.status}`);
+
   // ── Starting builds a full bracket ─────────────────────────────────────────
   const started = await call(HOST, `/api/tournaments/${id}/start`, "POST");
   check("the host can start a full bracket", started.status === 200, `status=${started.status}`);
@@ -111,6 +145,15 @@ async function main() {
   check("round 1 is paired and playable", r1.length === 2 && r1.every(m => m.playerA && m.playerB && m.roomName),
     r1.map(m => m.roomName ?? "no room").join(", "));
   check("the final is waiting, not paired", ms.some(m => m.round === 2 && !m.playerA));
+  check("the draw survived the start", r1.find(m => m.slot === 0)?.playerA === HOST);
+
+  // The side the host chose must be the side the ROOM actually deals.
+  const [dealt] = await prisma.$queryRawUnsafe(
+    `SELECT "challengerId","challengerStance","challengedStance" FROM "CompetitiveMatch" WHERE "roomName"=$1`,
+    r1.find(m => m.slot === 0).roomName);
+  check("the room deals the sides the host chose",
+    dealt.challengerId === HOST && dealt.challengerStance === "negative" && dealt.challengedStance === "affirmative",
+    `${dealt.challengerStance} vs ${dealt.challengedStance}`);
 
   // ── The promise: a bracket match moves no rating ───────────────────────────
   const eloBefore = Object.fromEntries((await prisma.$queryRawUnsafe(
@@ -176,8 +219,34 @@ async function main() {
   check("a whole tournament moves nobody's rating", movedEnd.length === 0,
     movedEnd.length ? movedEnd.join(", ") : "three matches, zero ELO change");
 
+  // ── A private bracket needs its password ───────────────────────────────────
+  const priv = await call(HOST, "/api/tournaments", "POST", {
+    name: "Invite only", propositionId: prop[0].id, size: 4,
+    winCondition: { type: "time", minutes: 12 },
+    isPrivate: true, password: "letmein",
+  });
+  check("a private tournament can be created", priv.status === 200, `status=${priv.status}`);
+
+  const noPw = await call(PLAYERS[0], `/api/tournaments/${priv.body.id}/join`, "POST");
+  check("entering without the password is refused", noPw.status === 403 && noPw.body.code === "bad_password",
+    `status=${noPw.status}`);
+  const wrongPw = await call(PLAYERS[0], `/api/tournaments/${priv.body.id}/join`, "POST", { password: "nope" });
+  check("a wrong password is refused", wrongPw.status === 403, `status=${wrongPw.status}`);
+  const rightPw = await call(PLAYERS[0], `/api/tournaments/${priv.body.id}/join`, "POST", { password: "letmein" });
+  check("the right password gets you in", rightPw.status === 200, `status=${rightPw.status}`);
+
+  const privDetail = await call(HOST, `/api/tournaments/${priv.body.id}`);
+  check("the password is never echoed back", !JSON.stringify(privDetail.body).includes("letmein"));
+  check("a time limit is stored as chosen", JSON.parse(privDetail.body.winCondition ?? "{}").minutes === 12,
+    privDetail.body.winCondition);
+
+  const bad = await call(HOST, "/api/tournaments", "POST", {
+    name: "No password", propositionId: prop[0].id, size: 4, isPrivate: true, password: "x",
+  });
+  check("a private tournament needs a real password", bad.status === 400, `status=${bad.status}`);
+
   await clean();
-  console.log(failures ? `\n${failures} FAILURE(S)` : `\ntournaments hold: Pro hosts, anyone enters, and nobody's rating moves`);
+  console.log(failures ? `\n${failures} FAILURE(S)` : `\ntournaments hold: Pro hosts, anyone enters, the host draws it, and nobody's rating moves`);
   await prisma.$disconnect();
   process.exit(failures ? 1 : 0);
 }

@@ -8,13 +8,13 @@ import { api } from "@/lib/api";
 import { usePro } from "@/lib/usePro";
 import ClaimPicker, { type PickedClaim } from "@/components/ClaimPicker";
 import { useFocusTrap } from "@/lib/useFocusTrap";
-import { Trophy, Users, Sparkles, ChevronRight, Crown } from "lucide-react";
+import { Trophy, Users, Sparkles, ChevronRight, Crown, Lock } from "lucide-react";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 
 interface Row {
   id: string; name: string; claim: string; size: number; status: string;
-  hostId: string; hostName: string; entrants: number;
+  hostId: string; hostName: string; entrants: number; isPrivate: boolean;
   championId: string | null; championName: string | null;
 }
 
@@ -115,6 +115,7 @@ function Card({ t, myId }: { t: Row; myId: string }) {
     <Link href={`/tournaments/${t.id}`}
       className="group flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-center gap-2">
+        {t.isPrivate && <Lock className="h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-gray-400" aria-label="Private" />}
         <span className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{t.name}</span>
         {t.hostId === myId && <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">yours</span>}
         <span className="ml-auto shrink-0 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
@@ -146,7 +147,11 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [name, setName] = useState("");
   const [picked, setPicked] = useState<PickedClaim | null>(null);
   const [size, setSize] = useState<number>(4);
+  const [endsWith, setEndsWith] = useState<"exchanges" | "time">("exchanges");
   const [limit, setLimit] = useState(10);
+  const [minutes, setMinutes] = useState(10);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const trapRef = useFocusTrap<HTMLDivElement>();
@@ -166,7 +171,8 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         body: JSON.stringify({
           name: name.trim(), size,
           ...(picked.propositionId ? { propositionId: picked.propositionId } : { claim: picked.text }),
-          winCondition: { type: "exchanges", limit },
+          winCondition: endsWith === "time" ? { type: "time", minutes } : { type: "exchanges", limit },
+          isPrivate, ...(isPrivate ? { password } : {}),
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -204,11 +210,41 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         </div>
 
         <label className="mb-1.5 mt-4 block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Each match ends after</label>
-        <div className="flex items-center gap-3">
-          <input type="range" min={4} max={20} value={limit} onChange={e => setLimit(+e.target.value)}
-            aria-label={`Exchanges: ${limit}`} className="h-11 flex-1 accent-amber-600" />
-          <span className="w-24 text-right text-xs text-gray-700 dark:text-gray-300">{limit} exchanges</span>
+        <div className="mb-2 flex gap-2">
+          {([["exchanges", "Exchanges"], ["time", "A time limit"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setEndsWith(k)} aria-pressed={endsWith === k}
+              className={`min-h-11 flex-1 rounded-lg border text-sm font-semibold transition-colors ${endsWith === k
+                ? "border-amber-500 bg-amber-100 text-amber-900 dark:border-amber-600 dark:bg-amber-950/40 dark:text-amber-200"
+                : "border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-400"}`}>
+              {label}
+            </button>
+          ))}
         </div>
+        {endsWith === "exchanges" ? (
+          <div className="flex items-center gap-3">
+            <input type="range" min={4} max={20} value={limit} onChange={e => setLimit(+e.target.value)}
+              aria-label={`Exchanges: ${limit}`} className="h-11 flex-1 accent-amber-600" />
+            <span className="w-24 text-right text-xs text-gray-700 dark:text-gray-300">{limit} exchanges</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <input type="range" min={3} max={30} value={minutes} onChange={e => setMinutes(+e.target.value)}
+              aria-label={`Minutes: ${minutes}`} className="h-11 flex-1 accent-amber-600" />
+            <span className="w-24 text-right text-xs text-gray-700 dark:text-gray-300">{minutes} minutes</span>
+          </div>
+        )}
+
+        {/* Invite-only: the password is the invitation. */}
+        <label className="mt-4 flex min-h-11 cursor-pointer items-center gap-2.5">
+          <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
+            className="h-4 w-4 accent-amber-600" />
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Private — needs a password to enter</span>
+        </label>
+        {isPrivate && (
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="Password (at least 4 characters)" aria-label="Tournament password"
+            className="mt-2 h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-500 focus:border-amber-400 dark:border-gray-700 dark:bg-gray-950/50 dark:text-gray-100 dark:placeholder:text-gray-400" />
+        )}
 
         <p className="mt-4 rounded-lg bg-gray-100 px-3 py-2 text-[11px] leading-relaxed text-gray-600 dark:bg-gray-800/60 dark:text-gray-400">
           Bracket matches are judged like any ranked debate but move <span className="font-semibold">no ELO</span>, on any ladder.
@@ -221,7 +257,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <button onClick={onClose} className="min-h-11 flex-1 rounded-xl border border-gray-300 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800/50">
             Cancel
           </button>
-          <button onClick={submit} disabled={busy || !picked || !name.trim()}
+          <button onClick={submit} disabled={busy || !picked || !name.trim() || (isPrivate && password.length < 4)}
             className="min-h-11 flex-1 rounded-xl bg-amber-600 text-sm font-semibold text-white shadow-glow transition-colors hover:bg-amber-500 disabled:opacity-40">
             {busy ? "Creating…" : "Create"}
           </button>
