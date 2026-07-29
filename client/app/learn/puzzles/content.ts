@@ -16,7 +16,12 @@ export interface Puzzle {
   category: string;
 }
 
-export const PUZZLES: Puzzle[] = [
+// Authored with the correct answer written first, which is the natural way to
+// write them and the reason 17 of the 20 below answered at index 0 — "always
+// pick the first option" scored 85%, and "first or last" scored 100%. The
+// options are dealt into a fixed but unguessable order by SHUFFLED below, so
+// puzzles can go on being written this way without leaking their answer.
+const RAW_PUZZLES: Puzzle[] = [
   // ── Easy ──────────────────────────────────────────────────────────────────
   {
     id: "p001",
@@ -363,6 +368,99 @@ export const PUZZLES: Puzzle[] = [
     category: "Causal Reasoning",
   },
 ];
+
+// ── Dealing the options ──────────────────────────────────────────────────────
+//
+// Deterministic, seeded off the puzzle id: everyone sees the same order, it
+// survives a reload, and it is identical on the server and the client so
+// hydration can't mismatch. Progress is stored per puzzle id, never per option
+// index, so re-ordering breaks nothing that was already recorded.
+//
+// An "All of the above" option is pinned last — it only means anything in the
+// final slot — and the rest are shuffled around it.
+
+// xmur3 + mulberry32: a small, well-behaved seeded PRNG. Math.random() would
+// re-deal on every render and give a different answer position each time.
+function seedFrom(str: string): () => number {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  let a = (h ^= h >>> 16) >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const PINNED_LAST = /^all of the above/i;
+
+// Where each puzzle's correct answer should land.
+//
+// A plain per-puzzle shuffle fixed "always pick A" but left 45% of answers in
+// the last slot — the same flaw wearing a different letter, because random
+// dealing doesn't promise a flat spread over twenty items. So the target
+// positions are built as a balanced pool and then shuffled: even by
+// construction, unguessable in order. Puzzles whose answer is "All of the
+// above" are already fixed at the last slot and are counted first, so the rest
+// fill in around them.
+function targetPositions(puzzles: Puzzle[]): (number | null)[] {
+  const width = Math.max(2, ...puzzles.map(p => p.options.length));
+  const fixed = puzzles.map(p => PINNED_LAST.test(p.options[p.correctIndex]) ? p.options.length - 1 : null);
+
+  const used = new Array(width).fill(0);
+  for (const f of fixed) if (f !== null) used[f]++;
+
+  // Hand out the remaining slots so every position ends up as level as the
+  // pinned ones allow.
+  const free = fixed.filter(f => f === null).length;
+  const pool: number[] = [];
+  for (let n = 0; n < free; n++) {
+    let low = 0;
+    for (let i = 1; i < width; i++) if (used[i] < used[low]) low = i;
+    pool.push(low);
+    used[low]++;
+  }
+
+  const rand = seedFrom(puzzles.map(p => p.id).join("|"));
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  let next = 0;
+  return fixed.map(f => (f !== null ? f : pool[next++]));
+}
+
+function dealt(p: Puzzle, target: number | null): Puzzle {
+  const correct = p.options[p.correctIndex];
+  const others = p.options.filter((_, i) => i !== p.correctIndex);
+
+  const rand = seedFrom(p.id);
+  for (let i = others.length - 1; i > 0; i--) {           // Fisher-Yates
+    const j = Math.floor(rand() * (i + 1));
+    [others[i], others[j]] = [others[j], others[i]];
+  }
+
+  // "All of the above" only means anything last, wherever it sits among the
+  // wrong answers, so it is pulled back to the end after shuffling.
+  const pinnedIdx = others.findIndex(o => PINNED_LAST.test(o));
+  if (pinnedIdx >= 0) others.push(others.splice(pinnedIdx, 1)[0]);
+
+  const at = Math.min(Math.max(target ?? 0, 0), others.length);
+  const options = [...others.slice(0, at), correct, ...others.slice(at)];
+  const correctIndex = options.indexOf(correct);
+  // An answer that went missing would leave the puzzle unanswerable, so fail
+  // loudly rather than shipping one nobody can solve.
+  if (correctIndex < 0) throw new Error(`puzzle ${p.id}: correct option lost while dealing`);
+  return { ...p, options, correctIndex };
+}
+
+const TARGETS = targetPositions(RAW_PUZZLES);
+export const PUZZLES: Puzzle[] = RAW_PUZZLES.map((p, i) => dealt(p, TARGETS[i]));
 
 export const DAILY_PUZZLE_ID = (() => {
   const day = Math.floor(Date.now() / 86400000);
