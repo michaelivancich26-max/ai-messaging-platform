@@ -2769,7 +2769,7 @@ async function battleMatchesPlayed(userId: string): Promise<number> {
   try {
     const r = await prisma.$queryRawUnsafe<{ n: bigint }[]>(
       `SELECT COUNT(*) AS n FROM "CompetitiveMatch"
-       WHERE status = 'complete' AND ("isRapid" IS NOT TRUE)
+       WHERE status = 'complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL
          AND ("challengerId" = $1 OR "challengedId" = $1)`,
       userId,
     );
@@ -2830,7 +2830,7 @@ app.get("/api/battle/me", async (req, res) => {
                 COUNT(*) FILTER (WHERE "winnerId" IS NOT NULL AND "winnerId" <> $1)::int AS losses,
                 COUNT(*) FILTER (WHERE "winnerId" IS NULL)::int AS draws
          FROM "CompetitiveMatch"
-         WHERE status = 'complete' AND ("isRapid" IS NOT TRUE)
+         WHERE status = 'complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL
            AND ("challengerId" = $1 OR "challengedId" = $1)`, uid),
       // Same cohort as GET /api/leaderboard and the profile's competitiveRank.
       prisma.$queryRawUnsafe<any[]>(
@@ -2838,7 +2838,7 @@ app.get("/api/battle/me", async (req, res) => {
            SELECT u.id, u.elo FROM "User" u
            WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo <> 1200
               OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
-                          WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id))
+                          WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."tournamentId" IS NULL AND cm."winnerId" = u.id))
          ),
          r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
          SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid),
@@ -2867,7 +2867,7 @@ app.get("/api/challenges", async (req, res) => {
       ? await prisma.$queryRawUnsafe<any[]>(
           `SELECT c.*, u.username, u.elo,
              (SELECT COUNT(*)::int FROM "CompetitiveMatch" cm
-                WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
+                WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE) AND cm."tournamentId" IS NULL
                   AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
            FROM "Challenge" c
            JOIN "User" u ON c."userId" = u.id
@@ -2880,7 +2880,7 @@ app.get("/api/challenges", async (req, res) => {
       : await prisma.$queryRawUnsafe<any[]>(
           `SELECT c.*, u.username, u.elo,
              (SELECT COUNT(*)::int FROM "CompetitiveMatch" cm
-                WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
+                WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE) AND cm."tournamentId" IS NULL
                   AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
            FROM "Challenge" c
            JOIN "User" u ON c."userId" = u.id
@@ -3330,15 +3330,25 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
     }
     const expectedA = 1 / (1 + Math.pow(10, (bBefore - aBefore) / 400));
     const scoreA = challengerWon ? 1 : 0;
-    const challengerEloAfter = Math.round(aBefore + kA * (scoreA - expectedA));
-    const challengedEloAfter = Math.round(bBefore + kB * ((1 - scoreA) - (1 - expectedA)));
+    let challengerEloAfter = Math.round(aBefore + kA * (scoreA - expectedA));
+    let challengedEloAfter = Math.round(bBefore + kB * ((1 - scoreA) - (1 - expectedA)));
 
-    // Rapid Fire settles on its own ladder — short rounds against strangers
-    // shouldn't move the Battle Grounds rating. Column name is derived from a
-    // boolean, so it's safe to interpolate.
-    const eloCol = match.isRapid ? "rapidElo" : "elo";
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET "${eloCol}" = $1 WHERE id = $2`, challengerEloAfter, match.challengerId);
-    await prisma.$executeRawUnsafe(`UPDATE "User" SET "${eloCol}" = $1 WHERE id = $2`, challengedEloAfter, match.challengedId);
+    // A tournament match is a real judged debate that moves NO rating on any
+    // ladder. Pro sells the hosting, never the outcome, so a bracket cannot be a
+    // way to buy ELO. The before/after are held equal so the tape and history
+    // still render, showing a delta of zero rather than a missing number.
+    const ranked = !match.tournamentId;
+    if (ranked) {
+      // Rapid Fire settles on its own ladder — short rounds against strangers
+      // shouldn't move the Battle Grounds rating. Column name is derived from a
+      // boolean, so it's safe to interpolate.
+      const eloCol = match.isRapid ? "rapidElo" : "elo";
+      await prisma.$executeRawUnsafe(`UPDATE "User" SET "${eloCol}" = $1 WHERE id = $2`, challengerEloAfter, match.challengerId);
+      await prisma.$executeRawUnsafe(`UPDATE "User" SET "${eloCol}" = $1 WHERE id = $2`, challengedEloAfter, match.challengedId);
+    } else {
+      challengerEloAfter = aBefore;
+      challengedEloAfter = bBefore;
+    }
 
     // Mark match complete
     await prisma.$executeRawUnsafe(
@@ -3364,6 +3374,12 @@ async function completeCompetitiveMatch(roomName: string, forcedWinner?: string,
     // Debating counts toward the daily streak, not just chatting.
     for (const uid of [match.challengerId, match.challengedId]) {
       if (uid) bumpDailyStreak(uid).catch(() => {});
+    }
+
+    // A bracket match carries its tournament forward: record the winner and, once
+    // both halves of a pairing are in, open the next round.
+    if (match.tournamentId) {
+      advanceTournament(match.tournamentId, roomName, winnerId).catch(() => {});
     }
 
     return payload;
@@ -3896,7 +3912,7 @@ async function sweepAbandonedBattleMatches(): Promise<void> {
          FROM "CompetitiveMatch" cm
          JOIN "Room" r ON r.name = cm."roomName"
         WHERE cm.status = 'active'
-          AND cm."isRapid" IS NOT TRUE
+          AND cm."isRapid" IS NOT TRUE AND cm."tournamentId" IS NULL
           AND COALESCE(
                 (SELECT MAX(m."createdAt") FROM "Message" m WHERE m."roomId" = r.id),
                 r."createdAt"
@@ -5207,7 +5223,7 @@ app.get("/api/leaderboard", async (req, res) => {
          COALESCE(wins.count, 0)::int AS wins,
          COALESCE(losses.count, 0)::int AS losses,
          (SELECT COUNT(*)::int FROM "CompetitiveMatch" cm
-            WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE)
+            WHERE cm.status='complete' AND (cm."isRapid" IS NOT TRUE) AND cm."tournamentId" IS NULL
               AND (cm."challengerId" = u.id OR cm."challengedId" = u.id)) AS "battleMatches"
        FROM "User" u
        -- Rapid rounds are excluded from both halves. This board ranks battle
@@ -5215,7 +5231,7 @@ app.get("/api/leaderboard", async (req, res) => {
        -- player had, so rapid wins inflated a Battle Grounds record.
        LEFT JOIN (
          SELECT "winnerId" AS uid, COUNT(*)::int AS count FROM "CompetitiveMatch"
-          WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "winnerId" IS NOT NULL
+          WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL AND "winnerId" IS NOT NULL
           GROUP BY "winnerId"
        ) wins ON wins.uid = u.id
        -- A match with no winner is a draw. The old CASE resolved NULL to the
@@ -5223,10 +5239,10 @@ app.get("/api/leaderboard", async (req, res) => {
        LEFT JOIN (
          SELECT uid, COUNT(*)::int AS count FROM (
            SELECT "challengerId" AS uid, "winnerId" FROM "CompetitiveMatch"
-            WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+            WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL
            UNION ALL
            SELECT "challengedId" AS uid, "winnerId" FROM "CompetitiveMatch"
-            WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+            WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL
          ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid
        ) losses ON losses.uid = u.id
        -- Parenthesised deliberately: AND binds tighter than OR, so appending the
@@ -5263,6 +5279,370 @@ app.get("/api/arena-leaderboard", async (_req, res) => {
   }
 });
 
+// ─── Tournaments (Grounds Pro hosts; anyone plays) ───────────────────────────
+//
+// The product rule decides the shape of this feature. Pro sells improvement,
+// insight, convenience and status — never outcomes — so a bracket must not be a
+// way to buy rating. Tournament matches are therefore UNRANKED: they are real
+// judged debates that move no ELO on any ladder. What Pro buys is the hosting —
+// running the thing, naming it, choosing the claim — and what a champion wins is
+// status, which the product is allowed to sell.
+//
+// Entering is free and open to anyone through the Battle Grounds gate, because
+// charging to compete would be selling the outcome by the back door.
+
+const TOURNAMENT_SIZES = [4, 8] as const;
+
+// A bracket is fully determined by its size: round 1 has size/2 matches, and each
+// round halves. Slots are 0-indexed within a round, and the winners of slots 2k
+// and 2k+1 meet in slot k of the next round.
+const roundsFor = (size: number) => Math.log2(size);
+
+async function tournamentRow(id: string): Promise<any | null> {
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "Tournament" WHERE id = $1 LIMIT 1`, id);
+  return rows[0] ?? null;
+}
+
+// Build one match: a room, a CompetitiveMatch carrying the tournament id (which
+// is what makes it unranked), and the proposition bar the room renders.
+async function createTournamentMatch(t: any, round: number, slot: number, aId: string, bId: string): Promise<string> {
+  const roomName = `trn-${String(t.id).slice(-6)}-r${round}s${slot}`;
+  const wc = (() => { try { return JSON.parse(t.winCondition); } catch { return { type: "exchanges", limit: 10 }; } })();
+  const matchConfig = JSON.stringify({
+    isCompetitive: true,
+    tournamentId: t.id,
+    challengerId: aId, challengedId: bId,
+    challengerStance: "affirmative", challengedStance: "negative",
+    topic: t.claim,
+    propositionId: t.propositionId ?? null,
+    categoryId: t.categoryId ?? null,
+    ...wc,
+  });
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "Room" (id, name, "isPrivate", "creatorId") VALUES ($1, $1, false, $2)
+     ON CONFLICT (id) DO NOTHING`, roomName, t.hostId);
+  await prisma.$executeRawUnsafe(`UPDATE "Room" SET "matchConfig" = $2 WHERE id = $1`, roomName, matchConfig);
+  for (const uid of [aId, bId]) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "RoomMember" (id,"userId","roomId",role) VALUES ($1,$2,$3,'PARTICIPANT')
+       ON CONFLICT DO NOTHING`, `${roomName}-${uid}`, uid, roomName).catch(() => {});
+  }
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "CompetitiveMatch"
+       ("id","challengeId","challengerId","challengedId","challengerStance","challengedStance",
+        "roomName","challengerEloBefore","challengedEloBefore","propositionId","categoryId","tournamentId")
+     VALUES (gen_random_uuid()::text,NULL,$1,$2,'affirmative','negative',$3,1200,1200,$4,$5,$6)
+     ON CONFLICT DO NOTHING`,
+    aId, bId, roomName, t.propositionId ?? null, t.categoryId ?? null, t.id);
+
+  try {
+    const names = await prisma.$queryRawUnsafe<{ id: string; username: string }[]>(
+      `SELECT id, username FROM "User" WHERE id = ANY($1::text[])`, [aId, bId]);
+    const nm = (id: string) => names.find(n => n.id === id)?.username ?? "Debater";
+    await createProposition({ roomName, matchType: "1v1", sideA: [aId], sideB: [bId], labelA: nm(aId), labelB: nm(bId) });
+  } catch (e) { console.error("[tournament proposition]", e); }
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE "TournamentMatch" SET "roomName" = $3, status = 'active'
+     WHERE "tournamentId" = $1 AND round = $2 AND slot = $4`, t.id, round, roomName, slot);
+
+  for (const uid of [aId, bId]) {
+    for (const sid of userSockets.get(uid) ?? []) {
+      io.to(sid).emit("tournamentMatchReady", { tournamentId: t.id, roomName, round, slot });
+    }
+  }
+  return roomName;
+}
+
+// Called when a tournament match finishes. Records the winner, and when both
+// halves of a pairing are in, opens the next round. Idempotent: it only ever
+// writes a match that is still pending a winner.
+async function advanceTournament(tournamentId: string, roomName: string, winnerId: string | null): Promise<void> {
+  try {
+    const t = await tournamentRow(tournamentId);
+    if (!t || t.status !== "running") return;
+
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `UPDATE "TournamentMatch" SET "winnerId" = $2, status = 'complete'
+       WHERE "tournamentId" = $1 AND "roomName" = $3 AND "winnerId" IS NULL
+       RETURNING round, slot`, tournamentId, winnerId, roomName);
+    if (!rows.length || !winnerId) return;          // already settled, or a draw/void
+    const { round, slot } = rows[0];
+
+    const totalRounds = roundsFor(Number(t.size));
+    if (Number(round) >= totalRounds) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "Tournament" SET status = 'complete', "championId" = $2, "completedAt" = NOW()
+         WHERE id = $1 AND status = 'running'`, tournamentId, winnerId);
+      io.emit("tournamentComplete", { tournamentId, championId: winnerId });
+      return;
+    }
+
+    // The other half of this pairing. Both must be decided before the next
+    // match exists, so whichever finishes second is the one that opens it.
+    const sibling = Number(slot) % 2 === 0 ? Number(slot) + 1 : Number(slot) - 1;
+    const sibRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "winnerId" FROM "TournamentMatch" WHERE "tournamentId" = $1 AND round = $2 AND slot = $3 LIMIT 1`,
+      tournamentId, round, sibling);
+    const sibWinner = sibRows[0]?.winnerId ?? null;
+    if (!sibWinner) return;
+
+    const nextRound = Number(round) + 1;
+    const nextSlot = Math.floor(Number(slot) / 2);
+    const [aId, bId] = Number(slot) % 2 === 0 ? [winnerId, sibWinner] : [sibWinner, winnerId];
+
+    // Claim the next match before building it, so two concurrent completions
+    // can't both open the same fixture.
+    const claimed = await prisma.$executeRawUnsafe(
+      `UPDATE "TournamentMatch" SET "playerA" = $4, "playerB" = $5
+       WHERE "tournamentId" = $1 AND round = $2 AND slot = $3 AND "playerA" IS NULL`,
+      tournamentId, nextRound, nextSlot, aId, bId);
+    if (claimed === 0) return;
+    await createTournamentMatch(t, nextRound, nextSlot, aId, bId);
+  } catch (e) {
+    console.error("[advanceTournament]", e);
+  }
+}
+
+// GET /api/tournaments — everything worth showing: open to join, in progress,
+// and recently finished.
+app.get("/api/tournaments", async (_req, res) => {
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT t.*, u.username AS "hostName", c.username AS "championName",
+              (SELECT COUNT(*)::int FROM "TournamentEntrant" e WHERE e."tournamentId" = t.id) AS entrants
+       FROM "Tournament" t
+       JOIN "User" u ON u.id = t."hostId"
+       LEFT JOIN "User" c ON c.id = t."championId"
+       WHERE t.status <> 'cancelled'
+       ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
+                t."createdAt" DESC
+       LIMIT 30`);
+    res.json(rows.map(r => ({
+      id: r.id, name: r.name, claim: r.claim, size: Number(r.size), status: r.status,
+      hostId: r.hostId, hostName: r.hostName, entrants: Number(r.entrants),
+      championId: r.championId ?? null, championName: r.championName ?? null,
+      winCondition: r.winCondition, createdAt: r.createdAt,
+    })));
+  } catch (e) {
+    console.error("[GET /api/tournaments]", e);
+    res.status(500).json({ error: "Couldn't load tournaments." });
+  }
+});
+
+// GET /api/tournaments/:id — one tournament with its entrants and full bracket.
+app.get("/api/tournaments/:id", async (req, res) => {
+  try {
+    const t = await tournamentRow(String(req.params.id));
+    if (!t) return res.status(404).json({ error: "No such tournament." });
+    const [entrants, matches, host, champ] = await Promise.all([
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT e."userId", e.seed, u.username, u."isPro"
+         FROM "TournamentEntrant" e JOIN "User" u ON u.id = e."userId"
+         WHERE e."tournamentId" = $1 ORDER BY e.seed ASC NULLS LAST, e."joinedAt" ASC`, t.id),
+      prisma.$queryRawUnsafe<any[]>(
+        `SELECT m.round, m.slot, m."playerA", m."playerB", m."roomName", m."winnerId", m.status,
+                a.username AS "playerAName", b.username AS "playerBName"
+         FROM "TournamentMatch" m
+         LEFT JOIN "User" a ON a.id = m."playerA"
+         LEFT JOIN "User" b ON b.id = m."playerB"
+         WHERE m."tournamentId" = $1 ORDER BY m.round ASC, m.slot ASC`, t.id),
+      prisma.$queryRawUnsafe<any[]>(`SELECT username FROM "User" WHERE id = $1`, t.hostId),
+      t.championId
+        ? prisma.$queryRawUnsafe<any[]>(`SELECT username FROM "User" WHERE id = $1`, t.championId)
+        : Promise.resolve([] as any[]),
+    ]);
+    res.json({
+      id: t.id, name: t.name, claim: t.claim, size: Number(t.size), status: t.status,
+      hostId: t.hostId, hostName: host[0]?.username ?? "Host",
+      championId: t.championId ?? null, championName: champ[0]?.username ?? null,
+      winCondition: t.winCondition, rounds: roundsFor(Number(t.size)),
+      entrants: entrants.map(e => ({ userId: e.userId, username: e.username, isPro: !!e.isPro, seed: e.seed })),
+      matches: matches.map(m => ({
+        round: Number(m.round), slot: Number(m.slot),
+        playerA: m.playerA, playerB: m.playerB,
+        playerAName: m.playerAName ?? null, playerBName: m.playerBName ?? null,
+        roomName: m.roomName ?? null, winnerId: m.winnerId ?? null, status: m.status,
+      })),
+    });
+  } catch (e) {
+    console.error("[GET /api/tournaments/:id]", e);
+    res.status(500).json({ error: "Couldn't load that tournament." });
+  }
+});
+
+// POST /api/tournaments — hosting is the paid half.
+app.post("/api/tournaments", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Sign in required" });
+  if (!(await userIsPro(userId))) {
+    return res.status(402).json({ error: "Hosting a tournament is a Grounds Pro feature.", code: "pro_only" });
+  }
+  const { name, propositionId, claim, size, winCondition } = req.body as {
+    name?: string; propositionId?: string; claim?: string; size?: number; winCondition?: any;
+  };
+  const n = String(name ?? "").trim().slice(0, 80);
+  const sz = Number(size);
+  if (!n) return res.status(400).json({ error: "Give the tournament a name." });
+  if (!(TOURNAMENT_SIZES as readonly number[]).includes(sz)) {
+    return res.status(400).json({ error: `Size must be one of ${TOURNAMENT_SIZES.join(", ")}.` });
+  }
+  try {
+    // Resolve a curated claim server-side from its id, exactly as challenges do,
+    // so "from the library" can't be spoofed by sending matching text.
+    let text = String(claim ?? "").trim().slice(0, 300);
+    let categoryId: string | null = null;
+    if (propositionId) {
+      const pr = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT text, "categoryId" FROM "Proposition" WHERE id = $1 AND status = 'live' LIMIT 1`, propositionId);
+      if (!pr.length) return res.status(400).json({ error: "That claim isn't available." });
+      text = pr[0].text; categoryId = pr[0].categoryId;
+    }
+    if (!text) return res.status(400).json({ error: "Pick a claim to debate." });
+
+    const wc = JSON.stringify(winCondition ?? { type: "exchanges", limit: 10 });
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `INSERT INTO "Tournament" ("hostId",name,claim,"propositionId","categoryId",size,"winCondition",status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'open') RETURNING id`,
+      userId, n, text, propositionId ?? null, categoryId, sz, wc);
+    const id = rows[0].id;
+    // The host is in their own bracket — otherwise a 4-player tournament needs
+    // four other people before it can start.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "TournamentEntrant" ("tournamentId","userId") VALUES ($1,$2)`, id, userId);
+    res.json({ id });
+  } catch (e) {
+    console.error("[POST /api/tournaments]", e);
+    res.status(500).json({ error: "Couldn't create that tournament." });
+  }
+});
+
+// POST /api/tournaments/:id/join — free, but behind the same Training Grounds
+// gate as the rest of ranked play, so a bracket isn't filled with brand-new
+// accounts who've never argued.
+app.post("/api/tournaments/:id/join", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const elig = await battleEligibility(userId);
+    if (!elig.eligible) {
+      return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
+    }
+    const t = await tournamentRow(String(req.params.id));
+    if (!t) return res.status(404).json({ error: "No such tournament." });
+    if (t.status !== "open") return res.status(409).json({ error: "That tournament has already started." });
+
+    const [{ n }] = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS n FROM "TournamentEntrant" WHERE "tournamentId" = $1`, t.id);
+    if (Number(n) >= Number(t.size)) return res.status(409).json({ error: "That bracket is full." });
+
+    const added = await prisma.$executeRawUnsafe(
+      `INSERT INTO "TournamentEntrant" ("tournamentId","userId") VALUES ($1,$2)
+       ON CONFLICT ("tournamentId","userId") DO NOTHING`, t.id, userId);
+    if (added === 0) return res.status(409).json({ error: "You're already in this one." });
+    res.json({ ok: true, entrants: Number(n) + 1, size: Number(t.size) });
+  } catch (e) {
+    console.error("[tournament join]", e);
+    res.status(500).json({ error: "Couldn't join that tournament." });
+  }
+});
+
+// POST /api/tournaments/:id/leave — only before it starts.
+app.post("/api/tournaments/:id/leave", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const t = await tournamentRow(String(req.params.id));
+    if (!t) return res.status(404).json({ error: "No such tournament." });
+    if (t.status !== "open") return res.status(409).json({ error: "It has already started." });
+    if (t.hostId === userId) return res.status(400).json({ error: "The host can cancel it, but can't leave it." });
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM "TournamentEntrant" WHERE "tournamentId" = $1 AND "userId" = $2`, t.id, userId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[tournament leave]", e);
+    res.status(500).json({ error: "Couldn't leave that tournament." });
+  }
+});
+
+// POST /api/tournaments/:id/start — host only, and only on a full bracket.
+// Seeds by shuffle: the matches are unranked, so seeding by rating would import
+// the ladder into a format that deliberately isn't on it.
+app.post("/api/tournaments/:id/start", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const t = await tournamentRow(String(req.params.id));
+    if (!t) return res.status(404).json({ error: "No such tournament." });
+    if (t.hostId !== userId) return res.status(403).json({ error: "Only the host can start it." });
+    if (t.status !== "open") return res.status(409).json({ error: "It has already started." });
+
+    const entrants = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT "userId" FROM "TournamentEntrant" WHERE "tournamentId" = $1 ORDER BY "joinedAt" ASC`, t.id);
+    const size = Number(t.size);
+    if (entrants.length !== size) {
+      return res.status(409).json({ error: `Needs all ${size} players — ${entrants.length} so far.` });
+    }
+
+    // Claim the start, so a double-click can't build two brackets.
+    const claimed = await prisma.$executeRawUnsafe(
+      `UPDATE "Tournament" SET status='running', "startedAt"=NOW() WHERE id=$1 AND status='open'`, t.id);
+    if (claimed === 0) return res.status(409).json({ error: "It has already started." });
+
+    const ids = entrants.map(e => e.userId);
+    for (let i = ids.length - 1; i > 0; i--) {            // Fisher-Yates
+      const j = Math.floor(Math.random() * (i + 1));
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+    }
+    for (let i = 0; i < ids.length; i++) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "TournamentEntrant" SET seed = $3 WHERE "tournamentId" = $1 AND "userId" = $2`, t.id, ids[i], i + 1);
+    }
+
+    // Every fixture in the bracket exists from the start, so the shape is
+    // visible before it is played; later rounds fill their players in as the
+    // earlier ones resolve.
+    const totalRounds = roundsFor(size);
+    for (let round = 1; round <= totalRounds; round++) {
+      const slots = size / Math.pow(2, round);
+      for (let slot = 0; slot < slots; slot++) {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "TournamentMatch" ("tournamentId",round,slot,status) VALUES ($1,$2,$3,'pending')
+           ON CONFLICT ("tournamentId",round,slot) DO NOTHING`, t.id, round, slot);
+      }
+    }
+    for (let slot = 0; slot < size / 2; slot++) {
+      const aId = ids[slot * 2], bId = ids[slot * 2 + 1];
+      await prisma.$executeRawUnsafe(
+        `UPDATE "TournamentMatch" SET "playerA"=$3,"playerB"=$4 WHERE "tournamentId"=$1 AND round=1 AND slot=$2`,
+        t.id, slot, aId, bId);
+      await createTournamentMatch(t, 1, slot, aId, bId);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[tournament start]", e);
+    res.status(500).json({ error: "Couldn't start that tournament." });
+  }
+});
+
+// DELETE /api/tournaments/:id — the host can call it off before it starts.
+app.delete("/api/tournaments/:id", async (req, res) => {
+  const userId = actorId(req);
+  if (!userId) return res.status(401).json({ error: "Sign in required" });
+  try {
+    const t = await tournamentRow(String(req.params.id));
+    if (!t) return res.status(404).json({ error: "No such tournament." });
+    if (t.hostId !== userId) return res.status(403).json({ error: "Only the host can cancel it." });
+    if (t.status !== "open") return res.status(409).json({ error: "It has already started." });
+    await prisma.$executeRawUnsafe(`UPDATE "Tournament" SET status='cancelled' WHERE id=$1`, t.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[tournament cancel]", e);
+    res.status(500).json({ error: "Couldn't cancel that tournament." });
+  }
+});
+
 // ─── Leaderboards ────────────────────────────────────────────────────────────
 //
 // One shape for every board, so Community can render them all the same way and
@@ -5286,14 +5666,14 @@ const LEADERBOARDS: Record<string, BoardDef> = {
                  (COALESCE(w.n,0)::text || '–' || COALESCE(l.n,0)::text) AS detail
           FROM "User" u
           LEFT JOIN (SELECT "winnerId" AS uid, COUNT(*)::int AS n FROM "CompetitiveMatch"
-                      WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "winnerId" IS NOT NULL
+                      WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL AND "winnerId" IS NOT NULL
                       GROUP BY "winnerId") w ON w.uid = u.id
           LEFT JOIN (SELECT uid, COUNT(*)::int AS n FROM (
                        SELECT "challengerId" AS uid, "winnerId" FROM "CompetitiveMatch"
-                        WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+                        WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL
                        UNION ALL
                        SELECT "challengedId", "winnerId" FROM "CompetitiveMatch"
-                        WHERE status='complete' AND ("isRapid" IS NOT TRUE)
+                        WHERE status='complete' AND ("isRapid" IS NOT TRUE) AND "tournamentId" IS NULL
                      ) x WHERE "winnerId" IS NOT NULL AND "winnerId" <> uid GROUP BY uid) l ON l.uid = u.id
           WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo <> 1200 OR w.n IS NOT NULL)`,
   },
@@ -5872,7 +6252,7 @@ async function buildProfilePayload(
          SELECT u.id, u.elo FROM "User" u
          WHERE u."deletedAt" IS NULL AND NOT u."isBot" AND (u.elo <> 1200
             OR EXISTS (SELECT 1 FROM "CompetitiveMatch" cm
-                        WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."winnerId" = u.id))
+                        WHERE cm.status = 'complete' AND (cm."isRapid" IS NOT TRUE) AND cm."tournamentId" IS NULL AND cm."winnerId" = u.id))
        ),
        r AS (SELECT id, RANK() OVER (ORDER BY elo DESC) AS rank, COUNT(*) OVER () AS total FROM cohort)
        SELECT rank::int AS rank, total::int AS total FROM r WHERE id = $1`, uid,
@@ -6010,7 +6390,7 @@ app.get("/api/users/:id/matches", async (req, res) => {
   // who has played all week.
   const mode = req.query.mode === "rapid" ? "rapid" : req.query.mode === "ranked" ? "ranked" : null;
   const modeSql = mode === "rapid" ? `AND cm."isRapid" = TRUE`
-    : mode === "ranked" ? `AND cm."isRapid" IS NOT TRUE` : "";
+    : mode === "ranked" ? `AND cm."isRapid" IS NOT TRUE AND cm."tournamentId" IS NULL` : "";
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(
       // A rapid round has no Challenge row — it's paired out of the queue — so
@@ -6609,7 +6989,7 @@ app.get("/api/analytics/me", heavyReadLimiter, async (req, res) => {
              SELECT CASE WHEN "challengerId" = $1 THEN "challengedId" ELSE "challengerId" END AS opp,
                     "winnerId", "completedAt"
                FROM "CompetitiveMatch"
-              WHERE status = 'complete' AND "isRapid" IS NOT TRUE
+              WHERE status = 'complete' AND "isRapid" IS NOT TRUE AND "tournamentId" IS NULL
                 AND ("challengerId" = $1 OR "challengedId" = $1)
            ) m GROUP BY opp ORDER BY played DESC, "lastPlayedAt" DESC LIMIT 15`, userId),
 
@@ -8584,6 +8964,51 @@ async function start() {
     // The generation time of the last subscription event applied to this user,
     // so an out-of-order retry can't overwrite newer state.
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proEventAt" TIMESTAMP(3)`);
+    // Tournaments. Hosting is Pro; entering is free; the matches are unranked.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Tournament" (
+        "id"            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "hostId"        TEXT NOT NULL,
+        "name"          TEXT NOT NULL,
+        "claim"         TEXT NOT NULL,
+        "propositionId" TEXT,
+        "categoryId"    TEXT,
+        "size"          INTEGER NOT NULL,
+        "winCondition"  TEXT NOT NULL,
+        "status"        TEXT NOT NULL DEFAULT 'open',
+        "championId"    TEXT,
+        "createdAt"     TIMESTAMP NOT NULL DEFAULT NOW(),
+        "startedAt"     TIMESTAMP,
+        "completedAt"   TIMESTAMP
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Tournament_status_idx" ON "Tournament"("status","createdAt")`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "TournamentEntrant" (
+        "id"           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "tournamentId" TEXT NOT NULL,
+        "userId"       TEXT NOT NULL,
+        "seed"         INTEGER,
+        "joinedAt"     TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE ("tournamentId","userId")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "TournamentMatch" (
+        "id"           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        "tournamentId" TEXT NOT NULL,
+        "round"        INTEGER NOT NULL,
+        "slot"         INTEGER NOT NULL,
+        "playerA"      TEXT,
+        "playerB"      TEXT,
+        "roomName"     TEXT,
+        "winnerId"     TEXT,
+        "status"       TEXT NOT NULL DEFAULT 'pending',
+        UNIQUE ("tournamentId","round","slot")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TournamentMatch_room_idx" ON "TournamentMatch"("roomName")`);
+
     // Webhook idempotency: one row per Stripe event id that has been handled.
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "StripeEvent" (
@@ -8798,6 +9223,9 @@ async function start() {
     // Rapid Fire rounds are CompetitiveMatch rows too — they just settle on a
     // separate ladder, so completion needs to tell them apart.
     await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ADD COLUMN IF NOT EXISTS "isRapid" BOOLEAN NOT NULL DEFAULT FALSE`);
+    // Set on a bracket match. Its presence is what makes the match unranked —
+    // a tournament must not be a way to buy rating.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ADD COLUMN IF NOT EXISTS "tournamentId" TEXT`);
     // A Rapid Fire round is paired from a queue, so it has no Challenge row.
     await prisma.$executeRawUnsafe(`ALTER TABLE "CompetitiveMatch" ALTER COLUMN "challengeId" DROP NOT NULL`);
     console.log("[DB] CompetitiveMatch table ready");

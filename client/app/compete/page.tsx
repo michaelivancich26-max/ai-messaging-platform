@@ -462,6 +462,8 @@ export default function CompetePage() {
             blurb="No setup, no waiting for an opponent — queued against whoever disagrees." />
           <SideDoor href="/arena" Icon={GraduationCap} title="Training Grounds"
             blurb="Practise against a bot on a curated claim. Nothing on the line." />
+          <SideDoor href="/tournaments" Icon={Trophy} title="Tournaments"
+            blurb="One claim, single elimination. Unranked — the title is the prize." />
         </section>
 
       </div>
