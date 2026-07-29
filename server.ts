@@ -6241,11 +6241,35 @@ async function stripeWebhookHandler(req: Request, res: Response) {
     console.error("[stripe webhook] bad signature:", (err as Error).message);
     return res.status(400).send("Invalid signature");
   }
+  // Stripe retries a webhook until it gets a 2xx, and retries are not rare —
+  // a slow response or a deploy mid-delivery is enough. Claim the event id
+  // first so a duplicate becomes a no-op. The claim is released again if the
+  // handler throws, otherwise a failed delivery could never be retried.
+  try {
+    const claimed = await prisma.$executeRawUnsafe(
+      `INSERT INTO "StripeEvent" (id, type) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`,
+      event.id, event.type);
+    if (claimed === 0) return res.json({ received: true, duplicate: true });
+  } catch (e) {
+    console.error("[stripe webhook] could not claim event:", e);   // table missing — fail open
+  }
+
   try {
     if (event.type === "checkout.session.completed") {
       const s = event.data.object as Stripe.Checkout.Session;
       const userId = s.client_reference_id || (s.metadata?.userId ?? null);
       const subId = (s.subscription as string) ?? null;
+
+      // A completed session is not a paid one. Asynchronous payment methods
+      // complete the session and settle later, so granting on completion alone
+      // hands out Pro before any money has moved; the paid confirmation arrives
+      // afterwards as checkout.session.async_payment_succeeded or a
+      // subscription event, both of which are handled.
+      const paid = s.payment_status === "paid" || s.payment_status === "no_payment_required";
+      if (!paid) {
+        console.log(`[stripe webhook] checkout ${s.id} completed unpaid (${s.payment_status}) — not granting`);
+        return res.json({ received: true, unpaid: true });
+      }
       // Populate the renewal date now (keyed by userId) rather than depend on the
       // ordering of the subscription.* events, which may arrive before/after this.
       let periodEnd: Date | null = null;
@@ -6271,13 +6295,30 @@ async function stripeWebhookHandler(req: Request, res: Response) {
       // versions, so read the item's value when the top-level field is absent.
       const cpe = (sub as any).current_period_end ?? (sub as any).items?.data?.[0]?.current_period_end;
       const periodEnd = cpe ? new Date(cpe * 1000) : null;
+      // A cancelled subscription stays 'active' until the period ends, so status
+      // alone can't tell "renews on the 4th" from "ends on the 4th" — and the
+      // page said "Renews" to someone who had already cancelled.
+      const cancelling = !!(sub as any).cancel_at_period_end;
+
+      // Events for one subscription can arrive out of order — a retried
+      // 'updated' landing after a 'deleted' would resurrect the entitlement.
+      // Each event carries the time Stripe generated it; apply only if it is at
+      // least as new as the last one applied to this subscription. Equal is
+      // allowed because Stripe emits several within the same second.
+      const eventAt = new Date(event.created * 1000);
       await prisma.$executeRawUnsafe(
-        `UPDATE "User" SET "isPro" = $2, "proStatus" = $3, "proCurrentPeriodEnd" = $4 WHERE "stripeSubscriptionId" = $1`,
-        sub.id, active, sub.status, periodEnd);
+        `UPDATE "User" SET "isPro" = $2, "proStatus" = $3, "proCurrentPeriodEnd" = $4,
+           "proCancelAtPeriodEnd" = $5, "proEventAt" = $6
+         WHERE "stripeSubscriptionId" = $1
+           AND ("proEventAt" IS NULL OR "proEventAt" <= $6)`,
+        sub.id, active, sub.status, periodEnd, cancelling, eventAt);
     }
     res.json({ received: true });
   } catch (e) {
     console.error("[stripe webhook] handler error:", e);
+    // Release the claim so Stripe's retry can actually re-run this event —
+    // otherwise a transient failure would swallow it permanently.
+    await prisma.$executeRawUnsafe(`DELETE FROM "StripeEvent" WHERE id = $1`, event.id).catch(() => {});
     res.status(500).end();
   }
 }
@@ -6371,12 +6412,15 @@ app.get("/api/billing/status", async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Not authenticated." });
   try {
     const rows = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT "isPro", "proStatus", "proCurrentPeriodEnd", "stripeCustomerId" FROM "User" WHERE id = $1`, userId);
+      `SELECT "isPro", "proStatus", "proCurrentPeriodEnd", "proCancelAtPeriodEnd", "stripeCustomerId" FROM "User" WHERE id = $1`, userId);
     const u = rows[0] ?? {};
     res.json({
       isPro: !!u.isPro,
       status: u.proStatus ?? null,
       currentPeriodEnd: u.proCurrentPeriodEnd ?? null,
+      // Whether that date is a renewal or an expiry. The page said "Renews"
+      // either way, which is the wrong thing to tell someone who cancelled.
+      cancelAtPeriodEnd: !!u.proCancelAtPeriodEnd,
       manageable: !!u.stripeCustomerId,
       configured: !!stripe,
     });
@@ -8025,7 +8069,8 @@ app.post("/api/me/delete", async (req, res) => {
       `UPDATE "User" SET username = $2, email = $3, password = $4,
          bio = NULL, "avatarUrl" = NULL, "emailVerified" = NULL, "deletedAt" = NOW(),
          "isPro" = false, "proStatus" = 'deleted',
-         "stripeCustomerId" = NULL, "stripeSubscriptionId" = NULL, "proCurrentPeriodEnd" = NULL
+         "stripeCustomerId" = NULL, "stripeSubscriptionId" = NULL, "proCurrentPeriodEnd" = NULL,
+         "proCancelAtPeriodEnd" = false, "proEventAt" = NULL
        WHERE id = $1`,
       userId, `deleted_${userId}`, `${userId}@deleted.invalid`, deadPass,
     );
@@ -8061,7 +8106,8 @@ async function start() {
     console.error("[DB] Connection failed:", e);
   }
 
-  // Ensure GraphNodeMessage table exists — Railway migration history can get out of sync
+  // Ensure GraphNodeMessage table exists — Railway migration history can get out of sync.
+  // One statement per call — see the Claim block.
   try {
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "GraphNodeMessage" (
@@ -8070,9 +8116,13 @@ async function start() {
         "messageId" TEXT NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "GraphNodeMessage_pkey" PRIMARY KEY ("id")
-      );
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE UNIQUE INDEX IF NOT EXISTS "GraphNodeMessage_nodeId_messageId_key"
-        ON "GraphNodeMessage"("nodeId", "messageId");
+        ON "GraphNodeMessage"("nodeId", "messageId")
+    `);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (
           SELECT 1 FROM pg_constraint WHERE conname = 'GraphNodeMessage_nodeId_fkey'
@@ -8082,6 +8132,8 @@ async function start() {
             FOREIGN KEY ("nodeId") REFERENCES "GraphNode"("id") ON DELETE CASCADE ON UPDATE CASCADE;
         END IF;
       END $$;
+    `);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (
           SELECT 1 FROM pg_constraint WHERE conname = 'GraphNodeMessage_messageId_fkey'
@@ -8097,7 +8149,7 @@ async function start() {
     console.error("[DB] GraphNodeMessage setup failed:", e);
   }
 
-  // Ensure Poll tables exist
+  // Ensure Poll tables exist. One statement per call — see the Claim block.
   try {
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Poll" (
@@ -8105,17 +8157,23 @@ async function start() {
         "question" TEXT NOT NULL, "options" TEXT[] NOT NULL, "createdBy" TEXT NOT NULL,
         "closedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "Poll_pkey" PRIMARY KEY ("id")
-      );
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "PollVote" (
         "id" TEXT NOT NULL, "pollId" TEXT NOT NULL, "userId" TEXT NOT NULL, "option" TEXT NOT NULL,
         CONSTRAINT "PollVote_pkey" PRIMARY KEY ("id")
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS "PollVote_pollId_userId_key" ON "PollVote"("pollId", "userId");
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "PollVote_pollId_userId_key" ON "PollVote"("pollId", "userId")`);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Poll_roomId_fkey') THEN
           ALTER TABLE "Poll" ADD CONSTRAINT "Poll_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
         END IF;
       END $$;
+    `);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'PollVote_pollId_fkey') THEN
           ALTER TABLE "PollVote" ADD CONSTRAINT "PollVote_pollId_fkey" FOREIGN KEY ("pollId") REFERENCES "Poll"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -8127,7 +8185,14 @@ async function start() {
     console.error("[DB] Poll tables setup failed:", e);
   }
 
-  // Ensure Claim tables exist
+  // Ensure Claim tables exist.
+  //
+  // ONE STATEMENT PER CALL. $executeRawUnsafe goes through a prepared statement,
+  // which Postgres refuses to give more than one command (42601), so a batched
+  // block like this threw on every boot and the catch swallowed it. Existing
+  // databases already had these tables from an earlier migration, which is why
+  // nothing appeared broken — but a FRESH database would silently never get
+  // them, and the first claim staked would fail.
   try {
     await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
@@ -8135,6 +8200,8 @@ async function start() {
           CREATE TYPE "ClaimStatus" AS ENUM ('PENDING', 'SUPPORTED', 'REFUTED', 'CONTESTED');
         END IF;
       END $$;
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Claim" (
         "id" TEXT NOT NULL, "messageId" TEXT NOT NULL, "roomId" TEXT NOT NULL,
         "channelId" TEXT, "claimantId" TEXT NOT NULL, "text" TEXT NOT NULL,
@@ -8142,22 +8209,30 @@ async function start() {
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "Claim_pkey" PRIMARY KEY ("id")
-      );
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "ClaimChallenge" (
         "id" TEXT NOT NULL, "claimId" TEXT NOT NULL, "challengerId" TEXT NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "ClaimChallenge_pkey" PRIMARY KEY ("id")
-      );
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Claim_messageId_fkey') THEN
           ALTER TABLE "Claim" ADD CONSTRAINT "Claim_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE CASCADE ON UPDATE CASCADE;
         END IF;
       END $$;
+    `);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'Claim_roomId_fkey') THEN
           ALTER TABLE "Claim" ADD CONSTRAINT "Claim_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
         END IF;
       END $$;
+    `);
+    await prisma.$executeRawUnsafe(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ClaimChallenge_claimId_fkey') THEN
           ALTER TABLE "ClaimChallenge" ADD CONSTRAINT "ClaimChallenge_claimId_fkey" FOREIGN KEY ("claimId") REFERENCES "Claim"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -8503,6 +8578,21 @@ async function start() {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "stripeSubscriptionId" TEXT`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proStatus" TEXT`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proCurrentPeriodEnd" TIMESTAMP(3)`);
+    // Set when a subscriber has cancelled but is still inside the period they
+    // paid for. Without it the billing page told them their plan "renews".
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proCancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false`);
+    // The generation time of the last subscription event applied to this user,
+    // so an out-of-order retry can't overwrite newer state.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "proEventAt" TIMESTAMP(3)`);
+    // Webhook idempotency: one row per Stripe event id that has been handled.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "StripeEvent" (
+        "id"         TEXT PRIMARY KEY,
+        "type"       TEXT,
+        "receivedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "StripeEvent_receivedAt_idx" ON "StripeEvent"("receivedAt")`);
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_stripeSubscriptionId_key" ON "User"("stripeSubscriptionId")`);
     console.log("[DB] User.elo column ready");
   } catch (e) {

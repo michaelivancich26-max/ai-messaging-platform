@@ -118,9 +118,13 @@ async function main() {
 
   // ── 4. A wall of ties can't return the whole cohort ────────────────────────
   await prisma.$executeRawUnsafe(`UPDATE "User" SET "dailyStreak"=7 WHERE id LIKE $1`, `${P}%`);
+  // Bounded at limit+1, not limit: the extra slot is the caller's own row, which
+  // is fetched even when they rank below the cut. What matters is that a wall of
+  // ties can't return the whole cohort — before the LIMIT it returned every row
+  // sharing rank 1.
   const tied = await get("/api/leaderboards/streak?limit=5");
-  check("a tie at the cut still returns at most limit+1 rows",
-    (tied.body.rows ?? []).length <= 5, `${(tied.body.rows ?? []).length} rows for limit=5`);
+  check("a tie at the cut cannot return the whole cohort",
+    (tied.body.rows ?? []).length <= 6, `${(tied.body.rows ?? []).length} rows for limit=5`);
 
   // ── 5. Neither bots nor tombstones are findable as people ─────────────────
   // The boards were only half of it: user search and the people directory feed

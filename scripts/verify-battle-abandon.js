@@ -27,6 +27,10 @@ const check = (name, ok, detail = "") => {
 
 async function clean() {
   for (const rn of [SILENT_THIN, SILENT_FULL, FRESH]) {
+    // The judged path writes a JudgeShadow row. Leaving it behind fed fixture
+    // matches into /api/admin/judge-shadow — the measurement the decision to
+    // promote the rubric judge rests on.
+    await prisma.$executeRawUnsafe(`DELETE FROM "JudgeShadow" WHERE "roomName"=$1`, rn).catch(() => {});
     await prisma.$executeRawUnsafe(`DELETE FROM "MatchPropositionPoint" WHERE "roomName"=$1`, rn).catch(() => {});
     await prisma.$executeRawUnsafe(`DELETE FROM "MatchProposition" WHERE "roomName"=$1`, rn).catch(() => {});
     await prisma.$executeRawUnsafe(`DELETE FROM "CompetitiveMatch" WHERE "roomName"=$1`, rn).catch(() => {});
@@ -80,11 +84,21 @@ async function main() {
     (await statusOf(SILENT_THIN)) === "active" && (await statusOf(SILENT_FULL)) === "active" && (await statusOf(FRESH)) === "active");
 
   // The sweep runs every 2 minutes and once at boot. Restarting the server is the
-  // realistic trigger, so poll for up to ~2.5 min rather than reaching into it.
+  // realistic trigger, so poll rather than reaching into it.
+  //
+  // Wait for a TERMINAL status, not merely a non-'active' one. This is what made
+  // the suite flaky: the sweep CLAIMS a match before it settles it — 'closing' on
+  // the void path, 'judging' while the judge reads the transcript — so "not
+  // active" is already true a second or more before any result exists. A poll
+  // tick landing in that window broke the loop early and the next line read
+  // 'judging', failing an assertion about code that was working correctly.
+  // Whether a tick lands there is pure phase between the poll grid and the sweep
+  // interval, which is why re-running appeared to "fix" it.
+  const TERMINAL = new Set(["void", "complete"]);
   console.log("  ..    waiting for the sweep (restart the server to trigger it immediately)");
-  const deadline = Date.now() + 150_000;
+  const deadline = Date.now() + 200_000;      // 2-min interval phase + judge latency
   while (Date.now() < deadline) {
-    if ((await statusOf(SILENT_THIN)) !== "active" && (await statusOf(SILENT_FULL)) !== "active") break;
+    if (TERMINAL.has(await statusOf(SILENT_THIN)) && TERMINAL.has(await statusOf(SILENT_FULL))) break;
     await new Promise(r => setTimeout(r, 5000));
   }
 

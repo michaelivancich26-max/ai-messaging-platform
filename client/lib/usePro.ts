@@ -10,6 +10,7 @@ export interface ProStatus {
   isPro: boolean;
   status: string | null;
   currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;   // that date is when access ENDS, not renews
   manageable: boolean;   // has a Stripe customer → can open the billing portal
   configured: boolean;   // billing is wired up server-side (keys present)
 }

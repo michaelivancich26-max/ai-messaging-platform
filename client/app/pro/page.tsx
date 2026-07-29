@@ -99,8 +99,18 @@ function ProContent() {
           ) : isPro ? (
             <div className="space-y-3">
               <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-green-ink dark:text-brand-green"><BadgeCheck className="h-4 w-4" /> You're on Grounds Pro</p>
+              {/* A cancelled subscription keeps working until the period ends,
+                  so the same date means two opposite things. Telling someone who
+                  has already cancelled that their plan "renews" is the version
+                  that costs them money. */}
               {pro?.currentPeriodEnd && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">Renews {new Date(pro.currentPeriodEnd).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</p>
+                pro.cancelAtPeriodEnd ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Cancelled — Pro ends {new Date(pro.currentPeriodEnd).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}. You keep everything until then.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Renews {new Date(pro.currentPeriodEnd).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}</p>
+                )
               )}
               {pro?.manageable && (
                 <button onClick={() => post("/api/billing/portal")} disabled={busy}
