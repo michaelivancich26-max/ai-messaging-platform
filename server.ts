@@ -5557,26 +5557,35 @@ app.post("/api/tournaments", async (req, res) => {
   }
 });
 
-// POST /api/tournaments/:id/join — free, but behind the same Training Grounds
-// gate as the rest of ranked play, so a bracket isn't filled with brand-new
-// accounts who've never argued.
+// POST /api/tournaments/:id/join — free to enter.
+//
+// A PUBLIC bracket sits behind the same Training Grounds gate as the rest of
+// competitive play, so an open bracket isn't filled by accounts that have never
+// argued. A PRIVATE one doesn't: the password is already the filter, and it is a
+// stronger one than the gate — somebody had to be told it. Gating a host's own
+// invite-only bracket only stopped them bringing in the person they invited.
 app.post("/api/tournaments/:id/join", async (req, res) => {
   const userId = actorId(req);
   if (!userId) return res.status(401).json({ error: "Sign in required" });
   try {
-    const elig = await battleEligibility(userId);
-    if (!elig.eligible) {
-      return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
-    }
     const t = await tournamentRow(String(req.params.id));
     if (!t) return res.status(404).json({ error: "No such tournament." });
     if (t.status !== "open") return res.status(409).json({ error: "That tournament has already started." });
 
     // Invite-only: the password is the invitation. The host never needs it.
+    // Checked BEFORE the gate, so a private bracket never leaks its eligibility
+    // requirements to someone who couldn't get in anyway.
     if (t.isPrivate && t.hostId !== userId) {
       const given = String((req.body as any)?.password ?? "");
       const ok = t.password ? await bcrypt.compare(given, t.password) : false;
       if (!ok) return res.status(403).json({ error: "That password doesn't match.", code: "bad_password" });
+    }
+
+    if (!t.isPrivate) {
+      const elig = await battleEligibility(userId);
+      if (!elig.eligible) {
+        return res.status(403).json({ error: "Finish your Battle Grounds entry requirements first.", reason: "locked", eligibility: elig });
+      }
     }
 
     const [{ n }] = await prisma.$queryRawUnsafe<any[]>(

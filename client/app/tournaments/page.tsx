@@ -72,7 +72,9 @@ export default function TournamentsPage() {
               <Sparkles className="h-4 w-4" aria-hidden /> Hosting is a Pro feature
             </Link>
           )}
-          <p className="text-xs text-gray-500 dark:text-gray-400">Entering is free for anyone through the Battle Grounds gate.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Entering is always free. Open brackets need the Battle Grounds requirements; a private one just needs its password.
+          </p>
         </div>
 
         <Section title="Open for entries" empty="Nothing taking entries right now.">
@@ -238,7 +240,12 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
         <label className="mt-4 flex min-h-11 cursor-pointer items-center gap-2.5">
           <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
             className="h-4 w-4 accent-amber-600" />
-          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Private — needs a password to enter</span>
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+            Private — the password is the only way in
+            <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-gray-400">
+              Anyone you give it to can enter, including players who haven&rsquo;t finished the Battle Grounds requirements.
+            </span>
+          </span>
         </label>
         {isPrivate && (
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}

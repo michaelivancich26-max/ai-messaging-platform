@@ -20,6 +20,9 @@ const P = "vtn-";
 const HOST = `${P}host`;
 const PLAYERS = [`${P}p1`, `${P}p2`, `${P}p3`];
 const ALL = [HOST, ...PLAYERS];
+// Never debated, never trained: ineligible for open competitive play. A private
+// bracket must still admit them on the password alone.
+const NEWCOMER = `${P}newcomer`;
 
 let failures = 0;
 const check = (name, ok, detail = "") => {
@@ -28,14 +31,31 @@ const check = (name, ok, detail = "") => {
 };
 
 const tok = (id) => encode({ token: { id, username: id }, secret: SECRET });
-async function call(id, path, method = "GET", body) {
+
+// This suite makes about thirty writes, against a 60-per-minute per-IP write
+// limiter — so running it twice inside a minute trips the limiter and every
+// assertion after that point reads 429 instead of the thing it was checking.
+// That is the limiter working, not a defect, so wait it out and retry once
+// rather than weakening any check or pretending a 429 is a pass.
+async function once(id, path, method, body) {
   const t = await tok(id);
   const r = await fetch(`${SERVER}${path}`, {
     method,
     headers: { Authorization: `Bearer ${t}`, ...(body ? { "Content-Type": "application/json" } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  return { status: r.status, body: await r.json().catch(() => ({})) };
+  return { status: r.status, body: await r.json().catch(() => ({})), retryAfter: r.headers.get("retry-after") };
+}
+
+async function call(id, path, method = "GET", body) {
+  let r = await once(id, path, method, body);
+  if (r.status === 429) {
+    const wait = Math.min(65, Number(r.retryAfter) || 61) * 1000;
+    console.log(`  ..    write limiter hit — waiting ${Math.round(wait / 1000)}s for the window to reset`);
+    await new Promise(res => setTimeout(res, wait));
+    r = await once(id, path, method, body);
+  }
+  return { status: r.status, body: r.body };
 }
 
 async function clean() {
@@ -71,6 +91,9 @@ async function main() {
       `INSERT INTO "ArenaMatch" ("roomName","userId","botId",winner,verdict,"scoreImpact",ranked)
        VALUES ($1,$2,'rex','human','x',0.5,TRUE)`, `${P}arena-${id}`, id);
   }
+  // No Grounds Score, no practice win — the gate should refuse them.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "User" (id,username,email,password) VALUES ($1,$1,$1||'@t.local','x')`, NEWCOMER);
 
   // ── Hosting is the paid half ──────────────────────────────────────────────
   const prop = await prisma.$queryRawUnsafe(`SELECT id FROM "Proposition" WHERE status='live' LIMIT 1`);
@@ -234,6 +257,24 @@ async function main() {
   check("a wrong password is refused", wrongPw.status === 403, `status=${wrongPw.status}`);
   const rightPw = await call(PLAYERS[0], `/api/tournaments/${priv.body.id}/join`, "POST", { password: "letmein" });
   check("the right password gets you in", rightPw.status === 200, `status=${rightPw.status}`);
+
+  // ── A private bracket admits on the password, not on the training gate ─────
+  // The password is the stronger filter: someone had to be told it. Gating an
+  // invite-only bracket only stopped a host bringing in the person they invited.
+  // A fresh public bracket: the first one has already been started and would
+  // refuse on status before the gate was ever consulted.
+  const openPub = await call(HOST, "/api/tournaments", "POST", { ...create, name: "Open Cup" });
+  const pub = await call(NEWCOMER, `/api/tournaments/${openPub.body.id}/join`, "POST");
+  check("a newcomer is still refused an OPEN bracket", pub.status === 403 && pub.body.reason === "locked",
+    `status=${pub.status} reason=${pub.body.reason ?? "-"}`);
+
+  const privNew = await call(NEWCOMER, `/api/tournaments/${priv.body.id}/join`, "POST", { password: "letmein" });
+  check("but a newcomer CAN enter a private one with the password", privNew.status === 200,
+    `status=${privNew.status} ${privNew.body.error ?? ""}`);
+
+  const privNewBad = await call(NEWCOMER, `/api/tournaments/${priv.body.id}/join`, "POST", { password: "wrong" });
+  check("and the password is still the gate that matters", privNewBad.status === 403,
+    `status=${privNewBad.status}`);
 
   const privDetail = await call(HOST, `/api/tournaments/${priv.body.id}`);
   check("the password is never echoed back", !JSON.stringify(privDetail.body).includes("letmein"));
